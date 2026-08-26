@@ -1,20 +1,20 @@
-name: SCAFFOLD API CI
+name: MAP API CI
 
 on:
   pull_request:
     branches:
       - develop
     paths:
-      - "scaffold-api/**"
+      - "map-api/**"
 
 defaults:
   run:
     shell: bash
-    working-directory: ./scaffold-api
+    working-directory: ./map-api
 
 jobs:
   setup-job:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v2
@@ -22,11 +22,11 @@ jobs:
 
   linting:
     needs: setup-job
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     strategy:
       matrix:
-        python-version: [3.9]
+        python-version: ["3.12"]
 
     steps:
       - uses: actions/checkout@v2
@@ -55,11 +55,11 @@ jobs:
        FLASK_ENV: "testing"
        DATABASE_TEST_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
 
-     runs-on: ubuntu-20.04
+     runs-on: ubuntu-24.04
 
      strategy:
        matrix:
-         python-version: [3.9]
+         python-version: ["3.12"]
 
      services:
       postgres:
@@ -97,8 +97,8 @@ jobs:
        - name: Upload coverage to Codecov
          uses: codecov/codecov-action@v4
          with:
-          flags: scaffold-api
-          name: codecov-scaffold-api
+          flags: map-api
+          name: codecov-map-api
           fail_ci_if_error: true
           verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -106,10 +106,10 @@ jobs:
 
   build:
     # needs: PyTest
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
-        python-version: [3.9]
+        python-version: ["3.12"]
     name: Build
     steps:
       - uses: actions/checkout@v2

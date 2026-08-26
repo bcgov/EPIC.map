@@ -5,11 +5,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Scaffold API",
+            "name": "Map API",
             "type": "python",
-            "cwd": "${workspaceFolder}/scaffold-api/",
+            "cwd": "${workspaceFolder}/map-api/",
             "request": "launch",
-            "program": "${workspaceFolder}/scaffold-api/wsgi.py",
+            "program": "${workspaceFolder}/map-api/wsgi.py",
             "console": "integratedTerminal",
             "justMyCode": true
         }
