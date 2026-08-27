@@ -27,3 +27,5 @@ flask_cors
 importlib-resources
 tenacity==9.0.0
 redis==8.1.0
+GeoAlchemy2==0.20.0
+shapely==2.1.2

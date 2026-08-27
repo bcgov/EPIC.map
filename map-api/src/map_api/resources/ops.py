@@ -15,15 +15,21 @@
 import random
 import time
 
+from flask import current_app
 from flask_restx import Namespace, Resource
 from sqlalchemy import exc, text
 
+from map_api.config import get_redis_client
 from map_api.models import db
+from map_api.version import __version__
 
 
 API = Namespace("OPS", description="Service - OPS checks")
 
 SQL = text("select 1")
+
+OK = "ok"
+ERROR = "error"
 
 
 def _collect_pool_stats(session):
@@ -45,6 +51,45 @@ def _collect_pool_stats(session):
     return stats
 
 
+def _check_database():
+    """Return OK when the database answers a trivial query, ERROR otherwise.
+
+    Broad except is deliberate: a health check reports a dependency as down, it
+    never propagates that dependency's failure as a 500 from the probe itself.
+    """
+    try:
+        db.session.execute(SQL)
+        return OK
+    except Exception as err:  # noqa: B902 # pylint: disable=broad-except
+        # Leave the session usable for whatever handles the next request.
+        db.session.rollback()
+        current_app.logger.warning("healthz database check failed: %s", err)
+        return ERROR
+
+
+def _check_redis():
+    """Return OK when Redis answers PING, ERROR otherwise.
+
+    A fresh client per call means the check exercises resolve-connect-command
+    rather than reporting on an already-warm socket. See _check_database for why
+    the except is broad.
+    """
+    client = None
+    try:
+        client = get_redis_client()
+        client.ping()
+        return OK
+    except Exception as err:  # noqa: B902 # pylint: disable=broad-except
+        current_app.logger.warning("healthz redis check failed: %s", err)
+        return ERROR
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:  # noqa: B902 # pylint: disable=broad-except
+                pass
+
+
 @API.route("healthz")
 class Healthz(Resource):
     """Determines if the service and required dependencies are still working.
@@ -54,14 +99,25 @@ class Healthz(Resource):
 
     @staticmethod
     def get():
-        """Return a JSON object stating the health of the Service and dependencies."""
-        try:
-            db.session.execute(SQL)
-        except exc.SQLAlchemyError:
-            return {"message": "api is down"}, 500
+        """Return a JSON object stating the health of the Service and dependencies.
 
-        # made it here, so all checks passed
-        return {"message": "api is healthy"}, 200
+        Every dependency is checked on every call - one failure never
+        short-circuits the others, so the body always reports each dependency
+        accurately. Any failure makes the whole response a 503; a 200 from this
+        endpoint means everything below it is up.
+        """
+        checks = {
+            "database": _check_database(),
+            "redis": _check_redis(),
+        }
+
+        healthy = all(status == OK for status in checks.values())
+
+        return {
+            "message": "api is healthy" if healthy else "api is down",
+            **checks,
+            "version": __version__,
+        }, (200 if healthy else 503)
 
 
 @API.route("readyz")
