@@ -22,6 +22,7 @@ rather than reading environment variables directly or by accessing this configur
 import os
 import sys
 
+import redis
 from dotenv import find_dotenv, load_dotenv
 
 # this will load all the envars from a .env file located in the project root (api)
@@ -51,6 +52,18 @@ def get_named_config(config_name: str = 'development'):
     return config
 
 
+def get_redis_client(config=None):
+    """Return a Redis client built from the given (or the current) configuration.
+
+    Mirrors how SQLALCHEMY_DATABASE_URI is consumed: the configuration owns the
+    connection string and the caller builds a client from it. redis-py resolves
+    and connects lazily, so this performs no I/O - the first command issued on
+    the returned client opens the socket.
+    """
+    conf = config or get_named_config(os.getenv('FLASK_ENV', 'development'))
+    return redis.Redis.from_url(conf.REDIS_URL, decode_responses=True)
+
+
 class _Config():  # pylint: disable=too-few-public-methods
     """Base class configuration that should set reasonable defaults for all the other configurations."""
 
@@ -70,6 +83,14 @@ class _Config():  # pylint: disable=too-few-public-methods
     SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{int(DB_PORT)}/{DB_NAME}'
     SQLALCHEMY_ECHO = True
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # REDIS
+    REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+    REDIS_PORT = os.getenv('REDIS_PORT', '6379')
+    REDIS_DB = os.getenv('REDIS_DB', '0')
+    # sample.env supplies REDIS_URL directly; when it is absent the URL is
+    # composed from the parts above, the same way SQLALCHEMY_DATABASE_URI is.
+    REDIS_URL = os.getenv('REDIS_URL') or f'redis://{REDIS_HOST}:{int(REDIS_PORT)}/{REDIS_DB}'
 
     # JWT_OIDC Settings
     JWT_OIDC_WELL_KNOWN_CONFIG = os.getenv('JWT_OIDC_WELL_KNOWN_CONFIG')
@@ -115,6 +136,12 @@ class TestConfig(_Config):  # pylint: disable=too-few-public-methods
     DB_PORT = os.getenv('DATABASE_TEST_PORT', '5432')
     SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{int(DB_PORT)}/{DB_NAME}'
 
+    # REDIS - logical db 1 by default so a test run cannot clobber dev keys
+    REDIS_HOST = os.getenv('REDIS_TEST_HOST', 'localhost')
+    REDIS_PORT = os.getenv('REDIS_TEST_PORT', '6379')
+    REDIS_DB = os.getenv('REDIS_TEST_DB', '1')
+    REDIS_URL = os.getenv('REDIS_TEST_URL') or f'redis://{REDIS_HOST}:{int(REDIS_PORT)}/{REDIS_DB}'
+
     JWT_OIDC_TEST_MODE = True
     # JWT_OIDC_ISSUER = _get_config('JWT_OIDC_TEST_ISSUER')
     JWT_OIDC_TEST_AUDIENCE = os.getenv('JWT_OIDC_TEST_AUDIENCE')
@@ -135,6 +162,12 @@ class DockerConfig(_Config):  # pylint: disable=too-few-public-methods
     DB_HOST = os.getenv('DATABASE_DOCKER_HOST')
     DB_PORT = os.getenv('DATABASE_DOCKER_PORT', '5432')
     SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{int(DB_PORT)}/{DB_NAME}'
+
+    # REDIS - defaults to the compose service name, reachable on the compose network
+    REDIS_HOST = os.getenv('REDIS_DOCKER_HOST', 'map-redis')
+    REDIS_PORT = os.getenv('REDIS_DOCKER_PORT', '6379')
+    REDIS_DB = os.getenv('REDIS_DOCKER_DB', '0')
+    REDIS_URL = os.getenv('REDIS_DOCKER_URL') or f'redis://{REDIS_HOST}:{int(REDIS_PORT)}/{REDIS_DB}'
 
     print(f'SQLAlchemy URL (Docker): {SQLALCHEMY_DATABASE_URI}')
 

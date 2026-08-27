@@ -9,6 +9,7 @@ from http import HTTPStatus
 import secure
 from flask import Flask, current_app, g, request
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 
 from map_api.auth import jwt
 from map_api.config import get_named_config
@@ -86,6 +87,9 @@ def create_app(run_mode=os.getenv("FLASK_ENV", "development")):
 
     @app.errorhandler(Exception)
     def handle_error(err):
+        if isinstance(err, HTTPException):
+            # Let 404/405/etc. return their standard response.
+            return err
         if run_mode != "production":
             # To get stacktrace in local development for internal server errors
             raise err

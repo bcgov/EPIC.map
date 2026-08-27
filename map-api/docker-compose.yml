@@ -2,29 +2,37 @@ version: "3.9"
 
 services:
   map-api-db:
-    image: postgres
+    image: postgis/postgis:16-3.4
     volumes:
       - db-data:/var/lib/postgresql/data2
     environment:
       - POSTGRES_USER=map
       - POSTGRES_PASSWORD=map
-      - POSTGRES_DB=map
+      - POSTGRES_DB=map-db
       - POSTGRES_HOST_AUTH_METHOD=trust
+      - PGDATA=/var/lib/postgresql/data2
     ports:
       - 54332:5432/tcp
     restart: unless-stopped
 
   map-api-db-test:
-    image: postgres
+    image: postgis/postgis:16-3.4
     volumes:
-      - db-data:/var/lib/postgresql/data3
+      - db-test-data:/var/lib/postgresql/data3
     environment:
       - POSTGRES_USER=map
       - POSTGRES_PASSWORD=map
-      - POSTGRES_DB=map
+      - POSTGRES_DB=map-db
       - POSTGRES_HOST_AUTH_METHOD=trust
+      - PGDATA=/var/lib/postgresql/data3
     ports:
       - 54333:5432/tcp
+    restart: unless-stopped
+
+  map-redis:
+    image: redis:7-alpine
+    ports:
+      - 6379:6379/tcp
     restart: unless-stopped
 
   keycloak:
@@ -52,4 +60,5 @@ services:
 volumes:
   db-data:
     driver: local
-  
+  db-test-data:
+    driver: local

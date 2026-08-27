@@ -26,3 +26,4 @@ requests
 flask_cors
 importlib-resources
 tenacity==9.0.0
+redis==8.1.0
