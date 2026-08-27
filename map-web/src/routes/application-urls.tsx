@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import ComingSoon from "@/components/Shared/ComingSoon";
 
-export const Route = createFileRoute("/")({
-  component: Launchpad,
+export const Route = createFileRoute("/application-urls")({
+  component: ApplicationUrls,
 });
 
-function Launchpad() {
+function ApplicationUrls() {
   return <ComingSoon />;
 }
