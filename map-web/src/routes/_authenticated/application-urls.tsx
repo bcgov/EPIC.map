@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import ComingSoon from "@/components/Shared/ComingSoon";
 
-export const Route = createFileRoute("/application-urls")({
+export const Route = createFileRoute("/_authenticated/application-urls")({
   component: ApplicationUrls,
 });
 

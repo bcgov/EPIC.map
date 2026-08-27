@@ -42,13 +42,11 @@ def cors_preflight(methods):
 
 
 def allowedorigins():
-    """Return allowed origin."""
+    """Return the allowed CORS origins, as a list."""
     _allowedcors = os.getenv('CORS_ORIGIN')
-    allowedcors = []
-    if _allowedcors and ',' in _allowedcors:
-        for entry in re.split(',', _allowedcors):
-            allowedcors.append(entry)
-    return allowedcors
+    if not _allowedcors:
+        return []
+    return [entry.strip() for entry in _allowedcors.split(',') if entry.strip()]
 
 
 class Singleton(type):

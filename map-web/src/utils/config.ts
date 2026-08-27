@@ -41,5 +41,18 @@ export const OidcConfig = {
   redirect_uri: `${APP_URL}/oidc-callback`,
   post_logout_redirect_uri: `${APP_URL}/`,
   scope: "openid profile email",
+  response_type: "code",
+  // Renewal is driven explicitly from the accessTokenExpiring event in
+  // router.tsx, so that a failure to renew can be turned into a visible
+  // "session expired" screen rather than a silent 401 on the next request.
+  automaticSilentRenew: false,
   revokeTokensOnSignout: true,
+  // Skip Keycloak's identity provider chooser and go straight to IDIR. EPIC.map
+  // is a staff application; there is no second provider to choose.
+  extraQueryParams: {
+    kc_idp_hint: "idir",
+  },
 };
+
+/** Where to send the user after sign in, remembered across the IDIR redirect. */
+export const REDIRECT_URL_STORAGE_KEY = "redirectUrl";

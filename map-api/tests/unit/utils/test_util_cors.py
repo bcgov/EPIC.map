@@ -18,7 +18,7 @@ Test-Suite to ensure that the CORS decorator is working as expected.
 """
 import pytest
 
-from map_api.utils.util import cors_preflight
+from map_api.utils.util import allowedorigins, cors_preflight
 
 
 TEST_CORS_METHODS_DATA = [
@@ -42,3 +42,29 @@ def test_cors_preflight_post(methods):
     rv = TestCors().options()  # pylint: disable=no-member
     assert rv[2]['Access-Control-Allow-Origin'] == '*'
     assert rv[2]['Access-Control-Allow-Methods'] == methods
+
+
+TEST_CORS_ORIGIN_DATA = [
+    (None, []),
+    ('', []),
+    ('http://localhost:5173', ['http://localhost:5173']),
+    (
+        'http://localhost:5173,http://localhost:3000',
+        ['http://localhost:5173', 'http://localhost:3000'],
+    ),
+    (
+        ' http://localhost:5173 , http://localhost:3000 ',
+        ['http://localhost:5173', 'http://localhost:3000'],
+    ),
+]
+
+
+@pytest.mark.parametrize('cors_origin,expected', TEST_CORS_ORIGIN_DATA)
+def test_allowedorigins(monkeypatch, cors_origin, expected):
+    """Assert the origins are parsed, a single origin included."""
+    if cors_origin is None:
+        monkeypatch.delenv('CORS_ORIGIN', raising=False)
+    else:
+        monkeypatch.setenv('CORS_ORIGIN', cors_origin)
+
+    assert allowedorigins() == expected

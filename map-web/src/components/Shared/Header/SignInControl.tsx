@@ -6,6 +6,7 @@ import { BCDesignTokens } from "epic.theme";
 import { useAuth } from "react-oidc-context";
 import UserProfileMenu from "@/components/Shared/Header/UserProfileMenu";
 import { theme } from "@/styles/theme";
+import { REDIRECT_URL_STORAGE_KEY } from "@/utils/config";
 
 /** Sign in button / signed in user control shown at the right of the app bar. */
 export default function SignInControl() {
@@ -19,6 +20,11 @@ export default function SignInControl() {
       setProfileMenuAnchorEl(event.currentTarget);
       return;
     }
+    // Come back to the page they signed in from, not to the launchpad.
+    window.sessionStorage.setItem(
+      REDIRECT_URL_STORAGE_KEY,
+      window.location.pathname + window.location.search,
+    );
     auth.signinRedirect();
   };
 

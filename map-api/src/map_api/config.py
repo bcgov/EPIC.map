@@ -100,6 +100,16 @@ class _Config():  # pylint: disable=too-few-public-methods
     JWT_OIDC_AUDIENCE = os.getenv('JWT_OIDC_AUDIENCE', 'account')
     JWT_OIDC_CACHING_ENABLED = os.getenv('JWT_OIDC_CACHING_ENABLED', 'True')
     JWT_OIDC_JWKS_CACHE_TIMEOUT = 300
+    # The keycloak client this API's tokens are issued to. Roles are read from
+    # resource_access[<this client>] rather than from the realm, which is shared
+    # with the other EPIC applications.
+    JWT_OIDC_CLIENT_ID = os.getenv('JWT_OIDC_CLIENT_ID', 'epic-map')
+
+    # The keycloak group a token must carry to reach this API. Left unset until
+    # the realm has a group for EPIC.map: while it is empty any valid IDIR token
+    # from the realm is accepted, which includes staff who only work in the
+    # other EPIC applications. Set it to 'MAP' once the group exists.
+    AUTH_REQUIRED_GROUP = os.getenv('AUTH_REQUIRED_GROUP', '')
 
     # Service account details
     KEYCLOAK_BASE_URL = os.getenv('KEYCLOAK_BASE_URL')
@@ -147,9 +157,95 @@ class TestConfig(_Config):  # pylint: disable=too-few-public-methods
     JWT_OIDC_TEST_AUDIENCE = os.getenv('JWT_OIDC_TEST_AUDIENCE')
     JWT_OIDC_TEST_CLIENT_SECRET = os.getenv('JWT_OIDC_TEST_CLIENT_SECRET')
     JWT_OIDC_TEST_ISSUER = os.getenv('JWT_OIDC_TEST_ISSUER')
-    JWT_OIDC_WELL_KNOWN_CONFIG = os.getenv('JWT_OIDC_WELL_KNOWN_CONFIG')
+    JWT_OIDC_WELL_KNOWN_CONFIG = os.getenv('JWT_OIDC_TEST_WELL_KNOWN_CONFIG')
     JWT_OIDC_TEST_ALGORITHMS = os.getenv('JWT_OIDC_TEST_ALGORITHMS')
     JWT_OIDC_TEST_JWKS_URI = os.getenv('JWT_OIDC_TEST_JWKS_URI', default=None)
+
+    # Test-only keypair. The suite signs tokens with the private half and
+    # flask-jwt-oidc verifies them against the public half, so the tests never
+    # reach a real identity provider. Not used outside 'testing'.
+    JWT_OIDC_TEST_KEYS = {
+        "keys": [
+            {
+                "kid": "epic-map",
+                "kty": "RSA",
+                "alg": "RS256",
+                "use": "sig",
+                "n": "0myhfJEqlME4UAw4Gc0oe2XDjhWNbWeHv2jBVTiQUoPswKymRRugN7GU0oHXdZ_qsUEXX3HdXsi"
+                     "ntWcWWqVrHZL48Ol3KN6IbM5HQSUZZRvm2f1gFxRjKlTS1xmpLxKGmNr97khvLh8ilDyJyJQTMf"
+                     "bV9JtR88yyUBpJcAyVPwDZVEB_BG2q1iAKXWKHXWvHR0w3zKmWzOlhlG5H9L4xXjWcVjAKdjC4h"
+                     "BsIUioyvX3xL9u4mlYjFI3jh5tZ0Ws6Ti1DE_ONZ9g0Z-8OLRJ7LWro1ofy4ueh4pJBfWGf9xBO"
+                     "hpElpt4mA2CjJB8ZWRAdBXBnUi_YZTmTMPStcoXQRw",
+                "e": "AQAB",
+            }
+        ]
+    }
+
+    JWT_OIDC_TEST_PRIVATE_KEY_JWKS = {
+        "keys": [
+            {
+                "kid": "epic-map",
+                "kty": "RSA",
+                "alg": "RS256",
+                "use": "sig",
+                "n": "0myhfJEqlME4UAw4Gc0oe2XDjhWNbWeHv2jBVTiQUoPswKymRRugN7GU0oHXdZ_qsUEXX3HdXsi"
+                     "ntWcWWqVrHZL48Ol3KN6IbM5HQSUZZRvm2f1gFxRjKlTS1xmpLxKGmNr97khvLh8ilDyJyJQTMf"
+                     "bV9JtR88yyUBpJcAyVPwDZVEB_BG2q1iAKXWKHXWvHR0w3zKmWzOlhlG5H9L4xXjWcVjAKdjC4h"
+                     "BsIUioyvX3xL9u4mlYjFI3jh5tZ0Ws6Ti1DE_ONZ9g0Z-8OLRJ7LWro1ofy4ueh4pJBfWGf9xBO"
+                     "hpElpt4mA2CjJB8ZWRAdBXBnUi_YZTmTMPStcoXQRw",
+                "e": "AQAB",
+                "d": "WyNDujEhsTYSztDMB5jNHM0Rqtt42tbJe8TCX8fU8nhDNZxRk4MInLakT5x_FmoB-23G0sb9a00"
+                     "bHj2c9_vHbhK3EZj8zE295updAEEyQ5GXJflRAg4JeU8t1o49sa6jb1cCPo9O4DoJ_wxNXPuNaM"
+                     "mRF5WiJCcXYAxSnF5G0fchRnHXZ79ePaW2v6i-8YSb5nJSvaSt1Wdthkrk3W-8-ZMMtU9jfa1x0"
+                     "x4ShWIP5YMX8dunIQzzb645ydaYLjLvlCJ7MVNaTO5FOai7kcPvS2FFapqry5sWOD4Jn85apztQ"
+                     "g6e4GfJghHhRip7TO__50tIqf3XY4u0SBqrvACT8oQ",
+                "p": "_kZx0MGBK9rWLue_zn2gyXvl1_Jv3VEFzC-z6PRZFOrDXEjSoAFdKtKmflFE6knKJ2Jbs-Tn51X"
+                     "9lvJI1hmBHubVPCYHGdPUIUJoDuEqiNCdA05UWi9q1sexytsPiMYs75uhrLAoDeIbHG6C5XwAha"
+                     "4bhl74rhoNI7XbbGOS7bc",
+                "q": "09oJwWmCLEUEm2LhiHMaEJt7Eixkdeerv59K6i1rrqJ4aFO_Q1vqujbTrqJKq543nNgeb0BEGhk"
+                     "wJ2zQsnJqCErH1vynz_lGPqLYOAwxPgu83vC8_GuG8z6yhcmB_EztlRgeJbIZweJUnVjm8W6oxy"
+                     "SS1debDgol6ACIahfsMfE",
+                "dp": "EHZZGg3dIgy5_zFr3p-NkF3gJJoCmg6L1ItmF3fyaINGgKwKTuens4UN2HHEh3Kdju00SLJSPU"
+                      "z47RPkmU_vZyPEvG8t2IM5Yand-NClI1R2ReeFWI1nWl51aU_DcrR55k1qKzcAcN2pqa6R9O-R"
+                      "TRZXm9x8NzFilmRIv3y234M",
+                "dq": "X1gW4eQRQMlDHIexBw7-YREIn5I5GFNOmawgNCqC9xKJ7DIctz0L9Aiu1j6WKozHbKBbeihLPg"
+                      "-t-2BewKD7lYXKULhe8hu3AIObmgXqt4ji1Nc1xsjB8IF8KPgatykMF_jFwKNaMkchW7tiHLB3"
+                      "50BPkUw6rWPl0XdD7bOcipE",
+                "qi": "4Q_qTHiIyxaKc2_m9XICSup1uYojQsMLR_DAGvMCKohZXSl9gCEikeNY2Ra6umy0EclhAWB9m0"
+                      "Cu1XtLF7xLRakXJw6-mgnx9iU37COznQSZfhHw3Zd9dPYfJPixKn95nTUx3V4fUr4hEs2imtHn"
+                      "_wFQT5TYh0DDeJ-weuJU1W0",
+            }
+        ]
+    }
+
+    JWT_OIDC_TEST_PRIVATE_KEY_PEM = """-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDSbKF8kSqUwThQ
+DDgZzSh7ZcOOFY1tZ4e/aMFVOJBSg+zArKZFG6A3sZTSgdd1n+qxQRdfcd1eyKe1
+ZxZapWsdkvjw6Xco3ohszkdBJRllG+bZ/WAXFGMqVNLXGakvEoaY2v3uSG8uHyKU
+PInIlBMx9tX0m1HzzLJQGklwDJU/ANlUQH8EbarWIApdYodda8dHTDfMqZbM6WGU
+bkf0vjFeNZxWMAp2MLiEGwhSKjK9ffEv27iaViMUjeOHm1nRazpOLUMT841n2DRn
+7w4tEnstaujWh/Li56HikkF9YZ/3EE6GkSWm3iYDYKMkHxlZEB0FcGdSL9hlOZMw
+9K1yhdBHAgMBAAECggEAWyNDujEhsTYSztDMB5jNHM0Rqtt42tbJe8TCX8fU8nhD
+NZxRk4MInLakT5x/FmoB+23G0sb9a00bHj2c9/vHbhK3EZj8zE295updAEEyQ5GX
+JflRAg4JeU8t1o49sa6jb1cCPo9O4DoJ/wxNXPuNaMmRF5WiJCcXYAxSnF5G0fch
+RnHXZ79ePaW2v6i+8YSb5nJSvaSt1Wdthkrk3W+8+ZMMtU9jfa1x0x4ShWIP5YMX
+8dunIQzzb645ydaYLjLvlCJ7MVNaTO5FOai7kcPvS2FFapqry5sWOD4Jn85apztQ
+g6e4GfJghHhRip7TO//50tIqf3XY4u0SBqrvACT8oQKBgQD+RnHQwYEr2tYu57/O
+faDJe+XX8m/dUQXML7Po9FkU6sNcSNKgAV0q0qZ+UUTqSconYluz5OfnVf2W8kjW
+GYEe5tU8JgcZ09QhQmgO4SqI0J0DTlRaL2rWx7HK2w+Ixizvm6GssCgN4hscboLl
+fACFrhuGXviuGg0jtdtsY5LttwKBgQDT2gnBaYIsRQSbYuGIcxoQm3sSLGR156u/
+n0rqLWuuonhoU79DW+q6NtOuokqrnjec2B5vQEQaGTAnbNCycmoISsfW/KfP+UY+
+otg4DDE+C7ze8Lz8a4bzPrKFyYH8TO2VGB4lshnB4lSdWObxbqjHJJLV15sOCiXo
+AIhqF+wx8QKBgBB2WRoN3SIMuf8xa96fjZBd4CSaApoOi9SLZhd38miDRoCsCk7n
+p7OFDdhxxIdynY7tNEiyUj1M+O0T5JlP72cjxLxvLdiDOWGp3fjQpSNUdkXnhViN
+Z1pedWlPw3K0eeZNais3AHDdqamukfTvkU0WV5vcfDcxYpZkSL98tt+DAoGAX1gW
+4eQRQMlDHIexBw7+YREIn5I5GFNOmawgNCqC9xKJ7DIctz0L9Aiu1j6WKozHbKBb
+eihLPg+t+2BewKD7lYXKULhe8hu3AIObmgXqt4ji1Nc1xsjB8IF8KPgatykMF/jF
+wKNaMkchW7tiHLB350BPkUw6rWPl0XdD7bOcipECgYEA4Q/qTHiIyxaKc2/m9XIC
+Sup1uYojQsMLR/DAGvMCKohZXSl9gCEikeNY2Ra6umy0EclhAWB9m0Cu1XtLF7xL
+RakXJw6+mgnx9iU37COznQSZfhHw3Zd9dPYfJPixKn95nTUx3V4fUr4hEs2imtHn
+/wFQT5TYh0DDeJ+weuJU1W0=
+-----END PRIVATE KEY-----"""
 
 
 class DockerConfig(_Config):  # pylint: disable=too-few-public-methods

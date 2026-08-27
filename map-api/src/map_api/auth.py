@@ -17,6 +17,9 @@ from functools import wraps
 from flask import g, request
 from flask_jwt_oidc import JwtManager
 
+from map_api.exceptions import PermissionDeniedError
+from map_api.utils.constant import GROUP_MAP
+
 jwt = (
     JwtManager()
 )  # pylint: disable=invalid-name; lower case name as used by convention in most Flask apps
@@ -38,6 +41,46 @@ class Auth:  # pylint: disable=too-few-public-methods
             return f(*args, **kwargs)
 
         return decorated
+
+    @classmethod
+    def has_one_of_roles(cls, permissions):
+        """Check that at least one of the given permissions is granted by the token.
+
+        Args:
+            permissions [PermissionEnum,]: permissions, any one of which allows the call
+        """
+
+        def decorated(f):
+            @Auth.require
+            @wraps(f)
+            def wrapper(*args, **kwargs):
+                mapped_permissions = Auth.map_permission_to_groups(permissions)
+                if jwt.contains_role(roles=mapped_permissions):
+                    return f(*args, **kwargs)
+
+                raise PermissionDeniedError(
+                    "You don't have permission to perform this operation."
+                )
+
+            return wrapper
+
+        return decorated
+
+    @classmethod
+    def has_role(cls, role):
+        """Validate the role."""
+        return jwt.validate_roles(required_roles=role)
+
+    @classmethod
+    def has_permission(cls, permissions):
+        """Check to see if the user has the right permissions."""
+        mapped_permissions = Auth.map_permission_to_groups(permissions)
+        return jwt.contains_role(roles=mapped_permissions)
+
+    @staticmethod
+    def map_permission_to_groups(permissions):
+        """Map the permissions to the client roles configured in keycloak."""
+        return [GROUP_MAP[permission] for permission in permissions]
 
 
 auth = (

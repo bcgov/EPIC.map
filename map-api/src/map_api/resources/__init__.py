@@ -32,7 +32,7 @@ from .ops import API as OPS_API
 from .user import API as USER_API
 
 
-__all__ = ("API_BLUEPRINT", "OPS_BLUEPRINT")
+__all__ = ("API_BLUEPRINT", "DOC_PATHS", "DOCS_ENABLED", "OPS_BLUEPRINT", "URL_PREFIX")
 
 URL_PREFIX = "/api/"
 API_BLUEPRINT = Blueprint("API", __name__, url_prefix=URL_PREFIX)
@@ -65,6 +65,10 @@ authorizations = {
 # /swagger.json unless add_specs is also turned off, so both are needed to stop
 # the spec being served.
 DOCS_ENABLED = os.getenv("FLASK_ENV", "development") not in PRODUCTION_LIKE_ENVIRONMENTS
+
+# The two doc routes, spelled the way request.path reports them, so the
+# authentication hook can let them through where they are registered.
+DOC_PATHS = frozenset({URL_PREFIX.rstrip("/"), f"{URL_PREFIX}swagger.json"})
 
 API = Api(
     title="MAP API",

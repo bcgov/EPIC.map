@@ -78,9 +78,43 @@ Routes are files under `src/routes` — adding a file adds a route, and the Vite
 `src/routeTree.gen.ts` on dev/build. The root route (`__root.tsx`) wraps every page in `AppLayout`.
 Left navigation entries live in `src/components/Shared/SideNav/navItems.ts`.
 
-Current routes: `/` (Launchpad), `/request-access`, `/application-urls`, `/map`, `/oidc-callback`.
-Everything except the map page is a `ComingSoon` placeholder, and the map page renders a container
-that will hold the map.
+Current routes: `/` (Launchpad), `/request-access`, `/oidc-callback`, `/session-expired`, and -
+behind the sign-in guard - `/application-urls` and `/map`. Everything except the map page is a
+`ComingSoon` placeholder, and the map page renders a container that will hold the map.
+
+Pages that require a signed-in user are files under `src/routes/_authenticated/`. The leading
+underscore makes `_authenticated.tsx` a layout route: it wraps its children with the guard without
+adding a path segment, so `src/routes/_authenticated/map.tsx` is still served at `/map`.
+
+## Authentication
+
+Sign-in is IDIR, through Keycloak on the BC Gov login proxy, using
+[`react-oidc-context`](https://github.com/authts/react-oidc-context). `OidcConfig` in
+`src/utils/config.ts` sets `kc_idp_hint: "idir"`, so the user goes straight to the IDIR login form
+rather than the provider chooser.
+
+The flow:
+
+1. A route under `src/routes/_authenticated/` renders `_authenticated.tsx`, which stores where the
+   user was headed in `sessionStorage` and calls `signinRedirect()`.
+2. Keycloak returns to `/oidc-callback`, which waits for the session and then for
+   `GET /users/me` - the call that provisions the user's record on the API side - before sending
+   them on to the page they originally asked for.
+3. `useCurrentUser` (`src/hooks/useAuthorization.tsx`) holds that profile, including the
+   `permissions` the API reports. Gate UI on `useHasPermission([...])` rather than decoding the
+   token in the browser: the API reads permissions from a token it has already verified.
+
+The role model is still to be decided, so today the API reports every signed-in user as `User`
+regardless of what their token carries — `useHasPermission([Permission.USER])` is true for
+everyone. It is wired up so that gating UI on it now keeps working unchanged once real roles exist.
+
+A user who signs in successfully but has no access to EPIC.map gets the `Unauthorized` screen
+instead of the page - the API answers `GET /users/me` with a 403, and the guard renders that rather
+than an empty page or a redirect loop.
+
+Access tokens are renewed from the `accessTokenExpiring` event in `src/router.tsx` rather than by
+`automaticSilentRenew`, so that a failed renewal lands the user on `/session-expired` with a way
+back in, instead of surfacing later as an unexplained 401.
 
 ## Styling
 
