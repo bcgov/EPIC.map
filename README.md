@@ -83,9 +83,16 @@ cd map-web
 Install necessary npm packages:
 npm install
 
-### 3. Run Development Server
+### 3. Configure Environment Variables
+Copy `sample.env` to `.env` and fill in the values. At a minimum set `VITE_API_URL` to the map-api
+url including the `/api` prefix (e.g. `http://localhost:5000/api`).
+
+### 4. Run Development Server
 Launch the development server:
 npm run dev
+
+It serves on http://localhost:3000. The port is fixed so that it matches the `CORS_ORIGIN` list the
+api allows. See `map-web/README.md` for the full front end documentation.
 
 # Helm
 In openshift, you should have namespaces as such:
