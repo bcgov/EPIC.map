@@ -1,7 +1,7 @@
-import { Avatar, Box, Menu, MenuItem, Typography } from "@mui/material";
+import { Box, Menu, MenuItem, Typography } from "@mui/material";
 import { BCDesignTokens } from "epic.theme";
-import { theme } from "@/styles/theme";
 import { useAuth } from "react-oidc-context";
+import UserInitialBadge from "./UserInitialBadge";
 
 type UserProfileMenuProps = {
   anchorEl: HTMLElement | null;
@@ -9,10 +9,11 @@ type UserProfileMenuProps = {
 };
 
 /** Details of the signed in user, opened from the app bar. */
-export default function UserProfileMenu({ anchorEl, handleClose }: UserProfileMenuProps) {
+export default function UserProfileMenu({
+  anchorEl,
+  handleClose,
+}: UserProfileMenuProps) {
   const { user, signoutRedirect } = useAuth();
-
-  const userInitials = `${user?.profile?.given_name?.charAt(0) ?? ""}${user?.profile?.family_name?.charAt(0) ?? ""}`;
 
   return (
     <Menu
@@ -40,23 +41,11 @@ export default function UserProfileMenu({ anchorEl, handleClose }: UserProfileMe
             alignItems: "center",
           }}
         >
-          <Avatar
-            sx={{
-              bgcolor: theme.palette.primary.main,
-              width: "2rem",
-              height: "2rem",
-            }}
+          <UserInitialBadge />
+          <Typography
+            variant="body2"
+            fontWeight={BCDesignTokens.typographyFontWeightsBold}
           >
-            <Typography
-              variant="body2"
-              fontWeight={BCDesignTokens.typographyFontWeightsBold}
-              color={theme.palette.primary.contrastText}
-              aria-label="user-initials"
-            >
-              {userInitials}
-            </Typography>
-          </Avatar>
-          <Typography variant="body2" fontWeight={BCDesignTokens.typographyFontWeightsBold}>
             {user?.profile?.name}
           </Typography>
         </Box>
@@ -68,7 +57,10 @@ export default function UserProfileMenu({ anchorEl, handleClose }: UserProfileMe
             flexDirection: "column",
           }}
         >
-          <Typography variant="body2" fontWeight={BCDesignTokens.typographyFontWeightsBold}>
+          <Typography
+            variant="body2"
+            fontWeight={BCDesignTokens.typographyFontWeightsBold}
+          >
             Contact
           </Typography>
           <Typography variant="body2" color={BCDesignTokens.themeBlue90}>
@@ -85,7 +77,10 @@ export default function UserProfileMenu({ anchorEl, handleClose }: UserProfileMe
             borderTop: `1px solid ${BCDesignTokens.surfaceColorBorderDefault}`,
           }}
         >
-          <Typography variant="body2" color={BCDesignTokens.typographyColorLink}>
+          <Typography
+            variant="body2"
+            color={BCDesignTokens.typographyColorLink}
+          >
             Sign Out
           </Typography>
         </MenuItem>
