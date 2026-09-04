@@ -69,20 +69,56 @@ def test_groups_are_not_consulted_when_no_group_is_required(app, groups):
         assert token_utils.belongs_to_app(idir_claims(groups=groups)) is True
 
 
-def test_roles_are_read_from_this_apps_client(app):
-    """A role granted by another EPIC app's client must not carry over."""
-    claims = idir_claims(
-        resource_access={
-            'epic-compliance': {'roles': ['admin']},
-            app.config['JWT_OIDC_CLIENT_ID']: {'roles': ['user']},
-        }
-    )
+ALLOWLIST = ['compliance-web', 'submit-web', 'track-web', 'map-web']
 
+
+@pytest.mark.parametrize('client', ALLOWLIST)
+def test_a_token_from_any_allowed_client_is_accepted(app, client):
+    """Each EPIC application has its own keycloak client; all of them may call."""
     with app.app_context():
-        assert token_utils.roles(claims) == ['user']
+        app.config['ALLOWED_CLIENT_IDS'] = ALLOWLIST
+        assert token_utils.is_allowed_client(idir_claims(azp=client)) is True
 
 
-def test_missing_resource_access_yields_no_roles(app):
-    """A token with no client roles is not an error, just no permissions."""
+def test_the_audience_claim_is_accepted_as_well_as_azp(app):
+    """A deployment that puts the client in aud rather than azp still works."""
     with app.app_context():
-        assert token_utils.roles(idir_claims(resource_access={})) == []
+        app.config['ALLOWED_CLIENT_IDS'] = ALLOWLIST
+        claims = idir_claims(aud='track-web', azp='something-else')
+
+        assert token_utils.is_allowed_client(claims) is True
+
+
+def test_an_audience_list_is_searched_not_compared(app):
+    """`aud` may be a list; any entry on the allowlist is enough."""
+    with app.app_context():
+        app.config['ALLOWED_CLIENT_IDS'] = ALLOWLIST
+        claims = idir_claims(aud=['account', 'submit-web'], azp='unlisted')
+
+        assert token_utils.is_allowed_client(claims) is True
+
+
+def test_a_token_from_an_unlisted_client_is_refused(app):
+    """A client in the shared realm that this API does not serve is not a caller."""
+    with app.app_context():
+        app.config['ALLOWED_CLIENT_IDS'] = ALLOWLIST
+        claims = idir_claims(aud='account', azp='some-other-realm-client')
+
+        assert token_utils.is_allowed_client(claims) is False
+
+
+def test_an_empty_allowlist_denies_everything(app):
+    """A misconfigured deployment must stop serving, not serve everyone."""
+    with app.app_context():
+        app.config['ALLOWED_CLIENT_IDS'] = []
+
+        assert token_utils.is_allowed_client(idir_claims()) is False
+
+
+def test_a_single_entry_allowlist_behaves_like_one_audience(app):
+    """The shape this collapses to once a dedicated api scope exists."""
+    with app.app_context():
+        app.config['ALLOWED_CLIENT_IDS'] = ['epic-map-api']
+
+        assert token_utils.is_allowed_client(idir_claims(aud='epic-map-api')) is True
+        assert token_utils.is_allowed_client(idir_claims(azp='map-web')) is False

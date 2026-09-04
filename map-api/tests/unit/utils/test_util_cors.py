@@ -18,7 +18,7 @@ Test-Suite to ensure that the CORS decorator is working as expected.
 """
 import pytest
 
-from map_api.utils.util import allowedorigins, cors_preflight
+from map_api.utils.util import allowedorigins, cors_preflight, parse_csv
 
 
 TEST_CORS_METHODS_DATA = [
@@ -68,3 +68,48 @@ def test_allowedorigins(monkeypatch, cors_origin, expected):
         monkeypatch.setenv('CORS_ORIGIN', cors_origin)
 
     assert allowedorigins() == expected
+
+
+TEST_PARSE_CSV_DATA = [
+    (None, []),
+    ('', []),
+    ('map-web', ['map-web']),
+    ('compliance-web,submit-web', ['compliance-web', 'submit-web']),
+    (' compliance-web , submit-web ', ['compliance-web', 'submit-web']),
+    ('compliance-web,,submit-web,', ['compliance-web', 'submit-web']),
+]
+
+
+@pytest.mark.parametrize('value,expected', TEST_PARSE_CSV_DATA)
+def test_parse_csv(value, expected):
+    """Blank entries are dropped: in an allowlist they would be a hole."""
+    assert parse_csv(value) == expected
+
+
+def test_a_configured_origin_is_allowed(app, client):
+    """The API answers browsers from the origins its environment names."""
+    origin = app.config['CORS_ORIGINS'][0]
+
+    response = client.get('/ops/healthz', headers={'Origin': origin})
+
+    assert response.headers.get('Access-Control-Allow-Origin') == origin
+
+
+def test_an_unconfigured_origin_is_not_allowed(client):
+    """An origin outside the list gets no CORS header, so the browser blocks it."""
+    response = client.get('/ops/healthz', headers={'Origin': 'https://evil.example'})
+
+    assert 'Access-Control-Allow-Origin' not in response.headers
+
+
+def test_credentials_are_not_enabled(app, client):
+    """Callers send a bearer token, never a cookie.
+
+    Advertising credentialed CORS would ask browsers to attach ambient cookies
+    to cross-origin calls, which this API neither needs nor reads.
+    """
+    origin = app.config['CORS_ORIGINS'][0]
+
+    response = client.get('/ops/healthz', headers={'Origin': origin})
+
+    assert 'Access-Control-Allow-Credentials' not in response.headers

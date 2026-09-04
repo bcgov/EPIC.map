@@ -12,22 +12,15 @@
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as SessionExpiredImport } from './routes/session-expired'
-import { Route as RequestAccessImport } from './routes/request-access'
 import { Route as OidcCallbackImport } from './routes/oidc-callback'
 import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as IndexImport } from './routes/index'
 import { Route as AuthenticatedMapImport } from './routes/_authenticated/map'
-import { Route as AuthenticatedApplicationUrlsImport } from './routes/_authenticated/application-urls'
 
 // Create/Update Routes
 
 const SessionExpiredRoute = SessionExpiredImport.update({
   path: '/session-expired',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const RequestAccessRoute = RequestAccessImport.update({
-  path: '/request-access',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -50,12 +43,6 @@ const AuthenticatedMapRoute = AuthenticatedMapImport.update({
   path: '/map',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-
-const AuthenticatedApplicationUrlsRoute =
-  AuthenticatedApplicationUrlsImport.update({
-    path: '/application-urls',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 
 // Populate the FileRoutesByPath interface
 
@@ -82,26 +69,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OidcCallbackImport
       parentRoute: typeof rootRoute
     }
-    '/request-access': {
-      id: '/request-access'
-      path: '/request-access'
-      fullPath: '/request-access'
-      preLoaderRoute: typeof RequestAccessImport
-      parentRoute: typeof rootRoute
-    }
     '/session-expired': {
       id: '/session-expired'
       path: '/session-expired'
       fullPath: '/session-expired'
       preLoaderRoute: typeof SessionExpiredImport
       parentRoute: typeof rootRoute
-    }
-    '/_authenticated/application-urls': {
-      id: '/_authenticated/application-urls'
-      path: '/application-urls'
-      fullPath: '/application-urls'
-      preLoaderRoute: typeof AuthenticatedApplicationUrlsImport
-      parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/map': {
       id: '/_authenticated/map'
@@ -117,12 +90,8 @@ declare module '@tanstack/react-router' {
 
 export const routeTree = rootRoute.addChildren({
   IndexRoute,
-  AuthenticatedRoute: AuthenticatedRoute.addChildren({
-    AuthenticatedApplicationUrlsRoute,
-    AuthenticatedMapRoute,
-  }),
+  AuthenticatedRoute: AuthenticatedRoute.addChildren({ AuthenticatedMapRoute }),
   OidcCallbackRoute,
-  RequestAccessRoute,
   SessionExpiredRoute,
 })
 
@@ -137,7 +106,6 @@ export const routeTree = rootRoute.addChildren({
         "/",
         "/_authenticated",
         "/oidc-callback",
-        "/request-access",
         "/session-expired"
       ]
     },
@@ -147,22 +115,14 @@ export const routeTree = rootRoute.addChildren({
     "/_authenticated": {
       "filePath": "_authenticated.tsx",
       "children": [
-        "/_authenticated/application-urls",
         "/_authenticated/map"
       ]
     },
     "/oidc-callback": {
       "filePath": "oidc-callback.tsx"
     },
-    "/request-access": {
-      "filePath": "request-access.tsx"
-    },
     "/session-expired": {
       "filePath": "session-expired.tsx"
-    },
-    "/_authenticated/application-urls": {
-      "filePath": "_authenticated/application-urls.tsx",
-      "parent": "/_authenticated"
     },
     "/_authenticated/map": {
       "filePath": "_authenticated/map.tsx",

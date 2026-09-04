@@ -1,7 +1,7 @@
 .PHONY: license
 .PHONY: setup
 .PHONY: ci cd
-.PHONY: db run
+.PHONY: db run debug
 
 MKFILE_PATH:=$(abspath $(lastword $(MAKEFILE_LIST)))
 CURRENT_ABS_DIR:=$(patsubst %/,%,$(dir $(MKFILE_PATH)))
@@ -140,6 +140,13 @@ tag: push ## tag image
 #################################################################################
 run: db ## Run the project in local
 	. venv/bin/activate && python -m flask run -p 5000
+
+# --debug turns on the reloader; FLASK_ENV=development in .env does not,
+# because Flask dropped that variable in 2.3 and this project runs Flask 3.
+# Migrations are deliberately not run here, unlike `run`, so the server
+# still starts when Postgres is down.
+debug: ## Run the project in local with auto-reload
+	. venv/bin/activate && python -m flask run --debug -p 5000
 
 db: ## Update the local database
 	. venv/bin/activate && flask db upgrade

@@ -1,0 +1,24 @@
+{
+  "name": "epic-map-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Monorepo for the EPIC.map API, the publishable map component and its development host.",
+  "license": "Apache-2.0",
+  "workspaces": [
+    "packages/*",
+    "map-web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace map-web",
+    "dev:widget-source": "npm run dev:source --workspace map-web",
+    "dev:widget-watch": "npm run dev --workspace @bcgov/epic-map",
+    "build": "npm run build --workspace map-web",
+    "lint": "npm run lint --workspace map-web",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release-check": "changeset status --since=origin/main"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.1"
+  }
+}

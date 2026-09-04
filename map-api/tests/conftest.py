@@ -16,7 +16,8 @@ from random import random
 
 import pytest
 from flask_migrate import Migrate, upgrade
-from sqlalchemy import event, text
+from sqlalchemy import text
+from sqlalchemy.orm import scoped_session, sessionmaker
 
 from map_api import create_app, setup_jwt_manager
 from map_api.auth import jwt as _jwt
@@ -65,14 +66,19 @@ def db(app):  # pylint: disable=redefined-outer-name, invalid-name
     Drops schema, and recreate.
     """
     with app.app_context():
-        drop_schema_sql = """DROP SCHEMA public CASCADE;
+        # The app schema is dropped too: migrations create app.audit_events
+        # unconditionally, so leaving it behind makes a second run fail on
+        # "relation already exists" rather than starting from a clean database.
+        drop_schema_sql = """DROP SCHEMA IF EXISTS app CASCADE;
+                             DROP SCHEMA public CASCADE;
                              CREATE SCHEMA public;
-                             GRANT ALL ON SCHEMA public TO postgres;
+                             GRANT ALL ON SCHEMA public TO CURRENT_USER;
                              GRANT ALL ON SCHEMA public TO public;
                           """
 
         sess = _db.session()
-        sess.execute(drop_schema_sql)
+        # text() is required: SQLAlchemy 2.x refuses a bare string here.
+        sess.execute(text(drop_schema_sql))
         sess.commit()
 
         # ############################################
@@ -92,38 +98,32 @@ def db(app):  # pylint: disable=redefined-outer-name, invalid-name
 
 @pytest.fixture(scope='function')
 def session(app, db):  # pylint: disable=redefined-outer-name, invalid-name
-    """Return a function-scoped session."""
+    """Return a function-scoped session whose writes are rolled back after the test.
+
+    Rewritten for Flask-SQLAlchemy 3.x / SQLAlchemy 2.x, which removed
+    create_scoped_session. `join_transaction_mode="create_savepoint"` makes a
+    commit() inside a test land on a savepoint within the outer transaction, so
+    the rollback below still undoes it - which is what the old
+    after_transaction_end listener was hand-rolling.
+    """
     with app.app_context():
         conn = db.engine.connect()
         txn = conn.begin()
 
-        options = dict(bind=conn, binds={})
-        sess = db.create_scoped_session(options=options)
+        factory = sessionmaker(bind=conn, join_transaction_mode='create_savepoint')
+        sess = scoped_session(factory)
 
-        # establish  a SAVEPOINT just before beginning the test
-        # (http://docs.sqlalchemy.org/en/latest/orm/session_transaction.html#using-savepoint)
-        sess.begin_nested()
-
-        @event.listens_for(sess(), 'after_transaction_end')
-        def restart_savepoint(sess2, trans):  # pylint: disable=unused-variable
-            # Detecting whether this is indeed the nested transaction of the test
-            if trans.nested and not trans._parent.nested:  # pylint: disable=protected-access
-                # Handle where test DOESN'T session.commit(),
-                sess2.expire_all()
-                sess.begin_nested()
-
+        original_session = db.session
         db.session = sess
 
-        sql = text('select 1')
-        sess.execute(sql)
-
-        yield sess
-
-        # Cleanup
-        sess.remove()
-        # This instruction rollsback any commit that were executed in the tests.
-        txn.rollback()
-        conn.close()
+        try:
+            yield sess
+        finally:
+            sess.remove()
+            # Undo anything the test committed.
+            txn.rollback()
+            conn.close()
+            db.session = original_session
 
 
 @pytest.fixture(scope='function')
