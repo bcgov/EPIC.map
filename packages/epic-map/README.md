@@ -188,7 +188,10 @@ Deliberate omissions. Each one is your application's job:
   `localStorage`, `sessionStorage` or cookies, and never redirects to a login page:
   it renders inside your tab, and navigating away would destroy your page state. It
   calls `getAccessToken()`, and on failure calls `onError` with `kind: "auth"`. What
-  that means for the user is your decision.
+  that means for the user is your decision. It does read the `name` and
+  `preferred_username` claims out of that token to display who is signed in — the
+  payload is decoded, never verified, and never used for an authorisation
+  decision, which is map-api's job.
 - **No routing.** No router is imported and none is assumed. The widget does not
   read or write the URL. If you want map state in the URL, drive it through props.
 - **No theme of its own.** No `ThemeProvider` is created and `epic.theme` is never

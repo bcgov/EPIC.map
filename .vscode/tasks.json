@@ -20,6 +20,11 @@
     }
   },
 
+  // `presentation.close` makes each terminal disappear when its task exits, so
+  // stopping the stack leaves no dead panes behind. The trade-off: a task that
+  // dies on startup takes its error message with it. If a dev server refuses to
+  // come up and you never see why, drop `"close": true` from that task and run
+  // it again.
   "tasks": [
     {
       "label": "dev",
@@ -35,7 +40,7 @@
       "command": "npm run dev",
       "options": { "cwd": "${workspaceFolder}/map-web" },
       "isBackground": true,
-      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always" },
+      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always", "close": true },
       "problemMatcher": []
     },
     {
@@ -44,7 +49,19 @@
       "command": "make debug",
       "options": { "cwd": "${workspaceFolder}/map-api" },
       "isBackground": true,
-      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always" },
+      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always", "close": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "stop",
+      "detail": "Fallback: kill any dev process that outlived its terminal",
+      "type": "shell",
+      // Shift+Alt+B (Tasks: Terminate All Running Tasks) is the normal way to
+      // stop `dev`. VS Code signals the task shell, though, and flask's
+      // reloader child can outlive it and keep holding port 5000. Run this
+      // when a restart complains the port is already in use.
+      "command": "for p in 5173 5000; do lsof -ti tcp:$p -sTCP:LISTEN | while read pid; do kill $pid; done; done; pkill -f 'vite build --watch'; true",
+      "presentation": { "panel": "shared", "reveal": "silent", "clear": true, "close": true },
       "problemMatcher": []
     },
     {
@@ -53,7 +70,7 @@
       "command": "npm run dev",
       "options": { "cwd": "${workspaceFolder}/packages/epic-map" },
       "isBackground": true,
-      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always" },
+      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always", "close": true },
       "problemMatcher": []
     }
   ]
