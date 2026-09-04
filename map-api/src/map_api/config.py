@@ -19,10 +19,13 @@ All modules and lookups get their configuration from the Flask config,
 rather than reading environment variables directly or by accessing this configuration directly.
 """
 
+import base64
 import os
 import sys
+from functools import lru_cache
 
 import redis
+import rsa
 from dotenv import find_dotenv, load_dotenv
 
 from map_api.utils.util import parse_csv
@@ -49,6 +52,47 @@ LOCAL_CORS_ORIGINS = (
 # set in a test run. Named here so the suite does not depend on a developer's
 # .env - see ALLOWED_CLIENT_IDS on _Config for what this list means.
 TEST_ALLOWED_CLIENT_IDS = ('compliance-web', 'submit-web', 'track-web', 'map-web')
+
+# The kid the test suite stamps on the tokens it signs, matching the single key
+# in the generated JWKS below.
+TEST_JWT_KID = 'epic-map'
+
+# Size of the throwaway keypair the test suite signs with. 1024 is deliberate:
+# `rsa` generates in pure Python, where 2048 bits regularly costs ten seconds or
+# more before the first test can run. The key is generated in memory, lives only
+# for the run and guards nothing.
+TEST_JWT_KEY_BITS = 1024
+
+
+def _b64url_uint(value: int) -> str:
+    """Encode an integer the way a JWK encodes one: big-endian, base64url, unpadded."""
+    as_bytes = value.to_bytes((value.bit_length() + 7) // 8, 'big')
+    return base64.urlsafe_b64encode(as_bytes).decode('utf-8').rstrip('=')
+
+
+@lru_cache(maxsize=1)
+def generate_test_jwt_keypair():
+    """Return (private key PEM, public JWKS) for the tokens the test suite signs.
+
+    Generated per process instead of being committed, so no private key material
+    lives in the repository. Cached because a test run builds more than one
+    TestConfig - the app's and the token factory's - and the half that signs has
+    to belong to the same key as the half that verifies.
+    """
+    public_key, private_key = rsa.newkeys(TEST_JWT_KEY_BITS)
+    public_jwks = {
+        'keys': [
+            {
+                'kid': TEST_JWT_KID,
+                'kty': 'RSA',
+                'alg': 'RS256',
+                'use': 'sig',
+                'n': _b64url_uint(public_key.n),
+                'e': _b64url_uint(public_key.e),
+            }
+        ]
+    }
+    return private_key.save_pkcs1().decode('utf-8'), public_jwks
 
 
 def get_named_config(config_name: str = 'development'):
@@ -86,7 +130,8 @@ class _Config():  # pylint: disable=too-few-public-methods
 
     PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
 
-    SECRET_KEY = 'a secret'
+    # Overridden from the environment; ProdConfig refuses to fall back to this.
+    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-only-not-a-secret')
 
     TESTING = False
     DEBUG = False
@@ -215,91 +260,19 @@ class TestConfig(_Config):  # pylint: disable=too-few-public-methods
     JWT_OIDC_TEST_ALGORITHMS = os.getenv('JWT_OIDC_TEST_ALGORITHMS')
     JWT_OIDC_TEST_JWKS_URI = os.getenv('JWT_OIDC_TEST_JWKS_URI', default=None)
 
-    # Test-only keypair. The suite signs tokens with the private half and
-    # flask-jwt-oidc verifies them against the public half, so the tests never
-    # reach a real identity provider. Not used outside 'testing'.
-    JWT_OIDC_TEST_KEYS = {
-        "keys": [
-            {
-                "kid": "epic-map",
-                "kty": "RSA",
-                "alg": "RS256",
-                "use": "sig",
-                "n": "0myhfJEqlME4UAw4Gc0oe2XDjhWNbWeHv2jBVTiQUoPswKymRRugN7GU0oHXdZ_qsUEXX3HdXsi"
-                     "ntWcWWqVrHZL48Ol3KN6IbM5HQSUZZRvm2f1gFxRjKlTS1xmpLxKGmNr97khvLh8ilDyJyJQTMf"
-                     "bV9JtR88yyUBpJcAyVPwDZVEB_BG2q1iAKXWKHXWvHR0w3zKmWzOlhlG5H9L4xXjWcVjAKdjC4h"
-                     "BsIUioyvX3xL9u4mlYjFI3jh5tZ0Ws6Ti1DE_ONZ9g0Z-8OLRJ7LWro1ofy4ueh4pJBfWGf9xBO"
-                     "hpElpt4mA2CjJB8ZWRAdBXBnUi_YZTmTMPStcoXQRw",
-                "e": "AQAB",
-            }
-        ]
-    }
+    def __init__(self):
+        """Generate this run's signing keypair.
 
-    JWT_OIDC_TEST_PRIVATE_KEY_JWKS = {
-        "keys": [
-            {
-                "kid": "epic-map",
-                "kty": "RSA",
-                "alg": "RS256",
-                "use": "sig",
-                "n": "0myhfJEqlME4UAw4Gc0oe2XDjhWNbWeHv2jBVTiQUoPswKymRRugN7GU0oHXdZ_qsUEXX3HdXsi"
-                     "ntWcWWqVrHZL48Ol3KN6IbM5HQSUZZRvm2f1gFxRjKlTS1xmpLxKGmNr97khvLh8ilDyJyJQTMf"
-                     "bV9JtR88yyUBpJcAyVPwDZVEB_BG2q1iAKXWKHXWvHR0w3zKmWzOlhlG5H9L4xXjWcVjAKdjC4h"
-                     "BsIUioyvX3xL9u4mlYjFI3jh5tZ0Ws6Ti1DE_ONZ9g0Z-8OLRJ7LWro1ofy4ueh4pJBfWGf9xBO"
-                     "hpElpt4mA2CjJB8ZWRAdBXBnUi_YZTmTMPStcoXQRw",
-                "e": "AQAB",
-                "d": "WyNDujEhsTYSztDMB5jNHM0Rqtt42tbJe8TCX8fU8nhDNZxRk4MInLakT5x_FmoB-23G0sb9a00"
-                     "bHj2c9_vHbhK3EZj8zE295updAEEyQ5GXJflRAg4JeU8t1o49sa6jb1cCPo9O4DoJ_wxNXPuNaM"
-                     "mRF5WiJCcXYAxSnF5G0fchRnHXZ79ePaW2v6i-8YSb5nJSvaSt1Wdthkrk3W-8-ZMMtU9jfa1x0"
-                     "x4ShWIP5YMX8dunIQzzb645ydaYLjLvlCJ7MVNaTO5FOai7kcPvS2FFapqry5sWOD4Jn85apztQ"
-                     "g6e4GfJghHhRip7TO__50tIqf3XY4u0SBqrvACT8oQ",
-                "p": "_kZx0MGBK9rWLue_zn2gyXvl1_Jv3VEFzC-z6PRZFOrDXEjSoAFdKtKmflFE6knKJ2Jbs-Tn51X"
-                     "9lvJI1hmBHubVPCYHGdPUIUJoDuEqiNCdA05UWi9q1sexytsPiMYs75uhrLAoDeIbHG6C5XwAha"
-                     "4bhl74rhoNI7XbbGOS7bc",
-                "q": "09oJwWmCLEUEm2LhiHMaEJt7Eixkdeerv59K6i1rrqJ4aFO_Q1vqujbTrqJKq543nNgeb0BEGhk"
-                     "wJ2zQsnJqCErH1vynz_lGPqLYOAwxPgu83vC8_GuG8z6yhcmB_EztlRgeJbIZweJUnVjm8W6oxy"
-                     "SS1debDgol6ACIahfsMfE",
-                "dp": "EHZZGg3dIgy5_zFr3p-NkF3gJJoCmg6L1ItmF3fyaINGgKwKTuens4UN2HHEh3Kdju00SLJSPU"
-                      "z47RPkmU_vZyPEvG8t2IM5Yand-NClI1R2ReeFWI1nWl51aU_DcrR55k1qKzcAcN2pqa6R9O-R"
-                      "TRZXm9x8NzFilmRIv3y234M",
-                "dq": "X1gW4eQRQMlDHIexBw7-YREIn5I5GFNOmawgNCqC9xKJ7DIctz0L9Aiu1j6WKozHbKBbeihLPg"
-                      "-t-2BewKD7lYXKULhe8hu3AIObmgXqt4ji1Nc1xsjB8IF8KPgatykMF_jFwKNaMkchW7tiHLB3"
-                      "50BPkUw6rWPl0XdD7bOcipE",
-                "qi": "4Q_qTHiIyxaKc2_m9XICSup1uYojQsMLR_DAGvMCKohZXSl9gCEikeNY2Ra6umy0EclhAWB9m0"
-                      "Cu1XtLF7xLRakXJw6-mgnx9iU37COznQSZfhHw3Zd9dPYfJPixKn95nTUx3V4fUr4hEs2imtHn"
-                      "_wFQT5TYh0DDeJ-weuJU1W0",
-            }
-        ]
-    }
-
-    JWT_OIDC_TEST_PRIVATE_KEY_PEM = """-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDSbKF8kSqUwThQ
-DDgZzSh7ZcOOFY1tZ4e/aMFVOJBSg+zArKZFG6A3sZTSgdd1n+qxQRdfcd1eyKe1
-ZxZapWsdkvjw6Xco3ohszkdBJRllG+bZ/WAXFGMqVNLXGakvEoaY2v3uSG8uHyKU
-PInIlBMx9tX0m1HzzLJQGklwDJU/ANlUQH8EbarWIApdYodda8dHTDfMqZbM6WGU
-bkf0vjFeNZxWMAp2MLiEGwhSKjK9ffEv27iaViMUjeOHm1nRazpOLUMT841n2DRn
-7w4tEnstaujWh/Li56HikkF9YZ/3EE6GkSWm3iYDYKMkHxlZEB0FcGdSL9hlOZMw
-9K1yhdBHAgMBAAECggEAWyNDujEhsTYSztDMB5jNHM0Rqtt42tbJe8TCX8fU8nhD
-NZxRk4MInLakT5x/FmoB+23G0sb9a00bHj2c9/vHbhK3EZj8zE295updAEEyQ5GX
-JflRAg4JeU8t1o49sa6jb1cCPo9O4DoJ/wxNXPuNaMmRF5WiJCcXYAxSnF5G0fch
-RnHXZ79ePaW2v6i+8YSb5nJSvaSt1Wdthkrk3W+8+ZMMtU9jfa1x0x4ShWIP5YMX
-8dunIQzzb645ydaYLjLvlCJ7MVNaTO5FOai7kcPvS2FFapqry5sWOD4Jn85apztQ
-g6e4GfJghHhRip7TO//50tIqf3XY4u0SBqrvACT8oQKBgQD+RnHQwYEr2tYu57/O
-faDJe+XX8m/dUQXML7Po9FkU6sNcSNKgAV0q0qZ+UUTqSconYluz5OfnVf2W8kjW
-GYEe5tU8JgcZ09QhQmgO4SqI0J0DTlRaL2rWx7HK2w+Ixizvm6GssCgN4hscboLl
-fACFrhuGXviuGg0jtdtsY5LttwKBgQDT2gnBaYIsRQSbYuGIcxoQm3sSLGR156u/
-n0rqLWuuonhoU79DW+q6NtOuokqrnjec2B5vQEQaGTAnbNCycmoISsfW/KfP+UY+
-otg4DDE+C7ze8Lz8a4bzPrKFyYH8TO2VGB4lshnB4lSdWObxbqjHJJLV15sOCiXo
-AIhqF+wx8QKBgBB2WRoN3SIMuf8xa96fjZBd4CSaApoOi9SLZhd38miDRoCsCk7n
-p7OFDdhxxIdynY7tNEiyUj1M+O0T5JlP72cjxLxvLdiDOWGp3fjQpSNUdkXnhViN
-Z1pedWlPw3K0eeZNais3AHDdqamukfTvkU0WV5vcfDcxYpZkSL98tt+DAoGAX1gW
-4eQRQMlDHIexBw7+YREIn5I5GFNOmawgNCqC9xKJ7DIctz0L9Aiu1j6WKozHbKBb
-eihLPg+t+2BewKD7lYXKULhe8hu3AIObmgXqt4ji1Nc1xsjB8IF8KPgatykMF/jF
-wKNaMkchW7tiHLB350BPkUw6rWPl0XdD7bOcipECgYEA4Q/qTHiIyxaKc2/m9XIC
-Sup1uYojQsMLR/DAGvMCKohZXSl9gCEikeNY2Ra6umy0EclhAWB9m0Cu1XtLF7xL
-RakXJw6+mgnx9iU37COznQSZfhHw3Zd9dPYfJPixKn95nTUx3V4fUr4hEs2imtHn
-/wFQT5TYh0DDeJ+weuJU1W0=
------END PRIVATE KEY-----"""
+        Set on the instance rather than as class attributes so that importing
+        this module outside 'testing' never pays for key generation; Flask's
+        config.from_object reads instance attributes just the same.
+        """
+        # Test-only keypair. The suite signs tokens with the private half and
+        # flask-jwt-oidc verifies them against the public half, so the tests
+        # never reach a real identity provider. Not used outside 'testing'.
+        private_key_pem, public_jwks = generate_test_jwt_keypair()
+        self.JWT_OIDC_TEST_PRIVATE_KEY_PEM = private_key_pem  # pylint: disable=invalid-name
+        self.JWT_OIDC_TEST_KEYS = public_jwks  # pylint: disable=invalid-name
 
 
 class DockerConfig(_Config):  # pylint: disable=too-few-public-methods
