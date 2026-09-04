@@ -1,6 +1,83 @@
-# Map Setup Instructions
+# EPIC.map
 
-This document outlines the setup instructions for both the backend and front-end components of the project. Ensure you follow the steps in sequence for a smooth setup.
+EPIC.map is three things in one repository: a standalone API, a React component published to npm,
+and a web app that hosts the component during development.
+
+## Repository layout
+
+| Path | What it is | Published? |
+| --- | --- | --- |
+| `map-api/` | Flask API and its database. A standalone service, deployed on its own — unaffected by the split below. | Deployed as a service |
+| `packages/epic-map/` | **The product.** The embeddable React component (`@bcgov/epic-map` on npm) that other EPIC applications install and render. | **Yes — this is the npm package** |
+| `map-web/` | The development harness and reference implementation. Runs the component locally against `map-api`, and shows host teams how to mount, theme and authenticate it. | No (`private: true`) |
+
+`packages/epic-map` and `map-web` are [npm workspaces](https://docs.npmjs.com/cli/using-npm/workspaces)
+declared in the root `package.json`, so `map-web` resolves `@bcgov/epic-map` from the local source
+rather than the registry — changes to the component show up in the harness immediately.
+
+### Why map-web still exists
+
+`map-web` is not legacy and is not scheduled for deletion. It is where the widget is developed, and
+it is the reference host that other EPIC teams copy from when embedding `epic.map`. Anything that
+belongs to the *application* rather than the *component* — routing, the auth provider, the query
+client, environment configuration — lives here on purpose.
+
+### Releasing the widget
+
+`@bcgov/epic-map` is **semver-versioned independently of map-api**. The two ship on
+separate schedules and their version numbers say nothing about each other — a major
+bump of the widget implies nothing about which API version you are running, and vice
+versa. Compatibility with the API is a property of the endpoints the widget calls,
+and breaking that is a breaking change to the widget's own major version.
+
+Versions are managed with [changesets](https://github.com/changesets/changesets):
+
+```bash
+npm run changeset          # describe your change; commit the file it writes
+npm run version-packages   # applies pending changesets: bumps version, writes CHANGELOG
+```
+
+Publishing happens only from a tag, never from a merge to `main` — host applications
+pin a version and upgrade when they choose:
+
+```bash
+git tag epic-map-v0.1.0 && git push origin epic-map-v0.1.0
+```
+
+That fires `.github/workflows/widget-publish.yml`, which lints, typechecks, builds,
+refuses to continue if the tag disagrees with `package.json`, attests build
+provenance for the tarball, and publishes to GitHub Packages.
+
+### Current state
+
+The restructure is in progress. The package builds and publishes (Vite library mode, ESM only, type
+declarations via `vite-plugin-dts`), and `map-web` now consumes it: `/map` renders `<MapWidget>` from
+the workspace and supplies the API url and the token.
+
+The map UI that existed in `map-web` — the search bar, the filter buttons and the map surface — has
+moved into `packages/epic-map/src`. The map itself is still a placeholder; maplibre is wired as a
+dependency but nothing renders through it yet.
+
+Two contracts are already enforced there, and are worth knowing before moving code across:
+
+- **Configuration is by props only.** The widget never reads `import.meta.env`; a published artifact
+  would otherwise carry our build-time environment into every host. An ESLint rule blocks it.
+- **The widget does no authentication.** No `keycloak-js`, no `react-oidc-context`. The host owns
+  the session; `map-web` shows how.
+
+[`packages/epic-map/README.md`](packages/epic-map/README.md) is the integration guide host teams
+read; [`docs/04_widget-architecture.md`](docs/04_widget-architecture.md) records why the widget is a
+package rather than an iframe, why it holds no auth, and why entitlement stays server-side.
+
+## Setup
+
+Node dependencies for the whole workspace are installed once, from the repository root:
+
+```bash
+npm install
+```
+
+Backend setup follows below; front end setup is [further down](#front-end-setup).
 
 ## Backend Setup in WSL
 
@@ -75,13 +152,13 @@ make run
 
 ## Front End Setup
 
-### 1. Navigate to Front End Directory
-Change to the front-end directory:
-cd map-web
-
-### 2. Install Dependencies
-Install necessary npm packages:
+### 1. Install Dependencies
+From the repository root — this installs `map-web` and `packages/epic-map` together and links them:
 npm install
+
+### 2. Navigate to Front End Directory
+Change to the harness directory:
+cd map-web
 
 ### 3. Configure Environment Variables
 Copy `sample.env` to `.env` and fill in the values. At a minimum set `VITE_API_URL` to the map-api
@@ -92,7 +169,8 @@ Launch the development server:
 npm run dev
 
 It serves on http://localhost:3000. The port is fixed so that it matches the `CORS_ORIGIN` list the
-api allows. See `map-web/README.md` for the full front end documentation.
+api allows. See `map-web/README.md` for the full front end documentation, and
+[`packages/epic-map/README.md`](packages/epic-map/README.md) for the component package.
 
 # Helm
 In openshift, you should have namespaces as such:

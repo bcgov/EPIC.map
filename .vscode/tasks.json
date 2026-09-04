@@ -1,0 +1,60 @@
+{
+  // One command -> three split terminals, one per folder, all watching.
+  //
+  //   Cmd+Shift+P -> "Tasks: Run Task" -> "dev"   (or just Cmd+Shift+B)
+  //
+  //   map-web            npm run dev    vite dev server, HMR
+  //   map-api            make debug     flask --debug, reloads on .py change
+  //   packages/epic-map  npm run dev    vite build --watch, rebuilds dist
+  "version": "2.0.0",
+
+  // Tasks run in a NON-login, NON-interactive shell by default, which never
+  // sources ~/.zshrc. nvm and ~/.docker/bin are both set up there, so without
+  // this the tasks fall through to /usr/local/bin/node - Node v14.16.0 - and
+  // npm dies with "Cannot find module 'node:path'". `-l -i` sources .zprofile
+  // and .zshrc, giving tasks the same PATH as a terminal you opened yourself.
+  "options": {
+    "shell": {
+      "executable": "/bin/zsh",
+      "args": ["-l", "-i", "-c"]
+    }
+  },
+
+  "tasks": [
+    {
+      "label": "dev",
+      "detail": "map-web + map-api + packages/epic-map, all watching, in split terminals",
+      "dependsOn": ["dev: web", "dev: api", "dev: widget"],
+      "dependsOrder": "parallel",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "dev: web",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}/map-web" },
+      "isBackground": true,
+      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "dev: api",
+      "type": "shell",
+      "command": "make debug",
+      "options": { "cwd": "${workspaceFolder}/map-api" },
+      "isBackground": true,
+      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "dev: widget",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}/packages/epic-map" },
+      "isBackground": true,
+      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    }
+  ]
+}

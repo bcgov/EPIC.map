@@ -143,3 +143,6 @@ map-api/.DS_Store
 .idea
 
 claude-docs/
+
+# Node / npm workspaces
+node_modules/

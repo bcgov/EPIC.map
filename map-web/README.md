@@ -3,6 +3,10 @@
 Front end for EPIC.map — a React + TypeScript app built with Vite, served by nginx in deployed
 environments.
 
+It is also the **reference host** for [`@bcgov/epic-map`](../packages/epic-map): the `/map` route
+embeds the widget exactly as another EPIC application would. See
+[Embedding the map widget](#embedding-the-map-widget).
+
 ## Stack
 
 | Concern | Library |
@@ -60,7 +64,7 @@ build-time `VITE_*` values.
 ```
 src/
   components/
-    Map/            Map page: search bar, filter buttons, map container placeholder
+    Map/            ApiStatusBar (health check)
     Shared/
       Header/       EAOAppBar, SignInControl, UserProfileMenu
       SideNav/      SideNavBar and its nav item list
@@ -80,11 +84,46 @@ Left navigation entries live in `src/components/Shared/SideNav/navItems.ts`.
 
 Current routes: `/` (Launchpad), `/request-access`, `/oidc-callback`, `/session-expired`, and -
 behind the sign-in guard - `/application-urls` and `/map`. Everything except the map page is a
-`ComingSoon` placeholder, and the map page renders a container that will hold the map.
+`ComingSoon` placeholder, and the map page embeds the `@bcgov/epic-map` widget.
 
 Pages that require a signed-in user are files under `src/routes/_authenticated/`. The leading
 underscore makes `_authenticated.tsx` a layout route: it wraps its children with the guard without
 adding a path segment, so `src/routes/_authenticated/map.tsx` is still served at `/map`.
+
+## Embedding the map widget
+
+The map UI lives in `@bcgov/epic-map`, a workspace package. `src/routes/_authenticated/map.tsx`
+renders it the way a real host would:
+
+```tsx
+<MapWidget
+  apiBaseUrl={AppConfig.apiUrl}    // this app's config, not the widget's
+  getAccessToken={getAccessToken}  // this app's OIDC session, not the widget's
+/>
+```
+
+The widget's optional props — `projectId`, `initialExtent`, `height`, `onFeatureSelect` and
+`onError` — are not passed yet, so nothing here currently exercises them. A dev-only panel that drove
+them at runtime was removed; it can come back, or be replaced by tests in the package itself.
+
+Two rules apply to this side of the boundary:
+
+- **Only the public entry point.** Import from `"@bcgov/epic-map"`, never from a path inside it. If
+  something needed here is not exported, the widget's public API is wrong — fix the package, do not
+  deep-import.
+- **The host owns the session.** `getAccessToken` closes over `useAuth()` from react-oidc-context.
+  The widget has no OIDC library and no access to storage.
+
+### Working on the widget
+
+Vite resolves `@bcgov/epic-map` to the package's **built** `dist/`, not its `src/`. Editing widget
+source has no effect on the running dev server until it is rebuilt, so run the package's watch build
+alongside:
+
+```bash
+npm run dev -w @bcgov/epic-map   # vite build --watch
+npm run dev -w map-web           # in another terminal
+```
 
 ## Authentication
 

@@ -1,0 +1,107 @@
+name: EPIC MAP WIDGET PUBLISH
+
+# Publishes @bcgov/epic-map to GitHub Packages.
+#
+# Deliberately NOT triggered by pushes to main. Host applications pin a version
+# and upgrade when they choose; publishing on every merge would mean a moving
+# target under teams that did not ask for it. A release is an explicit act: a
+# tag, created after `npm run version-packages` has landed the version bump and
+# the changelog on main.
+#
+#   git tag epic-map-v0.1.0 && git push origin epic-map-v0.1.0
+#
+# The tag is prefixed because this repository also holds map-api; a bare `v*`
+# tag would be ambiguous about what is being released.
+on:
+  push:
+    tags:
+      - "epic-map-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build, verify and attest, but do not publish"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+  # Required to mint the short-lived Sigstore certificate that signs the build
+  # provenance attestation.
+  id-token: write
+  attestations: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    if: github.repository == 'bcgov/EPIC.map'
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          registry-url: https://npm.pkg.github.com
+          scope: "@bcgov"
+
+      # Root install: the package is an npm workspace, so its dependencies and
+      # map-web's are resolved from the single lockfile at the repository root.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --workspace @bcgov/epic-map
+
+      - name: Typecheck
+        run: npm run typecheck --workspace @bcgov/epic-map
+
+      - name: Build
+        run: npm run build --workspace @bcgov/epic-map
+
+      # A tag that disagrees with package.json would publish a version nobody
+      # can find from the source tree. Fail here rather than after publishing,
+      # because a published version cannot be taken back.
+      - name: Verify the tag matches the package version
+        if: github.event_name == 'push'
+        run: |
+          tag_version="${GITHUB_REF_NAME#epic-map-v}"
+          pkg_version="$(node -p "require('./packages/epic-map/package.json').version")"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} implies version ${tag_version}, but packages/epic-map/package.json is ${pkg_version}."
+            echo "::error::Run 'npm run version-packages', merge the result, then tag the merge commit."
+            exit 1
+          fi
+          echo "Publishing ${pkg_version} from ${GITHUB_REF_NAME}"
+
+      - name: Pack
+        id: pack
+        working-directory: packages/epic-map
+        run: |
+          tarball="$(npm pack --silent)"
+          echo "tarball=packages/epic-map/${tarball}" >> "$GITHUB_OUTPUT"
+
+      # Build provenance for the exact tarball that is about to be published.
+      #
+      # `npm publish --provenance` is not used: GitHub's own documentation shows
+      # that flag only for the public npm registry, not for GitHub Packages, so
+      # passing it here would fail the publish. This action produces a signed
+      # SLSA attestation independently of the registry, which a host team can
+      # check with:
+      #
+      #   gh attestation verify bcgov-epic-map-<version>.tgz --repo bcgov/EPIC.map
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.pack.outputs.tarball }}
+
+      - name: Publish to GitHub Packages
+        if: github.event_name == 'push' || inputs.dry_run == false
+        run: npm publish "${{ steps.pack.outputs.tarball }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

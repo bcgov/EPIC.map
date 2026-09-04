@@ -40,11 +40,64 @@ def groups(token_info):
     return (token_info or {}).get("groups") or []
 
 
-def roles(token_info):
-    """Return the client roles the token grants for this application."""
-    client_id = current_app.config.get("JWT_OIDC_CLIENT_ID")
-    resource_access = (token_info or {}).get("resource_access") or {}
-    return resource_access.get(client_id, {}).get("roles", [])
+def client_ids(token_info):
+    """Return every keycloak client the token names, from `aud` and `azp`.
+
+    `aud` may be a single string or a list. `azp` (authorized party) is the
+    client the token was actually issued to, and is what distinguishes the EPIC
+    applications from each other: in the shared EAO realm every one of them
+    receives `aud: "account"`, so `azp` usually carries the real answer.
+    """
+    token_info = token_info or {}
+
+    audience = token_info.get("aud") or []
+    if isinstance(audience, str):
+        audience = [audience]
+    if not isinstance(audience, list):
+        audience = []
+
+    authorized_party = token_info.get("azp")
+    return [name for name in [*audience, authorized_party] if name]
+
+
+def host_app(token_info) -> str:
+    """Return the application the request came from, for the audit log.
+
+    This is the `azp` claim - the keycloak client the token was issued to,
+    signed by keycloak as part of the token. It is deliberately not derived
+    from the Origin header or from a custom X-Host-App header: both are set by
+    the caller and can claim to be any application at all.
+
+    Falls back to "unknown" rather than None so that a null in the audit table
+    means a bug in this code, not an unauthenticated era of history.
+    """
+    return (token_info or {}).get("azp") or "unknown"
+
+
+def is_allowed_client(token_info) -> bool:
+    """Whether the token was issued to a client this API serves.
+
+    This is the audience check, and the only one. It replaces the single
+    JWT_OIDC_AUDIENCE comparison that python-jose would otherwise make: this API
+    now backs several EPIC applications, each with its own keycloak client in
+    the same realm, so one audience string can no longer describe who may call.
+
+    Signature, issuer and expiry are unaffected - they are still verified by
+    flask-jwt-oidc before this is consulted.
+
+    Deliberately one function with one caller path, so that moving to a
+    dedicated scope later is a configuration change and nothing else: once the
+    SSO team adds `epic-map-api`, ALLOWED_CLIENT_IDS becomes a single entry and
+    the code here is already correct.
+
+    An empty allowlist denies everything. A misconfigured deployment should stop
+    serving rather than accept tokens from any client in a shared realm.
+    """
+    allowed = current_app.config.get("ALLOWED_CLIENT_IDS") or []
+    if not allowed:
+        return False
+
+    return any(name in allowed for name in client_ids(token_info))
 
 
 def belongs_to_app(token_info) -> bool:

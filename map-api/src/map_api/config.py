@@ -25,6 +25,8 @@ import sys
 import redis
 from dotenv import find_dotenv, load_dotenv
 
+from map_api.utils.util import parse_csv
+
 # this will load all the envars from a .env file located in the project root (api)
 load_dotenv(find_dotenv())
 
@@ -32,6 +34,21 @@ load_dotenv(find_dotenv())
 # no leaked stack traces). Kept as a single source of truth for get_named_config
 # and for anything else (e.g. the swagger gating in resources) that needs the same check.
 PRODUCTION_LIKE_ENVIRONMENTS = ('production', 'staging', 'default')
+
+# Browser origins allowed to call this API when CORS_ORIGIN is not set. The API
+# serves several EPIC applications, so this is a list of host origins per
+# environment rather than the single front end it used to have. Deployed
+# environments set CORS_ORIGIN explicitly; these are the local defaults.
+LOCAL_CORS_ORIGINS = (
+    'http://localhost:3000',    # map-web dev server (port pinned in vite.config.ts)
+    'http://localhost:5173',    # vite default, used by the other EPIC dev servers
+    'http://localhost:8000',
+)
+
+# Keycloak clients whose tokens this API accepts when ALLOWED_CLIENT_IDS is not
+# set in a test run. Named here so the suite does not depend on a developer's
+# .env - see ALLOWED_CLIENT_IDS on _Config for what this list means.
+TEST_ALLOWED_CLIENT_IDS = ('compliance-web', 'submit-web', 'track-web', 'map-web')
 
 
 def get_named_config(config_name: str = 'development'):
@@ -97,13 +114,37 @@ class _Config():  # pylint: disable=too-few-public-methods
     JWT_OIDC_ALGORITHMS = os.getenv('JWT_OIDC_ALGORITHMS', 'RS256')
     JWT_OIDC_JWKS_URI = os.getenv('JWT_OIDC_JWKS_URI')
     JWT_OIDC_ISSUER = os.getenv('JWT_OIDC_ISSUER')
+    # Kept as the fallback for ALLOWED_CLIENT_IDS below. It no longer drives the
+    # audience check directly: python-jose can only compare `aud` against a
+    # single string, and this API now serves several keycloak clients.
     JWT_OIDC_AUDIENCE = os.getenv('JWT_OIDC_AUDIENCE', 'account')
     JWT_OIDC_CACHING_ENABLED = os.getenv('JWT_OIDC_CACHING_ENABLED', 'True')
     JWT_OIDC_JWKS_CACHE_TIMEOUT = 300
-    # The keycloak client this API's tokens are issued to. Roles are read from
-    # resource_access[<this client>] rather than from the realm, which is shared
-    # with the other EPIC applications.
+    # The keycloak client this API's own tokens are issued to. Retained for
+    # service-to-service use; it is no longer a source of authorization, because
+    # client roles mean different things in each EPIC client - see
+    # map_api.utils.token.is_allowed_client.
     JWT_OIDC_CLIENT_ID = os.getenv('JWT_OIDC_CLIENT_ID', 'epic-map')
+
+    # The keycloak clients whose tokens this API accepts. Every EPIC application
+    # that embeds the map has its own client in the shared EAO realm, and a token
+    # names its client in `azp` (and sometimes in `aud`), so a single audience is
+    # no longer enough:
+    #
+    #     ALLOWED_CLIENT_IDS=compliance-web,submit-web,track-web,map-web
+    #
+    # When the SSO team adds a dedicated scope for this API, this collapses back
+    # to one entry (ALLOWED_CLIENT_IDS=epic-map-api) with no code change - the
+    # check itself lives in one function, map_api.utils.token.is_allowed_client.
+    #
+    # Falls back to JWT_OIDC_AUDIENCE so an environment that has not been updated
+    # keeps the single-audience behaviour it had before.
+    ALLOWED_CLIENT_IDS = parse_csv(os.getenv('ALLOWED_CLIENT_IDS')) or [JWT_OIDC_AUDIENCE]
+
+    # Browser origins allowed to call this API. Bearer tokens are used rather
+    # than cookies, so credentialed CORS is deliberately not enabled - see
+    # create_app.
+    CORS_ORIGINS = parse_csv(os.getenv('CORS_ORIGIN'))
 
     # The keycloak group a token must carry to reach this API. Left unset until
     # the realm has a group for EPIC.map: while it is empty any valid IDIR token
@@ -127,6 +168,8 @@ class DevConfig(_Config):  # pylint: disable=too-few-public-methods
 
     TESTING = False
     DEBUG = True
+
+    CORS_ORIGINS = parse_csv(os.getenv('CORS_ORIGIN')) or list(LOCAL_CORS_ORIGINS)
     print(f'SQLAlchemy URL (DevConfig): {_Config.SQLALCHEMY_DATABASE_URI}')
 
 
@@ -152,11 +195,22 @@ class TestConfig(_Config):  # pylint: disable=too-few-public-methods
     REDIS_DB = os.getenv('REDIS_TEST_DB', '1')
     REDIS_URL = os.getenv('REDIS_TEST_URL') or f'redis://{REDIS_HOST}:{int(REDIS_PORT)}/{REDIS_DB}'
 
+    CORS_ORIGINS = parse_csv(os.getenv('CORS_ORIGIN')) or list(LOCAL_CORS_ORIGINS)
+
+    # Fixed rather than env-driven, so the suite asserts the same thing on every
+    # machine. A developer's .env cannot widen or narrow what the tests accept.
+    ALLOWED_CLIENT_IDS = list(TEST_ALLOWED_CLIENT_IDS)
+
     JWT_OIDC_TEST_MODE = True
     # JWT_OIDC_ISSUER = _get_config('JWT_OIDC_TEST_ISSUER')
-    JWT_OIDC_TEST_AUDIENCE = os.getenv('JWT_OIDC_TEST_AUDIENCE')
+    JWT_OIDC_TEST_AUDIENCE = os.getenv('JWT_OIDC_TEST_AUDIENCE') or 'account'
     JWT_OIDC_TEST_CLIENT_SECRET = os.getenv('JWT_OIDC_TEST_CLIENT_SECRET')
-    JWT_OIDC_TEST_ISSUER = os.getenv('JWT_OIDC_TEST_ISSUER')
+    # Defaulted, not left to the environment: with no issuer configured
+    # python-jose skips the issuer check entirely, which would quietly turn the
+    # "token from another realm" test into one that proves nothing.
+    JWT_OIDC_TEST_ISSUER = (
+        os.getenv('JWT_OIDC_TEST_ISSUER') or 'http://localhost:8081/auth/realms/demo'
+    )
     JWT_OIDC_WELL_KNOWN_CONFIG = os.getenv('JWT_OIDC_TEST_WELL_KNOWN_CONFIG')
     JWT_OIDC_TEST_ALGORITHMS = os.getenv('JWT_OIDC_TEST_ALGORITHMS')
     JWT_OIDC_TEST_JWKS_URI = os.getenv('JWT_OIDC_TEST_JWKS_URI', default=None)
@@ -259,6 +313,8 @@ class DockerConfig(_Config):  # pylint: disable=too-few-public-methods
     DB_PORT = os.getenv('DATABASE_DOCKER_PORT', '5432')
     SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{int(DB_PORT)}/{DB_NAME}'
 
+    CORS_ORIGINS = parse_csv(os.getenv('CORS_ORIGIN')) or list(LOCAL_CORS_ORIGINS)
+
     # REDIS - defaults to the compose service name, reachable on the compose network
     REDIS_HOST = os.getenv('REDIS_DOCKER_HOST', 'map-redis')
     REDIS_PORT = os.getenv('REDIS_DOCKER_PORT', '6379')
@@ -279,3 +335,11 @@ class ProdConfig(_Config):  # pylint: disable=too-few-public-methods
 
     TESTING = False
     DEBUG = False
+
+    # No localhost fallback here: a deployed environment names every EPIC
+    # application origin that may call it, or none are allowed.
+    CORS_ORIGINS = parse_csv(os.getenv('CORS_ORIGIN'))
+
+    if not CORS_ORIGINS:
+        print('WARNING: CORS_ORIGIN is not set; browsers will be refused',
+              file=sys.stderr)

@@ -41,12 +41,26 @@ def cors_preflight(methods):
     return wrapper
 
 
-def allowedorigins():
-    """Return the allowed CORS origins, as a list."""
-    _allowedcors = os.getenv('CORS_ORIGIN')
-    if not _allowedcors:
+def parse_csv(value):
+    """Split a comma separated configuration value into a list.
+
+    Blank entries and surrounding whitespace are dropped, so a trailing comma or
+    a value wrapped across lines in a deployment manifest is not turned into an
+    empty allowlist entry - which for an allowlist would be a hole, not a no-op.
+    """
+    if not value:
         return []
-    return [entry.strip() for entry in _allowedcors.split(',') if entry.strip()]
+    return [entry.strip() for entry in value.split(',') if entry.strip()]
+
+
+def allowedorigins():
+    """Return the allowed CORS origins from the environment, as a list.
+
+    Prefer `current_app.config['CORS_ORIGINS']`: the configuration classes read
+    this once and add per-environment defaults on top. This remains for callers
+    that have no application context.
+    """
+    return parse_csv(os.getenv('CORS_ORIGIN'))
 
 
 class Singleton(type):

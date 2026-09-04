@@ -36,17 +36,27 @@ JWT_HEADER = {
 TEST_AUTH_GUID = 'a1b2c3d4e5f60718293a4b5c6d7e8f90@idir'
 TEST_IDIR_USERNAME = 'JSMITH'
 
+# The keycloak client a token is issued to, in the `azp` claim. In the shared
+# EAO realm every EPIC application receives aud "account", so azp is what
+# actually distinguishes them - which is why the API checks both.
+TEST_CLIENT_ID = 'map-web'
+TEST_SHARED_AUDIENCE = 'account'
+
 
 def idir_claims(**overrides):
     """Return the claims an IDIR access token from the EAO realm carries.
 
-    The shape matters more than the values: the API reads groups to decide who
-    may be here at all, and resource_access to decide what they may do.
+    The shape matters more than the values: the API reads aud/azp to decide
+    which application is calling, and groups to decide who may be here at all.
+    Client roles in resource_access are deliberately not read - see
+    UserService.get_permission_levels - but a real token still carries them, so
+    one is included to keep the fixture honest.
     """
     now = int(time.time())
     claims = {
         'iss': CONFIG.JWT_OIDC_TEST_ISSUER,
-        'aud': CONFIG.JWT_OIDC_TEST_AUDIENCE,
+        'aud': TEST_SHARED_AUDIENCE,
+        'azp': TEST_CLIENT_ID,
         'sub': TEST_AUTH_GUID,
         'iat': now,
         'exp': now + 300,

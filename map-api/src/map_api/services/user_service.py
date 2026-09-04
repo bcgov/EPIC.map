@@ -1,7 +1,6 @@
 """Service for user management."""
 from map_api.models.user import User as UserModel
-from map_api.utils.constant import DEFAULT_PERMISSIONS, GROUP_MAP
-from map_api.utils.token import roles as roles_from_token
+from map_api.utils.constant import DEFAULT_PERMISSIONS
 from map_api.utils.token import user_data_from_token
 
 
@@ -53,21 +52,17 @@ class UserService:
         return UserModel.upsert_from_token(user_data_from_token(token_info))
 
     @classmethod
-    def get_permission_levels(cls, token_info):
+    def get_permission_levels(cls, token_info):  # pylint: disable=unused-argument
         """Return the permissions the signed-in user holds.
 
-        Roles are still to be decided, so every authenticated IDIR user starts
-        with DEFAULT_PERMISSIONS; any client role the token happens to carry is
-        added on top. Once the roles exist in keycloak, emptying
-        DEFAULT_PERMISSIONS is all it takes to make the token the only source.
+        Every valid IDIR token in the realm gets DEFAULT_PERMISSIONS and nothing
+        else. Client roles from resource_access are deliberately not consulted:
+        this API is called by several EPIC applications, each with its own
+        keycloak client, and those roles are scoped per client - reading them
+        would give the same officer different access depending on which
+        application they opened the map in.
+
+        The token argument is kept so that a role source which means the same
+        thing in every client can be read here later without changing callers.
         """
-        token_roles = set(roles_from_token(token_info))
-        granted = [
-            permission
-            for permission, role in GROUP_MAP.items()
-            if role in token_roles
-        ]
-        for permission in DEFAULT_PERMISSIONS:
-            if permission not in granted:
-                granted.append(permission)
-        return granted
+        return list(DEFAULT_PERMISSIONS)
