@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Box } from "@mui/material";
 import { MapWidgetProvider, type MapWidgetContextValue } from "@/widget/MapWidgetContext";
 import { createApiClient } from "@/api/client";
+import { decodeHostIdentity, type HostIdentity } from "@/widget/identity";
 import MapSearchBar from "@/components/MapSearchBar";
 import MapSurface from "@/components/MapSurface";
 import type { MapFeature, MapWidgetError, MapWidgetProps } from "@/types";
@@ -46,6 +47,19 @@ export const MapWidget = ({
     [],
   );
 
+  // Reads the same token the API calls use, and returns only the display claims
+  // out of it. Defined here because this is the one place that legitimately holds
+  // getAccessToken — nothing downstream gets to see the token.
+  const readHostIdentity = useCallback(async (): Promise<HostIdentity | null> => {
+    try {
+      return decodeHostIdentity(await callbacks.current.getAccessToken());
+    } catch {
+      // The host has no token to give. Nothing to display; not an error worth
+      // interrupting the host over.
+      return null;
+    }
+  }, []);
+
   const api = useMemo(
     () =>
       createApiClient({
@@ -60,6 +74,7 @@ export const MapWidget = ({
     () => ({
       apiBaseUrl,
       api,
+      readHostIdentity,
       config: {
         projectId,
         initialExtent,
@@ -67,7 +82,15 @@ export const MapWidget = ({
         onError: handleError,
       },
     }),
-    [apiBaseUrl, api, projectId, initialExtent, handleFeatureSelect, handleError],
+    [
+      apiBaseUrl,
+      api,
+      readHostIdentity,
+      projectId,
+      initialExtent,
+      handleFeatureSelect,
+      handleError,
+    ],
   );
 
   // The widget's own QueryClient, nested inside whatever the host already has.
