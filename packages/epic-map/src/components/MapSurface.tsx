@@ -2,6 +2,7 @@ import { Box, Typography } from "@mui/material";
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import { useTheme } from "@mui/material/styles";
 import { useMapWidget } from "@/widget/MapWidgetContext";
+import { useCurrentUser } from "@/api/useCurrentUser";
 import { useHostIdentity } from "@/widget/useHostIdentity";
 
 /**
@@ -16,6 +17,48 @@ export default function MapSurface() {
   const theme = useTheme();
   const { config } = useMapWidget();
   const identity = useHostIdentity();
+  const { user, isPending, error, tokenUnavailable, status } = useCurrentUser();
+
+  // Deliberately explicit about which state the demo is in. A blank line while
+  // the round trip is in flight would look the same as a rejected token, and the
+  // ways this can fail are not interchangeable: 401 means Keycloak or the client
+  // allowlist turned the token down, 403 means it was accepted and the user is
+  // simply not entitled here.
+  const verification = (() => {
+    if (user) {
+      return {
+        label: `Verified by Keycloak \u00b7 map-db user #${user.id} \u00b7 ${
+          user.permissions.join(", ") || "no permissions"
+        }`,
+        color: theme.palette.success.main,
+      };
+    }
+    if (isPending) {
+      return {
+        label: "Verifying the token with map-api\u2026",
+        color: theme.palette.text.secondary,
+      };
+    }
+    if (tokenUnavailable) {
+      return {
+        label: "The host application supplied no token",
+        color: theme.palette.text.secondary,
+      };
+    }
+    if (status === 403) {
+      return {
+        label: "Token verified, but this user is not entitled to the map",
+        color: theme.palette.warning.main,
+      };
+    }
+    return {
+      label:
+        status === 401
+          ? "map-api rejected this token"
+          : "Could not reach map-api",
+      color: error ? theme.palette.error.main : theme.palette.text.secondary,
+    };
+  })();
 
   return (
     <Box
@@ -55,17 +98,15 @@ export default function MapSurface() {
           ? `Project ${config.projectId}`
           : "No project selected"}
       </Typography>
-      {/*
-        Proof that the host's session reaches the widget: both claims below come
-        out of the token the host returns from getAccessToken(), and the widget
-        holds no session of its own to read them from.
-      */}
-      <Typography variant="body2" color={theme.palette.text.secondary}>
+      <Typography variant="body2" color={theme.palette.text.primary}>
         {identity
           ? `Logged in as ${[identity.name, identity.preferredUsername]
               .filter(Boolean)
               .join(", ")}`
           : "Not signed in to the host application"}
+      </Typography>
+      <Typography variant="caption" color={verification.color}>
+        {verification.label}
       </Typography>
     </Box>
   );
