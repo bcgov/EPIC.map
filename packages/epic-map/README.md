@@ -155,6 +155,12 @@ Two steps, in this order:
 Your application must be in the same realm (`eao-epic`). A token from another realm
 is rejected on the issuer check, before the allowlist is consulted.
 
+The widget calls `GET /users/me` on mount, which is where you will see this: a 200
+means map-api verified the signature against Keycloak's JWKS, checked the issuer and
+expiry, found your `azp` on the allowlist, and returned the user's map-db record. A
+401 means one of those failed — usually step 1 above. A 403 means the token is
+genuine but the user is not entitled to this application.
+
 ## Lazy load it
 
 **Recommended.** maplibre-gl is 568 kB minified (~140 kB gzipped) before anything
@@ -245,7 +251,8 @@ src/
                    its way in passes through here.
   api/             Talking to map-api. client.ts builds the axios instance (token
                    attachment, one 401 retry); errors.ts normalises a throw into
-                   MapWidgetError; queryKeys.ts namespaces every cache key.
+                   MapWidgetError; queryKeys.ts namespaces every cache key;
+                   useCurrentUser.ts reads GET /users/me.
   components/      The map surface and the chrome around it.
 ```
 
