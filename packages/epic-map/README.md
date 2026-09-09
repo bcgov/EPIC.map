@@ -4,13 +4,16 @@ The EPIC map as an embeddable React component. Install it, render it, point it a
 the EPIC.map API — your application keeps its own routing, its own session and its
 own theme.
 
-> **Status: pre-1.0.** The props below are stable and enforced, but the map surface
-> itself is still a placeholder while the rendering moves across from `map-web`.
-> Treat minor versions as breaking until 1.0.0, per semver.
+> **Status: pre-1.0.** The props below are stable and enforced. The map surface
+> renders a MapLibre base map with the standard navigation, geolocate and scale
+> controls; project layers, the details panel and the identify tools are still
+> moving across from the prototype. Treat minor versions as breaking until 1.0.0,
+> per semver.
 
 - [Install](#install)
 - [Peer dependencies](#peer-dependencies)
 - [Styles](#styles)
+- [The maplibre web worker](#the-maplibre-web-worker)
 - [Minimal working example](#minimal-working-example)
 - [Getting access in Keycloak](#getting-access-in-keycloak)
 - [Lazy load it](#lazy-load-it)
@@ -84,6 +87,57 @@ or fails loudly is worth the tradeoff, which is this: our copy of maplibre's CSS
 frozen at the version we built against, while your `node_modules` resolves the
 JavaScript through our semver range. Across a maplibre major that could drift, so we
 keep the range narrow and re-publish when it moves.
+
+## The maplibre web worker
+
+**Your bundler has to keep maplibre's worker reachable.** This is the one thing the
+widget cannot do for you, and getting it wrong is the single most confusing way for
+the map to fail.
+
+maplibre-gl 6 loads its worker from a file beside its own module, resolved at
+runtime against `import.meta.url`:
+
+```
+<wherever maplibre-gl.mjs ended up>/maplibre-gl-worker.mjs
+```
+
+Anything that relocates that module leaves the sibling behind. Vite's dependency
+optimizer does it in development; rollup does it in a production build. The request
+404s, the worker never starts, and the symptom is not an error — it is an empty map:
+
+- the style JSON, its TileJSON and the sprite are fetched on the main thread and all
+  return 200
+- the map mounts, the zoom, geolocate and scale controls work, attribution renders
+- no vector tile and no glyph is ever requested, because those are the worker's job
+- the canvas stays blank
+
+If that is what you are looking at, it is the worker, not the map.
+
+### Fixing it under Vite
+
+`map-web` in this repository is the worked example; see its `vite.config.ts`.
+
+**Development** — keep maplibre out of the optimizer so it is served from its real
+path with its siblings intact:
+
+```ts
+optimizeDeps: {
+  exclude: ["@bcgov/epic-map", "maplibre-gl"],
+},
+```
+
+**Build** — copy `maplibre-gl-worker.mjs` *and* `maplibre-gl-shared.mjs` from
+`node_modules/maplibre-gl/dist` into your `assets` directory, under those exact
+names. Both: the worker imports the shared chunk by relative path, so hashing or
+omitting either one only moves the 404. `map-web` does it with a ~20-line
+`generateBundle` plugin.
+
+### Serving it
+
+The worker is a **module** script, so the browser enforces its MIME type. If your
+server does not map `.mjs` to a JavaScript type — nginx did not until 1.21 — it goes
+out as `application/octet-stream`, and with `X-Content-Type-Options: nosniff` the
+browser refuses to run it. Same blank map, only in your deployed environment.
 
 ## Minimal working example
 

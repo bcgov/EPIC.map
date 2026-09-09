@@ -4,7 +4,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useAuth } from "react-oidc-context";
 import { MapWidget } from "@bcgov/epic-map";
 import "@bcgov/epic-map/styles.css";
-import ApiStatusBar from "@/components/Map/ApiStatusBar";
+// Temporarily off while the map surface is being built out — the banner sits
+// under the map and eats vertical space the map wants. Put it back by
+// uncommenting this import and the <ApiStatusBar /> below.
+// import ApiStatusBar from "@/components/Map/ApiStatusBar";
 import { AppConfig } from "@/utils/config";
 
 export const Route = createFileRoute("/_authenticated/map")({
@@ -46,7 +49,7 @@ function MapPage() {
           getAccessToken={getAccessToken}
         />
       </Box>
-      <ApiStatusBar />
+      {/* <ApiStatusBar /> */}
     </Box>
   );
 }
