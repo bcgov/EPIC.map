@@ -27,6 +27,7 @@ export const MapWidget = ({
   getAccessToken,
   projectId,
   initialExtent,
+  basemapStyles,
   height = "100%",
   onFeatureSelect,
   onError,
@@ -78,6 +79,7 @@ export const MapWidget = ({
       config: {
         projectId,
         initialExtent,
+        basemapStyles,
         onFeatureSelect: handleFeatureSelect,
         onError: handleError,
       },
@@ -88,6 +90,7 @@ export const MapWidget = ({
       readHostIdentity,
       projectId,
       initialExtent,
+      basemapStyles,
       handleFeatureSelect,
       handleError,
     ],

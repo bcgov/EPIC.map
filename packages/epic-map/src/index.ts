@@ -9,6 +9,7 @@ export { MapWidget } from "@/widget/MapWidget";
 
 export type {
   MapWidgetProps,
+  MapBasemapStyles,
   MapFeature,
   MapExtent,
   MapWidgetError,

@@ -4,13 +4,17 @@ The EPIC map as an embeddable React component. Install it, render it, point it a
 the EPIC.map API — your application keeps its own routing, its own session and its
 own theme.
 
-> **Status: pre-1.0.** The props below are stable and enforced, but the map surface
-> itself is still a placeholder while the rendering moves across from `map-web`.
-> Treat minor versions as breaking until 1.0.0, per semver.
+> **Status: pre-1.0.** The props below are stable and enforced. The map surface
+> renders a MapLibre base map with the standard navigation, geolocate and scale
+> controls; project layers, the details panel and the identify tools are still
+> moving across from the prototype. Treat minor versions as breaking until 1.0.0,
+> per semver.
 
 - [Install](#install)
 - [Peer dependencies](#peer-dependencies)
 - [Styles](#styles)
+- [The maplibre web worker](#the-maplibre-web-worker)
+- [Basemaps](#basemaps)
 - [Minimal working example](#minimal-working-example)
 - [Getting access in Keycloak](#getting-access-in-keycloak)
 - [Lazy load it](#lazy-load-it)
@@ -86,6 +90,98 @@ or fails loudly is worth the tradeoff, which is this: our copy of maplibre's CSS
 frozen at the version we built against, while your `node_modules` resolves the
 JavaScript through our semver range. Across a maplibre major that could drift, so we
 keep the range narrow and re-publish when it moves.
+
+## The maplibre web worker
+
+**Your bundler has to keep maplibre's worker reachable.** This is the one thing the
+widget cannot do for you, and getting it wrong is the single most confusing way for
+the map to fail.
+
+maplibre-gl 6 loads its worker from a file beside its own module, resolved at
+runtime against `import.meta.url`:
+
+```
+<wherever maplibre-gl.mjs ended up>/maplibre-gl-worker.mjs
+```
+
+Anything that relocates that module leaves the sibling behind. Vite's dependency
+optimizer does it in development; rollup does it in a production build. The request
+404s, the worker never starts, and the symptom is not an error — it is an empty map:
+
+- the style JSON, its TileJSON and the sprite are fetched on the main thread and all
+  return 200
+- the map mounts, the zoom, geolocate and scale controls work, attribution renders
+- no vector tile and no glyph is ever requested, because those are the worker's job
+- the canvas stays blank
+
+If that is what you are looking at, it is the worker, not the map.
+
+### Fixing it under Vite
+
+`map-web` in this repository is the worked example; see its `vite.config.ts`.
+
+**Development** — keep maplibre out of the optimizer so it is served from its real
+path with its siblings intact:
+
+```ts
+optimizeDeps: {
+  exclude: ["@bcgov/epic-map", "maplibre-gl"],
+},
+```
+
+**Build** — copy `maplibre-gl-worker.mjs` *and* `maplibre-gl-shared.mjs` from
+`node_modules/maplibre-gl/dist` into your `assets` directory, under those exact
+names. Both: the worker imports the shared chunk by relative path, so hashing or
+omitting either one only moves the 404. `map-web` does it with a ~20-line
+`generateBundle` plugin.
+
+### Serving it
+
+The worker is a **module** script, so the browser enforces its MIME type. If your
+server does not map `.mjs` to a JavaScript type — nginx did not until 1.21 — it goes
+out as `application/octet-stream`, and with `X-Content-Type-Options: nosniff` the
+browser refuses to run it. Same blank map, only in your deployed environment.
+
+## Basemaps
+
+The map ships with two basemaps and a switch between them:
+
+| | Default | Source |
+| --- | --- | --- |
+| `standard` | **BC Basemap** (without hillshade) | [`bc-basemap`](https://catalogue.data.gov.bc.ca/dataset/bc-basemap) in the BC Data Catalogue — a public ArcGIS Online vector tile service |
+| `satellite` | **Esri World Imagery** | `server.arcgisonline.com`, as a raster style assembled here |
+
+BC Basemap is the provincial basemap recommended by the BC Gov GIS team. It is
+EPSG:3857, Style Spec v8, needs no API key, and carries BC Sans and the Aboriginal
+Sans/Serif faces — so provincial typography and Indigenous place names render as the
+province publishes them. Attribution is declared in the style, so maplibre renders it
+without any help from you.
+
+**Two things to know before you deploy on the defaults.**
+
+*Licensing.* BC Basemap is published "Access Only": B.C. Crown copyright, consumed
+live. Do not mirror, proxy or cache its tiles. That is unremarkable for a BC Gov
+application; if yours is not one, satisfy yourself that you are entitled to use it,
+or replace it.
+
+*The URLs will change.* The catalogue carries a standing notice that the service is
+being reissued, with new item URLs and changes to layer order and styling. The
+previous URLs are kept for at least three months after.
+
+Either way, `basemapStyles` is the way out — it takes a URL to a Style Spec v8
+document and replaces one or both defaults, so you are not waiting on a release of
+this package:
+
+```tsx
+<MapWidget
+  apiBaseUrl={apiUrl}
+  getAccessToken={getAccessToken}
+  basemapStyles={{ standard: "https://example.gov.bc.ca/styles/our-basemap.json" }}
+/>
+```
+
+The label and the thumbnail on the switch stay as they are. They describe the slot —
+the plain one, the imagery one — not the particular service filling it.
 
 ## Minimal working example
 
@@ -219,11 +315,13 @@ Deliberate omissions. Each one is your application's job:
 | `getAccessToken` | `() => Promise<string>` | yes | The only way a token enters the widget |
 | `projectId` | `string` | no | Restrict the map to one project |
 | `initialExtent` | `[number, number, number, number]` | no | `[west, south, east, north]`, WGS84 degrees |
+| `basemapStyles` | `MapBasemapStyles` | no | Style URLs replacing either basemap — see [Basemaps](#basemaps) |
 | `height` | `string \| number` | no | Defaults to `"100%"`. A number is pixels |
 | `onFeatureSelect` | `(feature: MapFeature) => void` | no | User selected a feature |
 | `onError` | `(error: MapWidgetError) => void` | no | `kind` is `auth`, `network`, `request`, `server` or `unknown` |
 
-`MapWidgetProps`, `MapFeature`, `MapExtent`, `MapWidgetError` and `MapWidgetErrorKind`
+`MapWidgetProps`, `MapBasemapStyles`, `MapFeature`, `MapExtent`, `MapWidgetError` and
+`MapWidgetErrorKind`
 are exported as types. Nothing else is public: if you need something that is not
 exported from `@bcgov/epic-map`, that is a gap in the API — raise it rather than
 importing from a path inside the package, which will break without a major version.

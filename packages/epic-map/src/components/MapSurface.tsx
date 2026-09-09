@@ -1,113 +1,128 @@
-import { Box, Typography } from "@mui/material";
-import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
-import { useTheme } from "@mui/material/styles";
+import { useEffect, useRef, useState } from "react";
+import { Box } from "@mui/material";
+import {
+  GeolocateControl,
+  Map as MapLibreMap,
+  NavigationControl,
+  ScaleControl,
+  type TransformStyleFunction,
+} from "maplibre-gl";
 import { useMapWidget } from "@/widget/MapWidgetContext";
-import { useCurrentUser } from "@/api/useCurrentUser";
-import { useHostIdentity } from "@/widget/useHostIdentity";
+import BasemapSwitch from "@/components/BasemapSwitch";
+import {
+  DEFAULT_BASEMAP,
+  DEFAULT_EXTENT,
+  FIT_PADDING,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  WIDGET_ID_PREFIX,
+  resolveBasemap,
+  type BasemapId,
+} from "@/config";
 
 /**
- * The map surface.
- *
- * Still a placeholder: maplibre is a dependency but nothing renders through it
- * yet. What is real is the boundary — this reads its project and the signed-in
- * user from widget context, not from a router, an environment variable or a
- * session of its own.
+ * Carry the widget's own sources and layers onto an incoming basemap.
  */
-export default function MapSurface() {
-  const theme = useTheme();
-  const { config } = useMapWidget();
-  const identity = useHostIdentity();
-  const { user, isPending, error, tokenUnavailable, status } = useCurrentUser();
+const carryWidgetLayers: TransformStyleFunction = (previous, next) => {
+  if (!previous) return next;
 
-  // Deliberately explicit about which state the demo is in. A blank line while
-  // the round trip is in flight would look the same as a rejected token, and the
-  // ways this can fail are not interchangeable: 401 means Keycloak or the client
-  // allowlist turned the token down, 403 means it was accepted and the user is
-  // simply not entitled here.
-  const verification = (() => {
-    if (user) {
-      return {
-        label: `Verified by Keycloak \u00b7 map-db user #${user.id} \u00b7 ${
-          user.permissions.join(", ") || "no permissions"
-        }`,
-        color: theme.palette.success.main,
-      };
-    }
-    if (isPending) {
-      return {
-        label: "Verifying the token with map-api\u2026",
-        color: theme.palette.text.secondary,
-      };
-    }
-    if (tokenUnavailable) {
-      return {
-        label: "The host application supplied no token",
-        color: theme.palette.text.secondary,
-      };
-    }
-    if (status === 403) {
-      return {
-        label: "Token verified, but this user is not entitled to the map",
-        color: theme.palette.warning.main,
-      };
-    }
-    return {
-      label:
-        status === 401
-          ? "map-api rejected this token"
-          : "Could not reach map-api",
-      color: error ? theme.palette.error.main : theme.palette.text.secondary,
+  const sources = Object.fromEntries(
+    Object.entries(previous.sources).filter(([id]) =>
+      id.startsWith(WIDGET_ID_PREFIX),
+    ),
+  );
+  const layers = previous.layers.filter((layer) =>
+    layer.id.startsWith(WIDGET_ID_PREFIX),
+  );
+
+  return {
+    ...next,
+    sources: { ...next.sources, ...sources },
+    // Appended, so the widget's layers stay above the basemap's.
+    layers: [...next.layers, ...layers],
+  };
+};
+
+export default function MapSurface() {
+  const { config } = useMapWidget();
+  const { initialExtent, basemapStyles } = config;
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const [map, setMap] = useState<MapLibreMap | null>(null);
+
+  const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP);
+  const activeStyle = resolveBasemap(basemap, basemapStyles).style;
+
+  // What the map is actually showing. Tracking the style rather than the id
+  // covers both ways it can change: the user picks the other basemap, or the
+  // host passes a different URL for the one already on screen.
+  const appliedStyle = useRef(activeStyle);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const instance = new MapLibreMap({
+      container,
+      style: appliedStyle.current,
+      bounds: DEFAULT_EXTENT,
+      fitBoundsOptions: { padding: FIT_PADDING },
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+      dragRotate: false,
+      touchZoomRotate: false,
+      canvasContextAttributes: { preserveDrawingBuffer: true },
+    });
+
+    instance.addControl(
+      new NavigationControl({ showCompass: false }),
+      "bottom-right",
+    );
+    instance.addControl(
+      new GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        // Single-shot: fly there once rather than following the user around.
+        trackUserLocation: false,
+        showAccuracyCircle: true,
+      }),
+      "bottom-right",
+    );
+    instance.addControl(new ScaleControl({ unit: "metric" }), "bottom-left");
+
+    setMap(instance);
+
+    return () => {
+      setMap(null);
+      instance.remove();
     };
-  })();
+  }, []);
+
+  useEffect(() => {
+    if (!map || !initialExtent) return;
+    map.fitBounds(initialExtent, { padding: FIT_PADDING, duration: 0 });
+  }, [map, initialExtent]);
+
+  // setStyle keeps the camera where it is, so a switch changes what is under the
+  // user without moving them.
+  useEffect(() => {
+    if (!map || appliedStyle.current === activeStyle) return;
+    appliedStyle.current = activeStyle;
+    map.setStyle(activeStyle, { transformStyle: carryWidgetLayers });
+  }, [map, activeStyle]);
 
   return (
     <Box
       sx={{
-        // Fills whatever the widget root gives it. No vh/vw, no position: fixed.
+        position: "relative",
         width: "100%",
         height: "100%",
         minWidth: 0,
         minHeight: 0,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "1rem",
-        padding: "2rem",
-        backgroundColor: theme.palette.background.default,
       }}
     >
-      <Box
-        sx={{
-          padding: "1rem",
-          backgroundColor: theme.palette.background.paper,
-          border: `1px solid ${theme.palette.divider}`,
-          borderRadius: `${theme.shape.borderRadius}px`,
-        }}
-      >
-        <MapOutlinedIcon
-          fontSize="large"
-          sx={{ color: theme.palette.primary.main }}
-        />
-      </Box>
-      <Typography variant="h3" color={theme.palette.text.primary}>
-        Map goes here
-      </Typography>
-      <Typography variant="caption" color={theme.palette.text.secondary}>
-        {config.projectId
-          ? `Project ${config.projectId}`
-          : "No project selected"}
-      </Typography>
-      <Typography variant="body2" color={theme.palette.text.primary}>
-        {identity
-          ? `Logged in as ${[identity.name, identity.preferredUsername]
-              .filter(Boolean)
-              .join(", ")}`
-          : "Not signed in to the host application"}
-      </Typography>
-      <Typography variant="caption" color={verification.color}>
-        {verification.label}
-      </Typography>
+      <Box ref={containerRef} sx={{ width: "100%", height: "100%" }} />
+      <BasemapSwitch current={basemap} onSelect={setBasemap} />
     </Box>
   );
 }

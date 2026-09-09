@@ -1,6 +1,11 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { AxiosInstance } from "axios";
-import type { MapExtent, MapFeature, MapWidgetError } from "@/types";
+import type {
+  MapBasemapStyles,
+  MapExtent,
+  MapFeature,
+  MapWidgetError,
+} from "@/types";
 import type { HostIdentity } from "@/widget/identity";
 
 /**
@@ -11,6 +16,7 @@ import type { HostIdentity } from "@/widget/identity";
 export interface ResolvedMapWidgetConfig {
   projectId?: string;
   initialExtent?: MapExtent;
+  basemapStyles?: MapBasemapStyles;
   /** Always callable — a no-op when the host passed nothing. */
   onFeatureSelect: (feature: MapFeature) => void;
   /** Always callable — a no-op when the host passed nothing. */
