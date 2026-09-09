@@ -17,6 +17,8 @@ own theme.
 - [What the widget does not do](#what-the-widget-does-not-do)
 - [Props](#props)
 - [Versioning](#versioning)
+- [Source layout](#source-layout)
+- [Working on the widget](#working-on-the-widget)
 
 ## Install
 
@@ -127,9 +129,10 @@ If your application uses `keycloak-js` directly rather than `react-oidc-context`
 Anything that returns a promise of a bearer token works; the widget does not care
 where it came from.
 
-A live version of this wiring, including a control panel for the optional props, is
-in [`map-web/src/routes/_authenticated/map.tsx`](../../map-web/src/routes/_authenticated/map.tsx).
-That application is the reference host — copy from it.
+A live version of this wiring is in
+[`map-web/src/routes/_authenticated/map.tsx`](../../map-web/src/routes/_authenticated/map.tsx).
+That application is the reference host — copy from it. It passes only the two required props today;
+the optional ones are not exercised there yet.
 
 ## Getting access in Keycloak
 
@@ -271,25 +274,44 @@ prefix rule, not a list of folders.
 
 ## Working on the widget
 
-Vite resolves this package to its **built** `dist/`, not `src/`, so run the watch
-build alongside `map-web`:
+`map-web` resolves this package to its **built** `dist/`, not `src/`. `npm install`
+links the workspace without building it, so on a fresh clone build once from the
+repository root before starting the host — otherwise the dev server fails with
+`Failed to resolve entry for package "@bcgov/epic-map"`:
+
+```bash
+npm run build --workspace @bcgov/epic-map
+```
+
+Thereafter, either run the watch build alongside `map-web`, so each widget edit
+rebuilds `dist/` and the host reloads:
 
 ```bash
 npm run dev -w @bcgov/epic-map   # vite build --watch
 npm run dev -w map-web           # in another terminal
 ```
 
+(`npm run dev` from inside `packages/epic-map` is the same watch build, if you would
+rather run it from the package directory.)
+
+Or run the host in source mode (`npm run dev:widget-source` from the root), which
+aliases this package to `src/` and gives HMR without a build. See
+[`map-web/README.md`](../../map-web/README.md#working-on-the-widget) for the
+trade-off between the two.
+
 | Command | Description |
 | --- | --- |
 | `npm run build` | Library build to `dist/` plus type declarations |
-| `npm run dev` | Rebuild on change |
+| `npm run dev` | Rebuild on change (`vite build --watch`) |
+| `npm run start` | Alias for `npm run dev` |
 | `npm run lint` | ESLint over `src` — also where the contract above is enforced |
 | `npm run typecheck` | `tsc --noEmit` |
 
-The rules in [`.eslintrc.cjs`](.eslintrc.cjs) are the enforced half of "what the
-widget does not do": bans on `import.meta.env`, on browser storage, on OIDC and
-router imports, and on `epic.theme` and `<ThemeProvider>`. The reasoning behind them
-is in [`docs/04_widget-architecture.md`](../../docs/04_widget-architecture.md).
+The rules in [`.eslintrc.cjs`](.eslintrc.cjs) are the enforced half of
+["What the widget does not do"](#what-the-widget-does-not-do): bans on
+`import.meta.env`, on browser storage, on OIDC and router imports, and on
+`epic.theme` and `<ThemeProvider>`. Each rule carries its reasoning in its own
+message, so a violation explains itself at the point it is hit.
 
 To add a release note, run `npm run changeset` at the repository root and describe
 the change; the file it writes is reviewed with your PR.

@@ -4,8 +4,8 @@ This module is for the initiation of the flask app.
 """
 
 import os
-
 from http import HTTPStatus
+
 import secure
 from flask import Flask, current_app, g, jsonify, request
 from flask_cors import CORS
@@ -19,13 +19,14 @@ from map_api.services.audit_service import AuditService
 from map_api.utils import token as token_utils
 from map_api.utils.cache import cache
 
+
 # Security Response headers
 csp = (
     secure.ContentSecurityPolicy()
     .default_src("'self'")
     .script_src("'self'", "'unsafe-inline'")
     .style_src("'self'", "'unsafe-inline'")
-    .img_src("'self'", "data:")
+    .img_src("'self'", 'data:')
     .object_src("'self'")
     .connect_src("'self'")
 )
@@ -52,16 +53,10 @@ def _verify_bearer_token():
     return g.jwt_oidc_token_info
 
 
-def create_app(run_mode=os.getenv("FLASK_ENV", "development")):
+def create_app(run_mode=os.getenv('FLASK_ENV', 'development')):
     """Create flask app."""
     # pylint: disable=import-outside-toplevel
-    from map_api.resources import (
-        API_BLUEPRINT,
-        DOC_PATHS,
-        DOCS_ENABLED,
-        OPS_BLUEPRINT,
-        URL_PREFIX,
-    )
+    from map_api.resources import API_BLUEPRINT, DOC_PATHS, DOCS_ENABLED, OPS_BLUEPRINT, URL_PREFIX
 
     # Flask app initialize
     app = Flask(__name__)
@@ -78,7 +73,7 @@ def create_app(run_mode=os.getenv("FLASK_ENV", "development")):
     # cross-origin, which this API neither needs nor reads.
     CORS(
         app,
-        resources={r"/*": {"origins": app.config["CORS_ORIGINS"]}},
+        resources={r'/*': {'origins': app.config['CORS_ORIGINS']}},
         supports_credentials=False,
     )
 
@@ -100,7 +95,7 @@ def create_app(run_mode=os.getenv("FLASK_ENV", "development")):
 
     @app.before_request
     def set_origin():
-        g.origin_url = request.environ.get("HTTP_ORIGIN", "localhost")
+        g.origin_url = request.environ.get('HTTP_ORIGIN', 'localhost')
 
     @app.before_request
     def authenticate():
@@ -116,17 +111,17 @@ def create_app(run_mode=os.getenv("FLASK_ENV", "development")):
         # CORS preflight never carries an Authorization header; let flask-cors
         # answer it. Only the API blueprint is gated - /ops health probes and
         # anything else stay open.
-        if request.method == "OPTIONS" or not (request.path + "/").startswith(URL_PREFIX):
+        if request.method == 'OPTIONS' or not (request.path + '/').startswith(URL_PREFIX):
             return
 
         # Swagger UI and its spec are only registered outside production-like
         # environments; where they exist they are reachable without a token.
-        if DOCS_ENABLED and request.path.rstrip("/") in DOC_PATHS:
+        if DOCS_ENABLED and request.path.rstrip('/') in DOC_PATHS:
             return
 
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise Unauthorized("Authorization header is required")
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            raise Unauthorized('Authorization header is required')
 
         token_info = _verify_bearer_token()
 
@@ -135,33 +130,33 @@ def create_app(run_mode=os.getenv("FLASK_ENV", "development")):
         # permission to be here. No-op while AUTH_REQUIRED_GROUP is unset.
         if not token_utils.belongs_to_app(token_info):
             current_app.logger.warning(
-                "Rejected %s: token carries groups %s, none of which match "
-                "AUTH_REQUIRED_GROUP=%s",
+                'Rejected %s: token carries groups %s, none of which match '
+                'AUTH_REQUIRED_GROUP=%s',
                 token_utils.auth_guid(token_info),
                 token_utils.groups(token_info),
-                app.config.get("AUTH_REQUIRED_GROUP"),
+                app.config.get('AUTH_REQUIRED_GROUP'),
             )
             raise PermissionDeniedError(
-                "You do not have access to this application."
+                'You do not have access to this application.'
             )
 
-        g.access_token = auth_header.split(" ")[1]
+        g.access_token = auth_header.split(' ')[1]
         g.token_info = token_info
 
     build_cache(app)
 
-    if not app.config.get("CORS_ORIGINS"):
+    if not app.config.get('CORS_ORIGINS'):
         app.logger.warning(
-            "CORS_ORIGINS is empty: no browser origin can call this API. Set "
-            "CORS_ORIGIN to the list of EPIC application origins for this "
-            "environment."
+            'CORS_ORIGINS is empty: no browser origin can call this API. Set '
+            'CORS_ORIGIN to the list of EPIC application origins for this '
+            'environment.'
         )
 
-    if not app.config.get("AUTH_REQUIRED_GROUP"):
+    if not app.config.get('AUTH_REQUIRED_GROUP'):
         app.logger.warning(
-            "AUTH_REQUIRED_GROUP is not set: every valid IDIR token from the "
-            "realm is accepted, including staff who only work in the other "
-            "EPIC applications. Set it once the realm has a group for this app."
+            'AUTH_REQUIRED_GROUP is not set: every valid IDIR token from the '
+            'realm is accepted, including staff who only work in the other '
+            'EPIC applications. Set it once the realm has a group for this app.'
         )
 
     @app.after_request
@@ -181,7 +176,7 @@ def create_app(run_mode=os.getenv("FLASK_ENV", "development")):
         500 for the user, so it is logged and swallowed. That is a deliberate
         trade: this is an activity log, not a ledger the response depends on.
         """
-        token_info = getattr(g, "token_info", None)
+        token_info = getattr(g, 'token_info', None)
         if token_info is None:
             return response
 
@@ -194,7 +189,7 @@ def create_app(run_mode=os.getenv("FLASK_ENV", "development")):
             )
         except Exception:  # noqa: B902; pylint: disable=broad-except
             db.session.rollback()
-            current_app.logger.exception("Failed to write audit event")
+            current_app.logger.exception('Failed to write audit event')
 
         return response
 
@@ -202,16 +197,16 @@ def create_app(run_mode=os.getenv("FLASK_ENV", "development")):
     def set_secure_headers(response):
         """Set CORS headers for security."""
         secure_headers.set_headers(response)
-        response.headers.add("Cross-Origin-Resource-Policy", "*")
-        response.headers["Cross-Origin-Opener-Policy"] = "*"
-        response.headers["Cross-Origin-Embedder-Policy"] = "unsafe-none"
+        response.headers.add('Cross-Origin-Resource-Policy', '*')
+        response.headers['Cross-Origin-Opener-Policy'] = '*'
+        response.headers['Cross-Origin-Embedder-Policy'] = 'unsafe-none'
         return response
 
     @app.errorhandler(HTTPException)
     def handle_http_exception(error):
         """Return HTTP errors as JSON, the shape the web client expects."""
         return (
-            jsonify({"message": error.description or str(error), "status": error.code}),
+            jsonify({'message': error.description or str(error), 'status': error.code}),
             error.code,
         )
 
@@ -222,7 +217,7 @@ def create_app(run_mode=os.getenv("FLASK_ENV", "development")):
             raise err
         current_app.logger.error(str(err))
         return (
-            jsonify({"message": "Internal server error", "status": 500}),
+            jsonify({'message': 'Internal server error', 'status': 500}),
             HTTPStatus.INTERNAL_SERVER_ERROR,
         )
 
@@ -254,5 +249,5 @@ def setup_jwt_manager(app_context, jwt_manager):
         """
         return []
 
-    app_context.config["JWT_ROLE_CALLBACK"] = get_roles
+    app_context.config['JWT_ROLE_CALLBACK'] = get_roles
     jwt_manager.init_app(app_context)

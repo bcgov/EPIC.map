@@ -66,8 +66,10 @@ Two contracts are already enforced there, and are worth knowing before moving co
   the session; `map-web` shows how.
 
 [`packages/epic-map/README.md`](packages/epic-map/README.md) is the integration guide host teams
-read; [`docs/04_widget-architecture.md`](docs/04_widget-architecture.md) records why the widget is a
-package rather than an iframe, why it holds no auth, and why entitlement stays server-side.
+read. Its "What the widget does not do" section is the short form of the reasoning — why the widget
+is a package rather than an iframe, why it holds no auth, and why entitlement stays server-side — and
+[`packages/epic-map/.eslintrc.cjs`](packages/epic-map/.eslintrc.cjs) is where those rules are
+enforced.
 
 ## Setup
 
@@ -93,83 +95,141 @@ Create a `.env` file in your map-api with the necessary configurations. Referenc
 
 ### 4. Start Docker Compose
 In a separate terminal, launch Docker Compose to set up your containers:
-docker-compose up
+`docker-compose up`
 
 ### 5. Run Setup
 Navigate to your project directory and run the setup command to prepare your development environment:
-make setup
+`make setup`
 
-### 5. Run Server
+### 6. Run Server
 Once the setup is completed use make run to start the server:
-make run
+`make run`
 
 
 ## Backend Setup on Windows
 
-## Step 1: Download the Latest Python Version
+There is no `make` on Windows, so the steps `make setup` and `make run` perform in WSL are spelled
+out here.
 
-1. Visit the official Python website: [Python Downloads](https://www.python.org/downloads/)
-2. Download and install the latest version of Python for your operating system.
+### Step 1: Install Python 3.12
 
+Download and install Python 3.12 from the [official Python website](https://www.python.org/downloads/).
 
-## Step 4: Set Environment Variables
-
-1. Set the `FLASK_APP` and `FLASK_ENV` environment variables:
-    - set FLASK_APP=app.py 
-      set FLASK_ENV=development
-      
-2. Configure `PYTHONPATH` to your project's folder location up to `map-api/src`:
-    - set PYTHONPATH=path\to\map-api\src &&    PYTHONPATH=path\to\map-api
-
-## Step 2: Start Docker
+### Step 2: Start Docker
 
 1. Open a terminal.
 2. Navigate to the `map-api` directory:
-    cd map-api
 
-3. Run the following command to start the services using Docker Compose:
-    docker-compose up
+        cd map-api
 
-## Step 3: Set Up `map-api`
+3. Start the database and redis containers:
 
-1. Open a separate terminal.
+        docker-compose up
 
-2. Navigate to the `` directory:
-    cd map-api
+### Step 3: Set Up `map-api`
 
-3. Create a virtual environment. Refer to the official Python documentation on how to create a virtual environment: [Python venv](https://docs.python.org/3/library/venv.html).
-    python -m venv venv
+1. Open a separate terminal and navigate to the `map-api` directory:
 
-4. Activate the virtual environment:
-    - venv\Scripts\activate
+        cd map-api
 
-5. Install the required Python packages from both `dev.txt` and `prod.txt` requirements files:
-    python -m pip install -r path/to/requirements/dev.txt
-    python -m pip install -r path/to/requirements/prod.txt
+2. Create a virtual environment. Refer to the official Python documentation on how to create a
+   virtual environment: [Python venv](https://docs.python.org/3/library/venv.html).
 
-6. Run your Flask app using the Flask CLI:
-    - python -m flask run -p 5000
+        python -m venv venv
+
+3. Activate the virtual environment:
+
+        venv\Scripts\activate
+
+4. Install the required Python packages from both `dev.txt` and `prod.txt` requirements files, then
+   install the project itself so `map_api` is importable:
+
+        python -m pip install -r requirements/dev.txt
+        python -m pip install -r requirements/prod.txt
+        python -m pip install -e .
+
+### Step 4: Set Environment Variables
+
+1. Copy `sample.env` to `.env` and fill in the values.
+
+2. Point `FLASK_APP` at the WSGI entry point:
+
+        set FLASK_APP=wsgi.py
+
+   `FLASK_ENV` is read from `.env` by the application's own config; Flask itself dropped that
+   variable in 2.3, so setting it in the shell does not turn on the reloader. Use
+   `python -m flask run --debug` for that.
+
+3. `pip install -e .` above puts `map-api/src` on the path, so `PYTHONPATH` normally needs no setting.
+   If you skipped it:
+
+        set PYTHONPATH=path\to\map-api\src
+
+### Step 5: Run the Database Migrations and the Server
+
+    python -m flask db upgrade
+    python -m flask run -p 5000
 
 ## Front End Setup
 
 ### 1. Install Dependencies
 From the repository root — this installs `map-web` and `packages/epic-map` together and links them:
-npm install
 
-### 2. Navigate to Front End Directory
+    npm install
+
+### 2. Build the Widget Package
+`map-web` resolves `@bcgov/epic-map` to the package's built `dist/`, and `npm install` only links the
+workspace — it does not build it. On a fresh clone `dist/` does not exist yet, so build it once from
+the repository root:
+
+    npm run build --workspace @bcgov/epic-map
+
+Skipping this fails the dev server with `Failed to resolve entry for package "@bcgov/epic-map"`. The
+same applies after any `git clean -xdf`, since `dist/` is build output and is not committed. See
+[Working on the widget](map-web/README.md#working-on-the-widget) for how to keep it up to date while
+editing widget source.
+
+### 3. Navigate to Front End Directory
 Change to the harness directory:
-cd map-web
 
-### 3. Configure Environment Variables
+    cd map-web
+
+### 4. Configure Environment Variables
 Copy `sample.env` to `.env` and fill in the values. At a minimum set `VITE_API_URL` to the map-api
-url including the `/api` prefix (e.g. `http://localhost:5000/api`).
+url including the `/api` prefix (e.g. `http://localhost:5000/api`), and `VITE_APP_URL` to the address
+the dev server actually serves on — the OIDC redirect URIs are derived from it.
 
-### 4. Run Development Server
+### 5. Run Development Server
 Launch the development server:
-npm run dev
 
-It serves on http://localhost:3000. The port is fixed so that it matches the `CORS_ORIGIN` list the
-api allows. See `map-web/README.md` for the full front end documentation, and
+    npm run dev
+
+It serves on Vite's default port, http://localhost:5173. The port is not pinned in `vite.config.ts`,
+so if you change it, keep `VITE_APP_URL` in step 4 in step with it and make sure the origin is in the
+api's allowed list — `CORS_ORIGIN`, or the `LOCAL_CORS_ORIGINS` fallback in
+[`map-api/src/map_api/config.py`](map-api/src/map_api/config.py), which covers 5173, 3000 and 8000.
+
+### 6. Editing the Widget While the Host Runs
+`npm run dev` serves the host against the package's prebuilt `dist/`, so edits under
+`packages/epic-map/src` do not reach the browser on their own. Pick one of the two loops, both run
+from the repository root:
+
+Run the package's watch build in a second terminal, so every widget edit rebuilds `dist/` and the
+host reloads:
+
+    npm run dev:widget-watch    # packages/epic-map: vite build --watch
+    npm run dev                 # in another terminal
+
+Or run the host in source mode, which aliases `@bcgov/epic-map` to `packages/epic-map/src` and gives
+HMR with no build step at all:
+
+    npm run dev:widget-source
+
+Source mode is the faster loop but compiles the widget with the host's Vite config instead of the
+library build, so verify anything build-shaped — the emitted types, `dist/epic-map.css`, the
+externals — with the watch build before opening a PR.
+
+See `map-web/README.md` for the full front end documentation, and
 [`packages/epic-map/README.md`](packages/epic-map/README.md) for the component package.
 
 # Helm

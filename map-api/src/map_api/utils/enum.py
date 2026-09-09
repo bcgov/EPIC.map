@@ -18,11 +18,11 @@ from enum import Enum
 class HttpMethod(Enum):
     """Http methods."""
 
-    GET = "GET"
-    PUT = "PUT"
-    POST = "POST"
-    PATCH = "PATCH"
-    DELETE = "DELETE"
+    GET = 'GET'
+    PUT = 'PUT'
+    POST = 'POST'
+    PATCH = 'PATCH'
+    DELETE = 'DELETE'
 
 
 class PermissionEnum(Enum):
@@ -33,7 +33,7 @@ class PermissionEnum(Enum):
     be renamed independently of each other.
     """
 
-    VIEWER = "Viewer"
-    USER = "User"
-    SUPERUSER = "Superuser"
-    ADMIN = "Admin"
+    VIEWER = 'Viewer'
+    USER = 'User'
+    SUPERUSER = 'Superuser'
+    ADMIN = 'Admin'

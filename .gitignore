@@ -146,3 +146,8 @@ claude-docs/
 
 # Node / npm workspaces
 node_modules/
+
+# Local `act` configuration. The ubuntu-24.04 image mapping every job here
+# needs is a per-machine choice, so it stays out of the repo:
+#   -P ubuntu-24.04=catthehacker/ubuntu:act-latest
+.actrc

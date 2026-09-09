@@ -223,8 +223,6 @@ class TestConfig(_Config):  # pylint: disable=too-few-public-methods
 
     DEBUG = True
     TESTING = True
-    DEBUG = True
-    TESTING = True
 
     # POSTGRESQL
     DB_USER = os.getenv('DATABASE_TEST_USERNAME', 'postgres')
@@ -232,7 +230,12 @@ class TestConfig(_Config):  # pylint: disable=too-few-public-methods
     DB_NAME = os.getenv('DATABASE_TEST_NAME', 'testdb')
     DB_HOST = os.getenv('DATABASE_TEST_HOST', 'localhost')
     DB_PORT = os.getenv('DATABASE_TEST_PORT', '5432')
-    SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{int(DB_PORT)}/{DB_NAME}'
+    # A whole URL wins over the five parts, the way REDIS_TEST_URL does below.
+    # CI hands over one connection string rather than setting each piece.
+    SQLALCHEMY_DATABASE_URI = (
+        os.getenv('DATABASE_TEST_URL') or
+        f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{int(DB_PORT)}/{DB_NAME}'
+    )
 
     # REDIS - logical db 1 by default so a test run cannot clobber dev keys
     REDIS_HOST = os.getenv('REDIS_TEST_HOST', 'localhost')
@@ -308,6 +311,7 @@ class ProdConfig(_Config):  # pylint: disable=too-few-public-methods
 
     TESTING = False
     DEBUG = False
+    SQLALCHEMY_ECHO = False
 
     # No localhost fallback here: a deployed environment names every EPIC
     # application origin that may call it, or none are allowed.

@@ -25,14 +25,14 @@ env:
 
 jobs:
   api-cd:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     if: github.repository == 'bcgov/EPIC.map'
     environment:
       name: "dev"
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
 
       - name: Login Openshift
         shell: bash

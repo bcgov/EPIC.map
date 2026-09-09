@@ -6,6 +6,9 @@ on:
       - develop
     paths:
       - "map-web/**"
+      - "packages/epic-map/**"
+      - "package.json"
+      - "package-lock.json"
   push:
     branches:
       - develop
@@ -13,68 +16,82 @@ on:
 defaults:
   run:
     shell: bash
-    working-directory: ./map-web
+
+env:
+  # One place to bump the runtime. Previously only the linting job declared a
+  # matrix, so the other jobs interpolated an empty node-version and silently
+  # ran on whatever the runner shipped.
+  NODE_VERSION: "24.x"
 
 jobs:
   setup-job:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     if: github.repository == 'bcgov/EPIC.map'
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - run: "true"
 
   linting:
     needs: setup-job
-    runs-on: ubuntu-20.04
-
-    strategy:
-      matrix:
-        node-version: [18.x]
+    runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v2
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v1
+      - uses: actions/checkout@v6
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ env.NODE_VERSION }}
       - name: Install dependencies
-        run: |
-          npm install --legacy-peer-deps
+        run: npm ci
       - name: Lint
         id: lint
-        run: |
-          npm run lint
+        run: npm run lint --workspace map-web
 
   testing:
     needs: setup-job
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
 
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v1
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Install dependencies
-        run: |
-          npm install --legacy-peer-deps
+        run: npm ci
 
+      # map-web resolves @bcgov/epic-map to the package's built dist/, which
+      # npm ci links but does not build.
+      - name: Build the widget package
+        run: npm run build --workspace @bcgov/epic-map
+
+      # `cypress run` exits non-zero when it finds no specs, and there are none
+      # yet - the harness is configured but unused. Adding the first *.cy.tsx
+      # turns this step on with no workflow change.
       - name: Test with Cypress
         id: test
+        working-directory: ./map-web
         run: |
-          npx cypress run --component --headed --browser chrome
+          if find src cypress \( -name '*.cy.ts' -o -name '*.cy.tsx' \) -print -quit | grep -q .; then
+            npx cypress run --component --headed --browser chrome
+            echo "ran=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No component specs found; skipping Cypress."
+            echo "ran=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Sets Codecov branch name
         run: |
           echo "CODECOV_BRANCH=PR_${{ github.head_ref }}" >> $GITHUB_ENV
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.test.outputs.ran == 'true'
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        if: steps.test.outputs.ran == 'true'
+        uses: codecov/codecov-action@v7
         with:
           flags: map-web
           name: codecov-map-web
@@ -86,18 +103,18 @@ jobs:
 
   build-check:
     needs: setup-job
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v2
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v1
+      - uses: actions/checkout@v6
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ env.NODE_VERSION }}
       - name: Install dependencies
-        run: |
-          npm install --legacy-peer-deps
+        run: npm ci
+      - name: Build the widget package
+        run: npm run build --workspace @bcgov/epic-map
       - name: build to check strictness
         id: build
-        run: |
-          npm run build --quiet || true
+        run: npm run build --workspace map-web

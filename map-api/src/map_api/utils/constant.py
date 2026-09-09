@@ -18,7 +18,7 @@ from .enum import PermissionEnum
 
 # The application's name in the shared EAO Keycloak realm. Used as the default
 # value of AUTH_REQUIRED_GROUP when group gating is switched on.
-AUTH_APP = "MAP"
+AUTH_APP = 'MAP'
 
 # What a signed-in user can do before any Keycloak role says otherwise. Roles
 # are still to be decided, so every authenticated IDIR user is a plain user;
@@ -27,8 +27,8 @@ DEFAULT_PERMISSIONS = (PermissionEnum.USER,)
 
 # PermissionEnum -> the Keycloak client role that grants it.
 GROUP_MAP = {
-    PermissionEnum.SUPERUSER: "super_user",
-    PermissionEnum.ADMIN: "admin",
-    PermissionEnum.USER: "user",
-    PermissionEnum.VIEWER: "viewer",
+    PermissionEnum.SUPERUSER: 'super_user',
+    PermissionEnum.ADMIN: 'admin',
+    PermissionEnum.USER: 'user',
+    PermissionEnum.VIEWER: 'viewer',
 }

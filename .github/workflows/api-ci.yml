@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - run: "true"
 
   linting:
@@ -29,9 +29,9 @@ jobs:
         python-version: ["3.12"]
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -53,7 +53,7 @@ jobs:
      needs: setup-job
      env:
        FLASK_ENV: "testing"
-       DATABASE_TEST_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
+       DATABASE_TEST_URL: "postgresql://postgres:postgres@localhost:55432/postgres"
 
      runs-on: ubuntu-24.04
 
@@ -63,22 +63,23 @@ jobs:
 
      services:
       postgres:
-        image: postgres:12
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
+        # Published on 55432, not 5432: most developer machines already have something on the default port
         ports:
-          - 5432:5432
+          - 55432:5432
         # needed because the postgres container does not provide a healthcheck
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
      steps:
-       - uses: actions/checkout@v4
+       - uses: actions/checkout@v6
          with:
            fetch-depth: 0
        - name: Set up Python ${{ matrix.python-version }}
-         uses: actions/setup-python@v4
+         uses: actions/setup-python@v7
          with:
            python-version: ${{ matrix.python-version }}
        - name: Install dependencies
@@ -95,7 +96,7 @@ jobs:
          if: github.event_name == 'pull_request'
 
        - name: Upload coverage to Codecov
-         uses: codecov/codecov-action@v4
+         uses: codecov/codecov-action@v7
          with:
           flags: map-api
           name: codecov-map-api
@@ -112,9 +113,9 @@ jobs:
         python-version: ["3.12"]
     name: Build
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Build

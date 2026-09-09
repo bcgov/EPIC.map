@@ -17,14 +17,17 @@ from http import HTTPStatus
 
 from flask import g
 from flask_restx import Namespace, Resource
+
+from map_api.auth import auth
+from map_api.exceptions import ResourceNotFoundError
+from map_api.schemas.user import CurrentUserSchema, UserRequestSchema, UserSchema
 from map_api.services.user_service import UserService
 from map_api.utils.util import cors_preflight
-from map_api.schemas.user import CurrentUserSchema, UserSchema, UserRequestSchema
-from map_api.exceptions import ResourceNotFoundError
-from map_api.auth import auth
+
 from .apihelper import Api as ApiHelper
 
-API = Namespace("users", description="Endpoints for User Management")
+
+API = Namespace('users', description='Endpoints for User Management')
 """Custom exception messages
 """
 
@@ -33,27 +36,27 @@ API = Namespace("users", description="Endpoints for User Management")
 # @auth.has_one_of_roles([...]), which is already wired up in map_api.auth.
 
 user_request_model = ApiHelper.convert_ma_schema_to_restx_model(
-    API, UserRequestSchema(), "User"
+    API, UserRequestSchema(), 'User'
 )
 user_list_model = ApiHelper.convert_ma_schema_to_restx_model(
-    API, UserSchema(), "UserListItem"
+    API, UserSchema(), 'UserListItem'
 )
 current_user_model = ApiHelper.convert_ma_schema_to_restx_model(
-    API, CurrentUserSchema(), "CurrentUser"
+    API, CurrentUserSchema(), 'CurrentUser'
 )
 
 
-@cors_preflight("GET, OPTIONS")
-@API.route("/me", methods=["GET", "OPTIONS"])
+@cors_preflight('GET, OPTIONS')
+@API.route('/me', methods=['GET', 'OPTIONS'])
 class CurrentUser(Resource):
     """The signed-in user."""
 
     @staticmethod
     @auth.require
     @ApiHelper.swagger_decorators(
-        API, endpoint_description="Fetch the signed in user and their permissions"
+        API, endpoint_description='Fetch the signed in user and their permissions'
     )
-    @API.response(code=200, model=current_user_model, description="Success")
+    @API.response(code=200, model=current_user_model, description='Success')
     def get():
         """Return the signed-in user, provisioning their local profile if needed.
 
@@ -65,18 +68,18 @@ class CurrentUser(Resource):
         token_info = g.token_info
         user = UserService.sync_user_from_token(token_info)
         permissions = UserService.get_permission_levels(token_info)
-        setattr(user, "permissions", [permission.value for permission in permissions])
+        setattr(user, 'permissions', [permission.value for permission in permissions])
         return CurrentUserSchema().dump(user), HTTPStatus.OK
 
 
-@cors_preflight("GET, OPTIONS, POST")
-@API.route("", methods=["POST", "GET", "OPTIONS"])
+@cors_preflight('GET, OPTIONS, POST')
+@API.route('', methods=['POST', 'GET', 'OPTIONS'])
 class Users(Resource):
     """Resource for managing users."""
 
     @staticmethod
-    @API.response(code=200, description="Success", model=[user_list_model])
-    @ApiHelper.swagger_decorators(API, endpoint_description="Fetch all users")
+    @API.response(code=200, description='Success', model=[user_list_model])
+    @ApiHelper.swagger_decorators(API, endpoint_description='Fetch all users')
     @auth.require
     def get():
         """Fetch all users."""
@@ -85,10 +88,10 @@ class Users(Resource):
         return user_list_schema.dump(users), HTTPStatus.OK
 
     @staticmethod
-    @ApiHelper.swagger_decorators(API, endpoint_description="Create a user")
+    @ApiHelper.swagger_decorators(API, endpoint_description='Create a user')
     @API.expect(user_request_model)
-    @API.response(code=201, model=user_request_model, description="UserCreated")
-    @API.response(400, "Bad Request")
+    @API.response(code=201, model=user_request_model, description='UserCreated')
+    @API.response(400, 'Bad Request')
     @auth.require
     def post():
         """Create a user."""
@@ -97,47 +100,47 @@ class Users(Resource):
         return UserSchema().dump(created_user), HTTPStatus.CREATED
 
 
-@cors_preflight("GET, OPTIONS, PATCH, DELETE")
-@API.route("/<user_id>", methods=["PATCH", "GET", "OPTIONS", "DELETE"])
-@API.doc(params={"user_id": "The user identifier"})
+@cors_preflight('GET, OPTIONS, PATCH, DELETE')
+@API.route('/<user_id>', methods=['PATCH', 'GET', 'OPTIONS', 'DELETE'])
+@API.doc(params={'user_id': 'The user identifier'})
 class User(Resource):
-    """Resource for managing a single user"""
+    """Resource for managing a single user."""
 
     @staticmethod
-    @ApiHelper.swagger_decorators(API, endpoint_description="Fetch a user by id")
-    @API.response(code=200, model=user_list_model, description="Success")
-    @API.response(404, "Not Found")
+    @ApiHelper.swagger_decorators(API, endpoint_description='Fetch a user by id')
+    @API.response(code=200, model=user_list_model, description='Success')
+    @API.response(404, 'Not Found')
     @auth.require
     def get(user_id):
         """Fetch a user by id."""
         user = UserService.get_user_by_id(user_id)
         if not user:
-            raise ResourceNotFoundError(f"User with {user_id} not found")
+            raise ResourceNotFoundError(f'User with {user_id} not found')
         return UserSchema().dump(user), HTTPStatus.OK
 
     @staticmethod
-    @ApiHelper.swagger_decorators(API, endpoint_description="Update a user by id")
+    @ApiHelper.swagger_decorators(API, endpoint_description='Update a user by id')
     @API.expect(user_request_model)
-    @API.response(code=200, model=user_list_model, description="Success")
-    @API.response(400, "Bad Request")
-    @API.response(404, "Not Found")
+    @API.response(code=200, model=user_list_model, description='Success')
+    @API.response(400, 'Bad Request')
+    @API.response(404, 'Not Found')
     @auth.require
     def patch(user_id):
         """Update a user by id."""
         user_data = UserRequestSchema().load(API.payload)
         updated_user = UserService.update_user(user_id, user_data)
         if not updated_user:
-            raise ResourceNotFoundError(f"User with {user_id} not found")
+            raise ResourceNotFoundError(f'User with {user_id} not found')
         return UserSchema().dump(updated_user), HTTPStatus.OK
 
     @staticmethod
-    @ApiHelper.swagger_decorators(API, endpoint_description="Delete a user by id")
-    @API.response(code=200, model=user_list_model, description="Deleted")
-    @API.response(404, "Not Found")
+    @ApiHelper.swagger_decorators(API, endpoint_description='Delete a user by id')
+    @API.response(code=200, model=user_list_model, description='Deleted')
+    @API.response(404, 'Not Found')
     @auth.require
     def delete(user_id):
         """Delete a user by id."""
         deleted_user = UserService.delete_user(user_id)
         if not deleted_user:
-            raise ResourceNotFoundError(f"User with {user_id} not found")
+            raise ResourceNotFoundError(f'User with {user_id} not found')
         return UserSchema().dump(deleted_user), HTTPStatus.OK

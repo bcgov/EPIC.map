@@ -26,18 +26,18 @@ def auth_guid(token_info) -> str:
     "<guid>@idir". Unlike the IDIR username it is never reassigned, so it is
     what local records are keyed on.
     """
-    return (token_info or {}).get("preferred_username")
+    return (token_info or {}).get('preferred_username')
 
 
 def idir_username(token_info) -> str:
     """Return the IDIR username, falling back to preferred_username."""
     token_info = token_info or {}
-    return token_info.get("idir_username") or token_info.get("preferred_username")
+    return token_info.get('idir_username') or token_info.get('preferred_username')
 
 
 def groups(token_info):
     """Return the realm groups the token carries."""
-    return (token_info or {}).get("groups") or []
+    return (token_info or {}).get('groups') or []
 
 
 def client_ids(token_info):
@@ -50,13 +50,13 @@ def client_ids(token_info):
     """
     token_info = token_info or {}
 
-    audience = token_info.get("aud") or []
+    audience = token_info.get('aud') or []
     if isinstance(audience, str):
         audience = [audience]
     if not isinstance(audience, list):
         audience = []
 
-    authorized_party = token_info.get("azp")
+    authorized_party = token_info.get('azp')
     return [name for name in [*audience, authorized_party] if name]
 
 
@@ -71,7 +71,7 @@ def host_app(token_info) -> str:
     Falls back to "unknown" rather than None so that a null in the audit table
     means a bug in this code, not an unauthenticated era of history.
     """
-    return (token_info or {}).get("azp") or "unknown"
+    return (token_info or {}).get('azp') or 'unknown'
 
 
 def is_allowed_client(token_info) -> bool:
@@ -93,7 +93,7 @@ def is_allowed_client(token_info) -> bool:
     An empty allowlist denies everything. A misconfigured deployment should stop
     serving rather than accept tokens from any client in a shared realm.
     """
-    allowed = current_app.config.get("ALLOWED_CLIENT_IDS") or []
+    allowed = current_app.config.get('ALLOWED_CLIENT_IDS') or []
     if not allowed:
         return False
 
@@ -108,7 +108,7 @@ def belongs_to_app(token_info) -> bool:
     here. Until then AUTH_REQUIRED_GROUP is unset and any IDIR account in the
     realm can sign in - see the startup warning in create_app.
     """
-    required_group = (current_app.config.get("AUTH_REQUIRED_GROUP") or "").strip()
+    required_group = (current_app.config.get('AUTH_REQUIRED_GROUP') or '').strip()
     if not required_group:
         return True
 
@@ -120,9 +120,9 @@ def user_data_from_token(token_info):
     """Map token claims onto the columns of the local user record."""
     token_info = token_info or {}
     return {
-        "auth_guid": auth_guid(token_info),
-        "username": idir_username(token_info),
-        "first_name": token_info.get("given_name"),
-        "last_name": token_info.get("family_name"),
-        "email_address": token_info.get("email"),
+        'auth_guid': auth_guid(token_info),
+        'username': idir_username(token_info),
+        'first_name': token_info.get('given_name'),
+        'last_name': token_info.get('family_name'),
+        'email_address': token_info.get('email'),
     }

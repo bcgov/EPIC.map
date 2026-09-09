@@ -1,0 +1,27 @@
+# Build context for map-web/Dockerfile, which builds from the repository root
+# because map-web resolves @bcgov/epic-map through the root npm workspace.
+#
+# map-api has its own .dockerignore and is built with map-api/ as its context,
+# so nothing here applies to it.
+
+.git
+.github
+
+# Installed inside the image from the lockfile, never copied in.
+**/node_modules
+**/dist
+
+# Secrets. sample.env is the committed template and is safe to keep.
+**/.env
+**/.env.*
+!**/sample.env
+
+# Nothing the web build needs.
+map-api
+deployment
+**/venv
+**/coverage
+**/.pytest_cache
+**/__pycache__
+**/cypress
+**/*.log

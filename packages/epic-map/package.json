@@ -39,6 +39,7 @@
     "build": "vite build",
     "dev": "vite build --watch",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "start": "vite build --watch",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
