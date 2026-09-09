@@ -25,14 +25,14 @@ env:
 
 jobs:
   web-cd:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     if: github.repository == 'bcgov/EPIC.map'
     environment:
       name: "dev"
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
 
       - name: Login Openshift
         shell: bash
@@ -44,9 +44,12 @@ jobs:
           echo "${{ secrets.OPENSHIFT_SA_TOKEN }}" | 
           docker login ${{ secrets.OPENSHIFT_IMAGE_REGISTRY }} -u ${{ secrets.OPENSHIFT_SA_NAME}} --password-stdin
 
+      # Built from the repository root: map-web depends on the @bcgov/epic-map
+      # workspace, which is not resolvable from map-web/ alone.
       - name: Build image
+        working-directory: ./
         run: |
-          docker build . --file Dockerfile --tag image
+          docker build . --file map-web/Dockerfile --tag image
 
       - name: Push image
         run: |
