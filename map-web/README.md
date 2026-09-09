@@ -20,26 +20,34 @@ embeds the widget exactly as another EPIC application would. See
 
 ## Getting started
 
-Requires Node 18+.
+Requires Node 24 — what CI and the production image build on. This is an npm workspace, so
+dependencies are installed once from the **repository root**, not from here:
 
 ```bash
+npm install                                  # repository root
+npm run build --workspace @bcgov/epic-map    # see "Working on the widget" below
 cd map-web
-npm install
 cp sample.env .env   # then fill in the values below
 npm run dev
 ```
 
-The dev server runs on <http://localhost:3000>. The port is pinned in `vite.config.ts` because the
-API only allows a fixed list of origins — see [Talking to the API](#talking-to-the-api).
+The dev server runs on Vite's default port, <http://localhost:5173>, which is what `sample.env` sets
+`VITE_APP_URL` to. The port matters: the API only accepts a fixed list of browser origins, and its
+local default list covers 5173, 3000 and 8000 — see [Talking to the API](#talking-to-the-api).
 
 ### Scripts
 
 | Command | Description |
 | --- | --- |
-| `npm run dev` | Start the Vite dev server on port 3000 |
+| `npm run dev` | Start the Vite dev server, against the widget's built `dist/` |
+| `npm run dev:source` | Same, with `EPIC_MAP_SOURCE=1` — the widget is compiled from its `src/` instead |
+| `npm run start` | Alias for `npm run dev` |
 | `npm run build` | Type check (`tsc`) and build to `dist/` |
 | `npm run preview` | Serve the production build locally |
 | `npm run lint` | ESLint over `src` (warnings fail the run) |
+
+The root `package.json` wraps the two dev variants as `npm run dev` and `npm run dev:widget-source`,
+so the whole workspace can be driven from one directory.
 
 ### Environment variables
 
@@ -70,10 +78,12 @@ src/
       SideNav/      SideNavBar and its nav item list
       Layout/       AppLayout — the app shell
       Popups/       Snackbar and confirmation dialog
-  hooks/            React Query hooks (one file per resource)
+  hooks/            React Query hooks — useApiStatus (ops probe), useAuthorization
+  models/           Types for what the API returns (User)
   routes/           File based routes; routeTree.gen.ts is generated, do not edit
   styles/           theme.tsx (epic.theme) and App.scss
   utils/            config, constants, axios clients
+  assets/images/    BC and EAO logos
 ```
 
 ### Routing
@@ -82,9 +92,10 @@ Routes are files under `src/routes` — adding a file adds a route, and the Vite
 `src/routeTree.gen.ts` on dev/build. The root route (`__root.tsx`) wraps every page in `AppLayout`.
 Left navigation entries live in `src/components/Shared/SideNav/navItems.ts`.
 
-Current routes: `/` (Launchpad), `/request-access`, `/oidc-callback`, `/session-expired`, and -
-behind the sign-in guard - `/application-urls` and `/map`. Everything except the map page is a
-`ComingSoon` placeholder, and the map page embeds the `@bcgov/epic-map` widget.
+Current routes: `/` (Launchpad, a `ComingSoon` placeholder), `/oidc-callback`, `/session-expired`,
+and — behind the sign-in guard — `/map`, which embeds the `@bcgov/epic-map` widget. The two sign-in
+routes are listed in `BARE_ROUTE_IDS` in `__root.tsx` and render without the app shell. Left
+navigation shows Launchpad and Map.
 
 Pages that require a signed-in user are files under `src/routes/_authenticated/`. The leading
 underscore makes `_authenticated.tsx` a layout route: it wraps its children with the guard without
@@ -116,14 +127,44 @@ Two rules apply to this side of the boundary:
 
 ### Working on the widget
 
-Vite resolves `@bcgov/epic-map` to the package's **built** `dist/`, not its `src/`. Editing widget
-source has no effect on the running dev server until it is rebuilt, so run the package's watch build
-alongside:
+Vite resolves `@bcgov/epic-map` to the package's **built** `dist/`, not its `src/`. Two consequences
+follow, and the first one bites on every fresh clone.
+
+**The package must be built at least once.** `npm install` links the workspace but does not build it,
+so `dist/` is absent until you build it and the dev server fails with `Failed to resolve entry for
+package "@bcgov/epic-map"`. From the repository root:
 
 ```bash
-npm run dev -w @bcgov/epic-map   # vite build --watch
-npm run dev -w map-web           # in another terminal
+npm run build --workspace @bcgov/epic-map
 ```
+
+`dist/` is build output and is not committed, so this is also the fix after a `git clean -xdf`.
+
+**Edits to widget source do not reach a running dev server** until the package is rebuilt. Two ways
+to work, both driven from the repository root:
+
+| Command | What it does | Use when |
+| --- | --- | --- |
+| `npm run dev` | Serves the host against the package's prebuilt `dist/` | Working only on `map-web` |
+| `npm run dev:widget-source` | Sets `EPIC_MAP_SOURCE=1`; Vite aliases `@bcgov/epic-map` straight to `packages/epic-map/src`, giving HMR on widget source with no build step | Working on the widget |
+| `npm run dev:widget-watch` | `vite build --watch` on the package; run alongside `npm run dev` in another terminal | You need the real built artifact — verifying the library build, the emitted `.d.ts`, or `dist/epic-map.css` |
+
+`dev:widget-source` is the faster loop, but it compiles the widget with the host's Vite config rather
+than the library build, so confirm anything build-shaped with `dev:widget-watch` before opening a PR.
+
+### Building the production image
+
+The image is built from the **repository root**, not from here, because the widget is a workspace
+sibling rather than something npm can fetch:
+
+```bash
+docker build . --file map-web/Dockerfile --tag map-web
+```
+
+It installs from the root lockfile, builds `@bcgov/epic-map`, then builds this app, and serves the
+result from nginx. `.dockerignore` at the root keeps `node_modules`, `dist` and any local `.env` out
+of the context — the deployed app reads its configuration from `window._env_` at runtime, so a
+developer's `.env` must never be baked into the bundle.
 
 ## Authentication
 
@@ -186,5 +227,8 @@ Both unwrap `response.data`. Wrap calls in a React Query hook under `src/hooks` 
 them from components — `useApiStatus.tsx` (the `/ops/readyz` probe rendered on the map page) is the
 smallest example.
 
-The API restricts origins through its `CORS_ORIGIN` setting (see `map-api/sample.env`). Requests
-from a port outside that list fail as CORS errors, which is why the dev server is pinned to 3000.
+The API restricts origins through its `CORS_ORIGIN` setting (see `map-api/sample.env`), falling back
+to `LOCAL_CORS_ORIGINS` in `map-api/src/map_api/config.py` when it is unset. Requests from an origin
+outside that list fail as CORS errors. The dev server's port is not pinned in `vite.config.ts`, so if
+you run it on something other than 5173, 3000 or 8000, add that origin to the API's list and update
+`VITE_APP_URL` to match — the OIDC redirect URIs are derived from it.
