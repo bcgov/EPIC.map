@@ -10,13 +10,13 @@ import {
 import { useMapWidget } from "@/widget/MapWidgetContext";
 import BasemapSwitch from "@/components/BasemapSwitch";
 import {
-  BASEMAPS,
   DEFAULT_BASEMAP,
   DEFAULT_EXTENT,
   FIT_PADDING,
   MAX_ZOOM,
   MIN_ZOOM,
   WIDGET_ID_PREFIX,
+  resolveBasemap,
   type BasemapId,
 } from "@/config";
 
@@ -45,15 +45,19 @@ const carryWidgetLayers: TransformStyleFunction = (previous, next) => {
 
 export default function MapSurface() {
   const { config } = useMapWidget();
-  const { initialExtent } = config;
+  const { initialExtent, basemapStyles } = config;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const [map, setMap] = useState<MapLibreMap | null>(null);
 
   const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP);
+  const activeStyle = resolveBasemap(basemap, basemapStyles).style;
 
-  const appliedBasemap = useRef<BasemapId>(DEFAULT_BASEMAP);
+  // What the map is actually showing. Tracking the style rather than the id
+  // covers both ways it can change: the user picks the other basemap, or the
+  // host passes a different URL for the one already on screen.
+  const appliedStyle = useRef(activeStyle);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -61,7 +65,7 @@ export default function MapSurface() {
 
     const instance = new MapLibreMap({
       container,
-      style: BASEMAPS[DEFAULT_BASEMAP].style,
+      style: appliedStyle.current,
       bounds: DEFAULT_EXTENT,
       fitBoundsOptions: { padding: FIT_PADDING },
       minZoom: MIN_ZOOM,
@@ -70,7 +74,6 @@ export default function MapSurface() {
       touchZoomRotate: false,
       canvasContextAttributes: { preserveDrawingBuffer: true },
     });
-    appliedBasemap.current = DEFAULT_BASEMAP;
 
     instance.addControl(
       new NavigationControl({ showCompass: false }),
@@ -103,12 +106,10 @@ export default function MapSurface() {
   // setStyle keeps the camera where it is, so a switch changes what is under the
   // user without moving them.
   useEffect(() => {
-    if (!map || appliedBasemap.current === basemap) return;
-    appliedBasemap.current = basemap;
-    map.setStyle(BASEMAPS[basemap].style, {
-      transformStyle: carryWidgetLayers,
-    });
-  }, [map, basemap]);
+    if (!map || appliedStyle.current === activeStyle) return;
+    appliedStyle.current = activeStyle;
+    map.setStyle(activeStyle, { transformStyle: carryWidgetLayers });
+  }, [map, activeStyle]);
 
   return (
     <Box

@@ -1,5 +1,5 @@
 import type { StyleSpecification } from "maplibre-gl";
-import type { MapExtent } from "@/types";
+import type { MapBasemapStyles, MapExtent } from "@/types";
 
 /**
  * Map configuration: the numbers and URLs the map surface is built from.
@@ -32,24 +32,38 @@ export interface Basemap {
   thumbnail: string;
 }
 
+/**
+ * BC Basemap, the provincial basemap: the "without hillshade" item of the BC
+ * Data Catalogue's `bc-basemap` dataset. A public ArcGIS Online vector tile
+ * service in EPSG:3857, published as a Style Spec v8 document with absolute
+ * source, sprite and glyph URLs. No API key. Carries BC Sans and the Aboriginal
+ * Sans/Serif faces, so provincial typography and Indigenous place names render
+ * as the province publishes them.
+ *
+ * Licensed "Access Only" - B.C. Crown copyright, consumed live. Do not mirror,
+ * proxy or cache the tiles. Attribution is declared in the style itself.
+ *
+ * The catalogue warns these URLs will change, with the old ones kept for three
+ * months. `basemapStyles` is the way out: a host can pass the new URL without
+ * waiting for a release of this package.
+ */
+const BC_BASEMAP_ITEM = "b1624fea73bd46c681fab55be53d96ae";
+const BC_BASEMAP_STYLE = `https://www.arcgis.com/sharing/rest/content/items/${BC_BASEMAP_ITEM}/resources/styles/root.json`;
+/** The item's own preview image: a real BC Basemap render, not a stand-in. */
+const BC_BASEMAP_THUMBNAIL = `https://www.arcgis.com/sharing/rest/content/items/${BC_BASEMAP_ITEM}/info/thumbnail/ago_downloaded.png`;
+
 const ESRI_WORLD_IMAGERY =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
-/** z8/84/39 — central BC, in both services. */
+/** z8/84/39 — a single imagery tile over central BC. */
 const ESRI_IMAGERY_THUMBNAIL =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/8/84/39";
-const ESRI_LIGHT_GRAY_THUMBNAIL =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/8/84/39";
 
 export const BASEMAPS: Record<BasemapId, Basemap> = {
-  /**
-   * TODO: replace with the approved BC Gov basemap tile service when there is
-   * one. If a host ever needs to choose, that belongs in `MapWidgetProps`.
-   */
   standard: {
     label: "Standard",
-    style: "https://tiles.openfreemap.org/styles/positron",
-    thumbnail: ESRI_LIGHT_GRAY_THUMBNAIL,
+    style: BC_BASEMAP_STYLE,
+    thumbnail: BC_BASEMAP_THUMBNAIL,
   },
   satellite: {
     label: "Satellite",
@@ -80,3 +94,19 @@ export const DEFAULT_BASEMAP: BasemapId = "standard";
 
 export const otherBasemap = (current: BasemapId): BasemapId =>
   current === "standard" ? "satellite" : "standard";
+
+/**
+ * A basemap with the host's style substituted, when the host supplied one.
+ *
+ * Only the style is a host's to replace: the label and thumbnail describe the
+ * slot, not the particular service filling it. Returns the original object when
+ * there is no override, so callers can compare styles by identity.
+ */
+export const resolveBasemap = (
+  id: BasemapId,
+  overrides?: MapBasemapStyles,
+): Basemap => {
+  const basemap = BASEMAPS[id];
+  const style = overrides?.[id];
+  return style ? { ...basemap, style } : basemap;
+};

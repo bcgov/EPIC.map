@@ -41,6 +41,22 @@ export interface MapWidgetError {
  */
 export type MapExtent = [number, number, number, number];
 
+/**
+ * Style URLs for the basemaps behind the map's basemap switch.
+ *
+ * Each is a URL to a Style Spec v8 document. Omit one and the widget's own
+ * default stands: BC Basemap for `standard`, Esri World Imagery for `satellite`.
+ *
+ * This exists because the widget's defaults are services it does not own. BC
+ * Basemap's URLs are published as subject to change, and its "Access Only"
+ * licence is a decision for whoever deploys the application - not one this
+ * package should make on their behalf.
+ */
+export interface MapBasemapStyles {
+  standard?: string;
+  satellite?: string;
+}
+
 export interface MapWidgetProps {
   /** Base URL of the EPIC.map API, including the `/api` prefix. */
   apiBaseUrl: string;
@@ -64,6 +80,9 @@ export interface MapWidgetProps {
 
   /** Initial viewport, as `[west, south, east, north]`. */
   initialExtent?: MapExtent;
+
+  /** Replace the style behind either basemap. See {@link MapBasemapStyles}. */
+  basemapStyles?: MapBasemapStyles;
 
   /**
    * Height of the widget's root element. A number is treated as pixels; a string

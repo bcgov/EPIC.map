@@ -14,6 +14,7 @@ own theme.
 - [Peer dependencies](#peer-dependencies)
 - [Styles](#styles)
 - [The maplibre web worker](#the-maplibre-web-worker)
+- [Basemaps](#basemaps)
 - [Minimal working example](#minimal-working-example)
 - [Getting access in Keycloak](#getting-access-in-keycloak)
 - [Lazy load it](#lazy-load-it)
@@ -138,6 +139,47 @@ The worker is a **module** script, so the browser enforces its MIME type. If you
 server does not map `.mjs` to a JavaScript type — nginx did not until 1.21 — it goes
 out as `application/octet-stream`, and with `X-Content-Type-Options: nosniff` the
 browser refuses to run it. Same blank map, only in your deployed environment.
+
+## Basemaps
+
+The map ships with two basemaps and a switch between them:
+
+| | Default | Source |
+| --- | --- | --- |
+| `standard` | **BC Basemap** (without hillshade) | [`bc-basemap`](https://catalogue.data.gov.bc.ca/dataset/bc-basemap) in the BC Data Catalogue — a public ArcGIS Online vector tile service |
+| `satellite` | **Esri World Imagery** | `server.arcgisonline.com`, as a raster style assembled here |
+
+BC Basemap is the provincial basemap recommended by the BC Gov GIS team. It is
+EPSG:3857, Style Spec v8, needs no API key, and carries BC Sans and the Aboriginal
+Sans/Serif faces — so provincial typography and Indigenous place names render as the
+province publishes them. Attribution is declared in the style, so maplibre renders it
+without any help from you.
+
+**Two things to know before you deploy on the defaults.**
+
+*Licensing.* BC Basemap is published "Access Only": B.C. Crown copyright, consumed
+live. Do not mirror, proxy or cache its tiles. That is unremarkable for a BC Gov
+application; if yours is not one, satisfy yourself that you are entitled to use it,
+or replace it.
+
+*The URLs will change.* The catalogue carries a standing notice that the service is
+being reissued, with new item URLs and changes to layer order and styling. The
+previous URLs are kept for at least three months after.
+
+Either way, `basemapStyles` is the way out — it takes a URL to a Style Spec v8
+document and replaces one or both defaults, so you are not waiting on a release of
+this package:
+
+```tsx
+<MapWidget
+  apiBaseUrl={apiUrl}
+  getAccessToken={getAccessToken}
+  basemapStyles={{ standard: "https://example.gov.bc.ca/styles/our-basemap.json" }}
+/>
+```
+
+The label and the thumbnail on the switch stay as they are. They describe the slot —
+the plain one, the imagery one — not the particular service filling it.
 
 ## Minimal working example
 
@@ -270,11 +312,13 @@ Deliberate omissions. Each one is your application's job:
 | `getAccessToken` | `() => Promise<string>` | yes | The only way a token enters the widget |
 | `projectId` | `string` | no | Restrict the map to one project |
 | `initialExtent` | `[number, number, number, number]` | no | `[west, south, east, north]`, WGS84 degrees |
+| `basemapStyles` | `MapBasemapStyles` | no | Style URLs replacing either basemap — see [Basemaps](#basemaps) |
 | `height` | `string \| number` | no | Defaults to `"100%"`. A number is pixels |
 | `onFeatureSelect` | `(feature: MapFeature) => void` | no | User selected a feature |
 | `onError` | `(error: MapWidgetError) => void` | no | `kind` is `auth`, `network`, `request`, `server` or `unknown` |
 
-`MapWidgetProps`, `MapFeature`, `MapExtent`, `MapWidgetError` and `MapWidgetErrorKind`
+`MapWidgetProps`, `MapBasemapStyles`, `MapFeature`, `MapExtent`, `MapWidgetError` and
+`MapWidgetErrorKind`
 are exported as types. Nothing else is public: if you need something that is not
 exported from `@bcgov/epic-map`, that is a gap in the API — raise it rather than
 importing from a path inside the package, which will break without a major version.
