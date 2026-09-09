@@ -11,4 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Layer registry reads and entitlement checks. Entitlement is read from Postgres, never from the Redis catalogue index."""
+"""Layer registry reads and entitlement checks.
+
+Entitlement is read from Postgres, never from the Redis catalogue index.
+"""

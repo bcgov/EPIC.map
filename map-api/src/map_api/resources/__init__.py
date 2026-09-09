@@ -32,30 +32,30 @@ from .ops import API as OPS_API
 from .user import API as USER_API
 
 
-__all__ = ("API_BLUEPRINT", "DOC_PATHS", "DOCS_ENABLED", "OPS_BLUEPRINT", "URL_PREFIX")
+__all__ = ('API_BLUEPRINT', 'DOC_PATHS', 'DOCS_ENABLED', 'OPS_BLUEPRINT', 'URL_PREFIX')
 
-URL_PREFIX = "/api/"
-API_BLUEPRINT = Blueprint("API", __name__, url_prefix=URL_PREFIX)
+URL_PREFIX = '/api/'
+API_BLUEPRINT = Blueprint('API', __name__, url_prefix=URL_PREFIX)
 
 # Health checks live on their own blueprint outside the authenticated API surface,
 # so probes reach /ops/healthz without a token and without the Bearer Auth
 # security scheme being advertised against them.
-OPS_BLUEPRINT = Blueprint("API_OPS", __name__, url_prefix="/ops")
+OPS_BLUEPRINT = Blueprint('API_OPS', __name__, url_prefix='/ops')
 API_OPS = Api(
     OPS_BLUEPRINT,
-    title="Service OPS API",
-    version="1.0",
-    description="The Core API for the Reports System",
+    title='Service OPS API',
+    version='1.0',
+    description='The Core API for the Reports System',
 )
 
-API_OPS.add_namespace(OPS_API, path="/")
+API_OPS.add_namespace(OPS_API, path='/')
 
 authorizations = {
-    "Bearer Auth": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "Authorization",
-        "description": 'Add "Bearer " before your token',
+    'Bearer Auth': {
+        'type': 'apiKey',
+        'in': 'header',
+        'name': 'Authorization',
+        'description': 'Add "Bearer " before your token',
     }
 }
 
@@ -64,18 +64,18 @@ authorizations = {
 # NOTE: doc=False only drops the UI route - flask-restx keeps registering
 # /swagger.json unless add_specs is also turned off, so both are needed to stop
 # the spec being served.
-DOCS_ENABLED = os.getenv("FLASK_ENV", "development") not in PRODUCTION_LIKE_ENVIRONMENTS
+DOCS_ENABLED = os.getenv('FLASK_ENV', 'development') not in PRODUCTION_LIKE_ENVIRONMENTS
 
 # The two doc routes, spelled the way request.path reports them, so the
 # authentication hook can let them through where they are registered.
-DOC_PATHS = frozenset({URL_PREFIX.rstrip("/"), f"{URL_PREFIX}swagger.json"})
+DOC_PATHS = frozenset({URL_PREFIX.rstrip('/'), f'{URL_PREFIX}swagger.json'})
 
 API = Api(
-    title="MAP API",
-    version="1.0",
-    description="The Core API for MAP",
+    title='MAP API',
+    version='1.0',
+    description='The Core API for MAP',
     authorizations=authorizations,
-    doc="/" if DOCS_ENABLED else False,
+    doc='/' if DOCS_ENABLED else False,
 )
 # The blueprint is bound via init_app rather than the Api constructor because
 # Api.__init__ calls init_app(app) without forwarding **kwargs, and init_app
