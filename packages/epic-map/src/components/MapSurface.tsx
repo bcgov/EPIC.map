@@ -9,10 +9,10 @@ import {
 } from "maplibre-gl";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 import BasemapSwitch from "@/components/BasemapSwitch";
+import LayersButton from "@/components/Layers/LayersButton";
 import {
   DEFAULT_BASEMAP,
   DEFAULT_EXTENT,
-  FIT_PADDING,
   MAX_ZOOM,
   MIN_ZOOM,
   WIDGET_ID_PREFIX,
@@ -51,6 +51,10 @@ export default function MapSurface() {
 
   const [map, setMap] = useState<MapLibreMap | null>(null);
 
+  // The layers panel is an overlay on the map, so the map owns whether it is
+  // showing. Closed on first load - the map is the point, the panel is opt-in.
+  const [layersOpen, setLayersOpen] = useState(false);
+
   const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP);
   const activeStyle = resolveBasemap(basemap, basemapStyles).style;
 
@@ -67,7 +71,6 @@ export default function MapSurface() {
       container,
       style: appliedStyle.current,
       bounds: DEFAULT_EXTENT,
-      fitBoundsOptions: { padding: FIT_PADDING },
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
       dragRotate: false,
@@ -100,7 +103,7 @@ export default function MapSurface() {
 
   useEffect(() => {
     if (!map || !initialExtent) return;
-    map.fitBounds(initialExtent, { padding: FIT_PADDING, duration: 0 });
+    map.fitBounds(initialExtent, { duration: 0 });
   }, [map, initialExtent]);
 
   // setStyle keeps the camera where it is, so a switch changes what is under the
@@ -122,6 +125,10 @@ export default function MapSurface() {
       }}
     >
       <Box ref={containerRef} sx={{ width: "100%", height: "100%" }} />
+      <LayersButton
+        open={layersOpen}
+        onToggle={() => setLayersOpen((isOpen) => !isOpen)}
+      />
       <BasemapSwitch current={basemap} onSelect={setBasemap} />
     </Box>
   );

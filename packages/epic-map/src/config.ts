@@ -17,7 +17,6 @@ export const DEFAULT_EXTENT: MapExtent = [-139.1, 48.2, -114.0, 60.1];
 
 export const MIN_ZOOM = 3;
 export const MAX_ZOOM = 18;
-export const FIT_PADDING = 24;
 
 /**
  * Prefix for every source and layer this widget adds to a style.
