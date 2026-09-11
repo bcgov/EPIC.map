@@ -1,11 +1,39 @@
 """Service for user management."""
+from flask import g
+from werkzeug.exceptions import Unauthorized
+
 from map_api.models.user import User as UserModel
 from map_api.utils.constant import DEFAULT_PERMISSIONS
+from map_api.utils.token import auth_guid as auth_guid_from_token
 from map_api.utils.token import user_data_from_token
 
 
 class UserService:
     """User management service."""
+
+    @classmethod
+    def current_user(cls):
+        """Return the staff_users record for the caller, creating it if absent.
+
+        Provisioned on first touch, like GET /users/me, so an embedded widget
+        that never calls it still works. Read first, upsert only on a miss, to
+        keep a plain read from bumping last_login_at.
+
+        Do not cache this on `g`: Flask reuses an already-pushed app context, so
+        under an outer app_context() one request's user would be served to the
+        next.
+        """
+        token_info = getattr(g, 'token_info', None)
+        if not token_info:
+            # Unreachable behind the authenticate() hook; fails closed if a
+            # resource is ever wired up without it.
+            raise Unauthorized('A signed-in user is required.')
+
+        user = cls.get_user_by_auth_guid(auth_guid_from_token(token_info))
+        if user is None:
+            user = cls.sync_user_from_token(token_info)
+
+        return user
 
     @classmethod
     def get_user_by_id(cls, _user_id):

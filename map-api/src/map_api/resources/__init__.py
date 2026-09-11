@@ -30,6 +30,7 @@ from map_api.config import PRODUCTION_LIKE_ENVIRONMENTS
 from .apihelper import Api
 from .ops import API as OPS_API
 from .user import API as USER_API
+from .user_applied_layer import API as APPLIED_LAYER_API
 
 
 __all__ = ('API_BLUEPRINT', 'DOC_PATHS', 'DOCS_ENABLED', 'OPS_BLUEPRINT', 'URL_PREFIX')
@@ -84,3 +85,5 @@ API = Api(
 API.init_app(API_BLUEPRINT, add_specs=DOCS_ENABLED)
 
 API.add_namespace(USER_API)
+# Mounted under /users/me so the path says whose layers these are.
+API.add_namespace(APPLIED_LAYER_API, path='/users/me/layers')

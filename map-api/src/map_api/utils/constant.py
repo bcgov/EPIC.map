@@ -32,3 +32,14 @@ GROUP_MAP = {
     PermissionEnum.USER: 'user',
     PermissionEnum.VIEWER: 'viewer',
 }
+
+# Where an applied layer came from. Only the bc catalogue is written currently.
+LAYER_SOURCE_BCDC = 'bcdc'
+
+# Opacity is stored as a percentage rather than a fraction.
+DEFAULT_LAYER_OPACITY = 100
+MIN_LAYER_OPACITY = 0
+MAX_LAYER_OPACITY = 100
+
+# Max layers per map for performance
+MAX_APPLIED_LAYERS_PER_MAP = 50
