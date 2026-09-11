@@ -1,7 +1,7 @@
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
-import { AccessTokenError } from "@/api/errors";
-import { epicMapQueryKey } from "@/api/queryKeys";
+import { AccessTokenError } from "@/utils/errors";
+import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 
 /**

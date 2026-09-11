@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Map as MapLibreMap } from "maplibre-gl";
-import type { CatalogueLayer } from "@/api/catalogue";
+import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import { hideWmsLayer, showWmsLayer } from "@/components/Layers/wmsLayers";
 
 interface LayersContextValue {

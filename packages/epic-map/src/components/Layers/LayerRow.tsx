@@ -5,7 +5,7 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import StarIcon from "@mui/icons-material/Star";
 import StarBorderIcon from "@mui/icons-material/StarBorder";
 import { useTheme, type Theme } from "@mui/material/styles";
-import type { CatalogueLayer } from "@/api/catalogue";
+import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import HighlightedName from "@/components/Layers/HighlightedName";
 import { useLayers } from "@/components/Layers/LayersContext";
 
@@ -115,7 +115,7 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
         component="span"
         sx={{
           display: "-webkit-box",
-          WebkitLineClamp: 2,
+          WebkitLineClamp: 3,
           WebkitBoxOrient: "vertical",
           overflow: "hidden",
           fontSize: theme.typography.body2.fontSize,
@@ -177,7 +177,6 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
         </IconButton>
       </Tooltip>
 
-      {/* The menu behind this is its own ticket; the button is placed now. */}
       <IconButton
         size="small"
         aria-label={`Actions for ${layer.name}`}

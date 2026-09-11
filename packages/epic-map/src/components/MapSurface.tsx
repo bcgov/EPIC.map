@@ -18,7 +18,7 @@ import {
   WIDGET_ID_PREFIX,
   resolveBasemap,
   type BasemapId,
-} from "@/config";
+} from "@/utils/config";
 
 /**
  * Carry the widget's own sources and layers onto an incoming basemap.

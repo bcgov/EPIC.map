@@ -4,7 +4,7 @@ import type { MapWidgetError, MapWidgetErrorKind } from "@/types";
 /**
  * Everything that turns a thrown value into the host-facing `MapWidgetError`.
  *
- * Separate from `client.ts` on purpose: hooks and components need to classify a
+ * Separate from `apiClient.ts` on purpose: hooks and components need to classify a
  * failure without pulling in the axios instance factory, and the mapping from
  * HTTP status to `kind` is part of the package's public contract even though the
  * function that does it is not exported.

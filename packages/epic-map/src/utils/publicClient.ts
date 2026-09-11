@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance } from "axios";
 import type { MapWidgetError } from "@/types";
-import { toMapWidgetError } from "@/api/errors";
+import { toMapWidgetError } from "@/utils/errors";
 
 
 export const PUBLIC_REQUEST_TIMEOUT_MS = 15000;

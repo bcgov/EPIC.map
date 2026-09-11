@@ -4,14 +4,14 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import SearchOffIcon from "@mui/icons-material/SearchOff";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { alpha, useTheme } from "@mui/material/styles";
-import { useCatalogueSearch } from "@/api/catalogue";
+import { useCatalogueSearch } from "@/api/useCatalogueSearch";
 import CatalogueSearchField from "@/components/Layers/Catalogue/CatalogueSearchField";
 import LayerRow from "@/components/Layers/LayerRow";
 import LayersSection from "@/components/Layers/LayersSection";
 import {
   CATALOGUE_SEARCH_DEBOUNCE_MS,
   MIN_CATALOGUE_QUERY_LENGTH,
-} from "@/config";
+} from "@/utils/config";
 
 /** Search the BC Data Catalogue and add what comes back to the map. */
 export default function CatalogueSection() {

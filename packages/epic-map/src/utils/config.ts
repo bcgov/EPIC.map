@@ -116,8 +116,9 @@ export const resolveBasemap = (
  * Searched straight from the browser: the endpoint sends
  * `access-control-allow-origin: *` and takes no credentials, so routing it
  * through map-api would add a hop and buy nothing. Note that the WMS
- * GetCapabilities documents on openmaps.gov.bc.ca are NOT CORS-enabled - see
- * `ZoomToViewButton` for what that costs us.
+ * GetCapabilities documents on openmaps.gov.bc.ca are NOT CORS-enabled, so a
+ * layer's real minimum zoom cannot be read from the browser; reaching it needs
+ * a proxy endpoint on map-api.
  */
 export const CATALOGUE_SEARCH_URL =
   "https://catalogue.data.gov.bc.ca/api/3/action/package_search";

@@ -6,7 +6,7 @@ import type {
   MapFeature,
   MapWidgetError,
 } from "@/types";
-import type { HostIdentity } from "@/widget/identity";
+import type { HostIdentity } from "@/utils/identity";
 
 /**
  * The widget's props after defaults are applied and callbacks are made stable.

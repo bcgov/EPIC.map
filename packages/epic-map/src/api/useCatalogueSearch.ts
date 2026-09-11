@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { epicMapQueryKey } from "@/api/queryKeys";
+import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 import {
   CATALOGUE_DATASET_URL,
   CATALOGUE_SEARCH_ROWS,
   CATALOGUE_SEARCH_URL,
   MIN_CATALOGUE_QUERY_LENGTH,
-} from "@/config";
+} from "@/utils/config";
 
 /** A catalogue dataset, reduced to what the layers panel shows and draws. */
 export interface CatalogueLayer {

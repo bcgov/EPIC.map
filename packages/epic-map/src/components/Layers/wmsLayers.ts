@@ -1,6 +1,6 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
-import type { CatalogueLayer } from "@/api/catalogue";
-import { WIDGET_ID_PREFIX, wmsTileUrl } from "@/config";
+import type { CatalogueLayer } from "@/api/useCatalogueSearch";
+import { WIDGET_ID_PREFIX, wmsTileUrl } from "@/utils/config";
 
 /**
  * Source and layer ids carry the widget's prefix so that MapSurface's
