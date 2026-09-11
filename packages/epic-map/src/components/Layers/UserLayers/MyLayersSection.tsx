@@ -15,6 +15,7 @@ export default function MyLayersSection() {
       count={0}
       expanded={expanded}
       onToggle={() => setExpanded((isExpanded) => !isExpanded)}
+      divider={false}
     >
       <DashedEmptyState>
         You do not have any imported layers yet.

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Box } from "@mui/material";
 import { MapWidgetProvider, type MapWidgetContextValue } from "@/widget/MapWidgetContext";
 import { createApiClient } from "@/api/client";
+import { createPublicClient } from "@/api/publicClient";
 import { decodeHostIdentity, type HostIdentity } from "@/widget/identity";
 import MapSearchBar from "@/components/MapSearchBar";
 import MapSurface from "@/components/MapSurface";
@@ -71,10 +72,16 @@ export const MapWidget = ({
     [apiBaseUrl, handleError],
   );
 
+  const publicApi = useMemo(
+    () => createPublicClient({ onError: handleError }),
+    [handleError],
+  );
+
   const contextValue = useMemo<MapWidgetContextValue>(
     () => ({
       apiBaseUrl,
       api,
+      publicApi,
       readHostIdentity,
       config: {
         projectId,
@@ -87,6 +94,7 @@ export const MapWidget = ({
     [
       apiBaseUrl,
       api,
+      publicApi,
       readHostIdentity,
       projectId,
       initialExtent,

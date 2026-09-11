@@ -109,3 +109,43 @@ export const resolveBasemap = (
   const style = overrides?.[id];
   return style ? { ...basemap, style } : basemap;
 };
+
+/**
+ * BC Data Catalogue — the CKAN instance behind catalogue.data.gov.bc.ca.
+ *
+ * Searched straight from the browser: the endpoint sends
+ * `access-control-allow-origin: *` and takes no credentials, so routing it
+ * through map-api would add a hop and buy nothing. Note that the WMS
+ * GetCapabilities documents on openmaps.gov.bc.ca are NOT CORS-enabled - see
+ * `ZoomToViewButton` for what that costs us.
+ */
+export const CATALOGUE_SEARCH_URL =
+  "https://catalogue.data.gov.bc.ca/api/3/action/package_search";
+
+export const CATALOGUE_DATASET_URL = "https://catalogue.data.gov.bc.ca/dataset";
+
+/** Matching the prototype: enough to fill the panel, few enough to stay fast. */
+export const CATALOGUE_SEARCH_ROWS = 15;
+
+/**
+ * Two characters before anything is fetched: shorter prefixes match most of the
+ * catalogue, so the request costs a round trip to say nothing useful.
+ */
+export const MIN_CATALOGUE_QUERY_LENGTH = 2;
+
+/** Long enough to skip the keystrokes in the middle of a typed word. */
+export const CATALOGUE_SEARCH_DEBOUNCE_MS = 400;
+
+/**
+ * WMS tiles for a BCGW object, as a MapLibre raster template.
+ *
+ * EPSG:3857 with a `{bbox-epsg-3857}` placeholder is what MapLibre substitutes
+ * per tile; WMS 1.1.1 is used because it takes `SRS`, which openmaps honours.
+ */
+export const wmsTileUrl = (objectName: string): string =>
+  `https://openmaps.gov.bc.ca/geo/pub/${objectName}/ows?` +
+  "SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1" +
+  `&LAYERS=pub:${objectName}` +
+  "&FORMAT=image/png&TRANSPARENT=TRUE" +
+  "&WIDTH=256&HEIGHT=256&SRS=EPSG:3857" +
+  "&BBOX={bbox-epsg-3857}";

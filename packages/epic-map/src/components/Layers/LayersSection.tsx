@@ -10,6 +10,7 @@ type LayersSectionProps = {
   action?: ReactNode;
   expanded?: boolean;
   onToggle?: () => void;
+  divider?: boolean;
   children: ReactNode;
 };
 
@@ -20,6 +21,7 @@ export default function LayersSection({
   action,
   expanded,
   onToggle,
+  divider = true,
   children,
 }: LayersSectionProps) {
   const theme = useTheme();
@@ -105,9 +107,7 @@ export default function LayersSection({
     <Box
       component="section"
       sx={{
-        "&:not(:first-of-type)": {
-          borderTop: `1px solid ${theme.palette.divider}`,
-        },
+        borderBottom: divider ? `1px solid ${theme.palette.divider}` : "none",
       }}
     >
       {header}

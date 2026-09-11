@@ -121,7 +121,7 @@ export default function MapSurface() {
       }}
     >
       <Box ref={containerRef} sx={{ width: "100%", height: "100%" }} />
-      <LayersControl />
+      <LayersControl map={map} />
       <BasemapSwitch current={basemap} onSelect={setBasemap} />
     </Box>
   );

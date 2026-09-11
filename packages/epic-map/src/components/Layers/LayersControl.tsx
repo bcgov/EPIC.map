@@ -2,9 +2,11 @@ import { useState } from "react";
 import { Box, Button } from "@mui/material";
 import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import { useTheme } from "@mui/material/styles";
+import type { Map as MapLibreMap } from "maplibre-gl";
 import CatalogueSection from "@/components/Layers/Catalogue/CatalogueSection";
 import FavouritesSection from "@/components/Layers/Favourites/FavouritesSection";
 import MyLayersSection from "@/components/Layers/UserLayers/MyLayersSection";
+import { LayersProvider } from "@/components/Layers/LayersContext";
 
 /** Ties the button's `aria-controls` to the panel it opens. */
 const PANEL_ID = "epic-map-layers-panel";
@@ -12,14 +14,14 @@ const PANEL_ID = "epic-map-layers-panel";
 /**
  * The Layers button and the panel it opens.
  */
-export default function LayersControl() {
+export default function LayersControl({ map }: { map: MapLibreMap | null }) {
   const theme = useTheme();
 
   // Closed on first load - the map is the point, the panel is opt-in.
   const [open, setOpen] = useState(false);
 
   return (
-    <>
+    <LayersProvider map={map}>
       <Button
         onClick={() => setOpen((isOpen) => !isOpen)}
         aria-expanded={open}
@@ -85,6 +87,6 @@ export default function LayersControl() {
           <MyLayersSection />
         </Box>
       )}
-    </>
+    </LayersProvider>
   );
 }
