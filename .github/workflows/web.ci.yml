@@ -45,7 +45,16 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install dependencies
         run: npm ci
-      - name: Lint
+      # The widget package carries the map's behaviour, so it is checked
+      # first. Its eslint config also enforces the rules that keep it
+      # embeddable - no ambient credentials, no router, no auth client.
+      - name: Lint the widget package
+        run: npm run lint --workspace @bcgov/epic-map
+
+      - name: Typecheck the widget package
+        run: npm run typecheck --workspace @bcgov/epic-map
+
+      - name: Lint map-web
         id: lint
         run: npm run lint --workspace map-web
 
@@ -63,6 +72,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Test the widget package
+        run: npm test --workspace @bcgov/epic-map
 
       # map-web resolves @bcgov/epic-map to the package's built dist/, which
       # npm ci links but does not build.
