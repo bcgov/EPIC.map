@@ -157,3 +157,6 @@ export const wmsTileUrl = (objectName: string): string =>
  * scrolling than it repays.
  */
 export const CATALOGUE_DESCRIPTION_LIMIT = 220;
+
+/** Layers arrive fully opaque; the opacity slider starts here. */
+export const DEFAULT_LAYER_OPACITY = 100;

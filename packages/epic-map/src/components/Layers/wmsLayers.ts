@@ -9,6 +9,9 @@ import { WIDGET_ID_PREFIX, wmsTileUrl } from "@/utils/config";
 const sourceId = (layerId: string) => `${WIDGET_ID_PREFIX}wms-src-${layerId}`;
 const rasterId = (layerId: string) => `${WIDGET_ID_PREFIX}wms-${layerId}`;
 
+/** MapLibre paints raster opacity as 0-1; the panel speaks percent. */
+const toRasterOpacity = (percent: number) => percent / 100;
+
 /** Runs `work` once the style is ready to accept sources and layers. */
 const whenStyleReady = (map: MapLibreMap, work: () => void) => {
   if (map.isStyleLoaded()) {
@@ -21,7 +24,11 @@ const whenStyleReady = (map: MapLibreMap, work: () => void) => {
 /**
  * Draw a catalogue layer, or reveal it if it is already on the map.
  */
-export const showWmsLayer = (map: MapLibreMap, layer: CatalogueLayer) => {
+export const showWmsLayer = (
+  map: MapLibreMap,
+  layer: CatalogueLayer,
+  opacity: number,
+) => {
   if (!layer.wmsObjectName) return;
 
   whenStyleReady(map, () => {
@@ -30,6 +37,7 @@ export const showWmsLayer = (map: MapLibreMap, layer: CatalogueLayer) => {
 
     if (map.getLayer(raster)) {
       map.setLayoutProperty(raster, "visibility", "visible");
+      map.setPaintProperty(raster, "raster-opacity", toRasterOpacity(opacity));
       return;
     }
 
@@ -41,8 +49,27 @@ export const showWmsLayer = (map: MapLibreMap, layer: CatalogueLayer) => {
       });
     }
 
-    map.addLayer({ id: raster, type: "raster", source });
+    map.addLayer({
+      id: raster,
+      type: "raster",
+      source,
+      paint: { "raster-opacity": toRasterOpacity(opacity) },
+    });
   });
+};
+
+/**
+ * Repaint one layer at a new opacity.
+ */
+export const setWmsLayerOpacity = (
+  map: MapLibreMap,
+  layerId: string,
+  opacity: number,
+) => {
+  const raster = rasterId(layerId);
+  if (map.getLayer(raster)) {
+    map.setPaintProperty(raster, "raster-opacity", toRasterOpacity(opacity));
+  }
 };
 
 export const hideWmsLayer = (map: MapLibreMap, layerId: string) => {

@@ -3,22 +3,29 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
-import { hideWmsLayer, showWmsLayer } from "@/components/Layers/wmsLayers";
+import {
+  hideWmsLayer,
+  setWmsLayerOpacity,
+  showWmsLayer,
+} from "@/components/Layers/wmsLayers";
+import { DEFAULT_LAYER_OPACITY } from "@/utils/config";
 
 interface LayersContextValue {
   map: MapLibreMap | null;
   visibleIds: ReadonlySet<string>;
   favourites: readonly CatalogueLayer[];
-  /** The one row showing its info panel, or null when none is. */
   expandedId: string | null;
+  opacities: Readonly<Record<string, number>>;
   toggleVisible: (layer: CatalogueLayer) => void;
   toggleFavourite: (layer: CatalogueLayer) => void;
   toggleExpanded: (layerId: string) => void;
+  setOpacity: (layerId: string, percent: number) => void;
 }
 
 const LayersContext = createContext<LayersContextValue | null>(null);
@@ -35,6 +42,12 @@ export function LayersProvider({
   );
   const [favourites, setFavourites] = useState<readonly CatalogueLayer[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [opacities, setOpacities] = useState<Readonly<Record<string, number>>>(
+    {},
+  );
+
+  const opacitiesRef = useRef(opacities);
+  opacitiesRef.current = opacities;
 
   const toggleVisible = useCallback(
     (layer: CatalogueLayer) => {
@@ -44,7 +57,11 @@ export function LayersProvider({
           if (map) hideWmsLayer(map, layer.id);
         } else {
           next.add(layer.id);
-          if (map) showWmsLayer(map, layer);
+          if (map) {
+            const opacity =
+              opacitiesRef.current[layer.id] ?? DEFAULT_LAYER_OPACITY;
+            showWmsLayer(map, layer, opacity);
+          }
         }
         return next;
       });
@@ -60,6 +77,16 @@ export function LayersProvider({
     );
   }, []);
 
+  const setOpacity = useCallback(
+    (layerId: string, percent: number) => {
+      setOpacities((current) => ({ ...current, [layerId]: percent }));
+      // Painted straight away rather than through an effect, so the map keeps
+      // pace with the thumb instead of trailing a render behind it.
+      if (map) setWmsLayerOpacity(map, layerId, percent);
+    },
+    [map],
+  );
+
   const toggleExpanded = useCallback((layerId: string) => {
     setExpandedId((current) => (current === layerId ? null : layerId));
   }, []);
@@ -70,18 +97,22 @@ export function LayersProvider({
       visibleIds,
       favourites,
       expandedId,
+      opacities,
       toggleVisible,
       toggleFavourite,
       toggleExpanded,
+      setOpacity,
     }),
     [
       map,
       visibleIds,
       favourites,
       expandedId,
+      opacities,
       toggleVisible,
       toggleFavourite,
       toggleExpanded,
+      setOpacity,
     ],
   );
 

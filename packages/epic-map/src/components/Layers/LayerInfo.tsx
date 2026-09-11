@@ -1,7 +1,8 @@
-import { useState } from "react";
 import { Box, Link, Slider, Typography } from "@mui/material";
 import { useTheme, type Theme } from "@mui/material/styles";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
+import { useLayers } from "@/components/Layers/LayersContext";
+import { DEFAULT_LAYER_OPACITY } from "@/utils/config";
 
 /**
  * A filled navy track with a solid thumb, plus the states the design calls for:
@@ -47,15 +48,13 @@ const sliderSx = (theme: Theme) => ({
 });
 
 /**
- * The view-only detail panel under an expanded layer row.
- *
- * The opacity slider is deliberately not wired to the rendered layer - that is
- * its own ticket. It holds its value so the control behaves honestly under the
- * hand, and nothing downstream reads it yet.
+ * The detail panel under an expanded layer row.
  */
 export default function LayerInfo({ layer }: { layer: CatalogueLayer }) {
   const theme = useTheme();
-  const [opacity, setOpacity] = useState(100);
+  const { opacities, setOpacity } = useLayers();
+
+  const opacity = opacities[layer.id] ?? DEFAULT_LAYER_OPACITY;
 
   const labelSx = {
     fontSize: theme.typography.body2.fontSize,
@@ -113,7 +112,7 @@ export default function LayerInfo({ layer }: { layer: CatalogueLayer }) {
 
         <Slider
           value={opacity}
-          onChange={(_, value) => setOpacity(value as number)}
+          onChange={(_, value) => setOpacity(layer.id, value as number)}
           disabled={!layer.wmsObjectName}
           aria-labelledby={`${layer.id}-opacity`}
           getAriaValueText={(value) => `${value} percent`}
