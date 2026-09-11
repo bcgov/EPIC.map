@@ -150,3 +150,10 @@ export const wmsTileUrl = (objectName: string): string =>
   "&FORMAT=image/png&TRANSPARENT=TRUE" +
   "&WIDTH=256&HEIGHT=256&SRS=EPSG:3857" +
   "&BBOX={bbox-epsg-3857}";
+
+/**
+ * Characters of a dataset description shown in the panel. The panel is 300px
+ * wide and the full record is one link away, so a long description costs more
+ * scrolling than it repays.
+ */
+export const CATALOGUE_DESCRIPTION_LIMIT = 220;

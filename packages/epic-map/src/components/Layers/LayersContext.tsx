@@ -14,8 +14,11 @@ interface LayersContextValue {
   map: MapLibreMap | null;
   visibleIds: ReadonlySet<string>;
   favourites: readonly CatalogueLayer[];
+  /** The one row showing its info panel, or null when none is. */
+  expandedId: string | null;
   toggleVisible: (layer: CatalogueLayer) => void;
   toggleFavourite: (layer: CatalogueLayer) => void;
+  toggleExpanded: (layerId: string) => void;
 }
 
 const LayersContext = createContext<LayersContextValue | null>(null);
@@ -31,6 +34,7 @@ export function LayersProvider({
     () => new Set(),
   );
   const [favourites, setFavourites] = useState<readonly CatalogueLayer[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const toggleVisible = useCallback(
     (layer: CatalogueLayer) => {
@@ -56,9 +60,29 @@ export function LayersProvider({
     );
   }, []);
 
+  const toggleExpanded = useCallback((layerId: string) => {
+    setExpandedId((current) => (current === layerId ? null : layerId));
+  }, []);
+
   const value = useMemo(
-    () => ({ map, visibleIds, favourites, toggleVisible, toggleFavourite }),
-    [map, visibleIds, favourites, toggleVisible, toggleFavourite],
+    () => ({
+      map,
+      visibleIds,
+      favourites,
+      expandedId,
+      toggleVisible,
+      toggleFavourite,
+      toggleExpanded,
+    }),
+    [
+      map,
+      visibleIds,
+      favourites,
+      expandedId,
+      toggleVisible,
+      toggleFavourite,
+      toggleExpanded,
+    ],
   );
 
   return (

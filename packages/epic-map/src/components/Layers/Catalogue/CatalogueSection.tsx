@@ -156,7 +156,7 @@ export default function CatalogueSection() {
           <Typography
             aria-live="polite"
             sx={{
-              padding: "0 1.25rem 0.25rem",
+              padding: "0 1rem 0.5rem",
               fontSize: theme.typography.caption.fontSize,
               color: theme.palette.text.secondary,
             }}

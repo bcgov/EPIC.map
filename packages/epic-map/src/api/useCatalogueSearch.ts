@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
+import { stripMarkdown, truncate } from "@/utils/text";
 import {
   CATALOGUE_DATASET_URL,
+  CATALOGUE_DESCRIPTION_LIMIT,
   CATALOGUE_SEARCH_ROWS,
   CATALOGUE_SEARCH_URL,
   MIN_CATALOGUE_QUERY_LENGTH,
@@ -14,6 +16,8 @@ export interface CatalogueLayer {
   name: string;
   wmsObjectName: string | null;
   lastUpdated: string;
+  /** Plain-text summary, trimmed for the panel; null when the record has none. */
+  description: string | null;
   metadataUrl: string;
 }
 
@@ -27,6 +31,8 @@ interface CkanPackage {
   id: string;
   name: string;
   title: string;
+  /** The dataset description, authored as Markdown. */
+  notes?: string;
   record_last_modified?: string;
   resources?: CkanResource[];
 }
@@ -54,11 +60,17 @@ const toCatalogueLayer = (pkg: CkanPackage): CatalogueLayer => {
     (resource) => resource.format?.toLowerCase() === "wms",
   );
 
+  const description = truncate(
+    stripMarkdown(pkg.notes ?? ""),
+    CATALOGUE_DESCRIPTION_LIMIT,
+  );
+
   return {
     id: `cat-${pkg.id}`,
     name: pkg.title,
     wmsObjectName: wms?.object_name ?? null,
     lastUpdated: formatDate(pkg.record_last_modified),
+    description: description || null,
     metadataUrl: `${CATALOGUE_DATASET_URL}/${pkg.name}`,
   };
 };

@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, IconButton, Switch, Tooltip, Typography } from "@mui/material";
+import {
+  Box,
+  Collapse,
+  IconButton,
+  Switch,
+  Tooltip,
+  Typography,
+} from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import StarIcon from "@mui/icons-material/Star";
@@ -7,6 +14,7 @@ import StarBorderIcon from "@mui/icons-material/StarBorder";
 import { useTheme, type Theme } from "@mui/material/styles";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import HighlightedName from "@/components/Layers/HighlightedName";
+import LayerInfo from "@/components/Layers/LayerInfo";
 import { useLayers } from "@/components/Layers/LayersContext";
 
 /** Every control in the row shows the same ring, so tabbing is easy to follow. */
@@ -27,6 +35,7 @@ const toggleSx = (theme: Theme) => ({
   padding: 0,
   flexShrink: 0,
   overflow: "visible",
+  marginLeft: 0.5,
   "& .MuiSwitch-switchBase": {
     padding: 0,
     // Centres the oversized thumb on the track's end.
@@ -74,12 +83,19 @@ type LayerRowProps = {
  */
 export default function LayerRow({ layer, query = "" }: LayerRowProps) {
   const theme = useTheme();
-  const { visibleIds, favourites, toggleVisible, toggleFavourite } =
-    useLayers();
+  const {
+    visibleIds,
+    favourites,
+    expandedId,
+    toggleVisible,
+    toggleFavourite,
+    toggleExpanded,
+  } = useLayers();
 
-  // Local while the expanded body does not exist yet. Lift it when the
-  // layer-info panel lands, so only one row can be open at a time.
-  const [expanded, setExpanded] = useState(false);
+  // Expansion is shared state: opening this row closes whichever was open,
+  // including one in another section.
+  const expanded = expandedId === layer.id;
+  const infoId = `${layer.id}-info`;
 
   const visible = visibleIds.has(layer.id);
   const starred = favourites.some((favourite) => favourite.id === layer.id);
@@ -96,8 +112,9 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
     <Box
       component="button"
       type="button"
-      onClick={() => setExpanded((isExpanded) => !isExpanded)}
+      onClick={() => toggleExpanded(layer.id)}
       aria-expanded={expanded}
+      aria-controls={infoId}
       sx={{
         display: "block",
         width: "100%",
@@ -129,83 +146,90 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
   );
 
   return (
-    <Box
-      component="li"
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        gap: "0.625rem",
-        padding: "0.25rem 1rem 0.25rem 1.25rem",
-        listStyle: "none",
-        "&:hover": { backgroundColor: theme.palette.grey[50] },
-      }}
-    >
-      <Switch
-        checked={visible}
-        onChange={() => toggleVisible(layer)}
-        disabled={!layer.wmsObjectName}
-        inputProps={{ "aria-label": `Show ${layer.name} on the map` }}
-        sx={toggleSx(theme)}
-      />
+    <Box component="li" sx={{ listStyle: "none" }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+          padding: "0.25rem 1rem",
+          "&:hover": { backgroundColor: theme.palette.grey[50] },
+        }}
+      >
+        <Switch
+          checked={visible}
+          onChange={() => toggleVisible(layer)}
+          disabled={!layer.wmsObjectName}
+          inputProps={{ "aria-label": `Show ${layer.name} on the map` }}
+          sx={toggleSx(theme)}
+        />
 
-      <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-        {clamped ? <Tooltip title={layer.name}>{name}</Tooltip> : name}
-      </Box>
+        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+          {clamped ? <Tooltip title={layer.name}>{name}</Tooltip> : name}
+        </Box>
 
-      <Tooltip title={starred ? "Remove from favourites" : "Add to favourites"}>
+        <Tooltip
+          title={starred ? "Remove from favourites" : "Add to favourites"}
+        >
+          <IconButton
+            size="small"
+            onClick={() => toggleFavourite(layer)}
+            aria-pressed={starred}
+            aria-label={
+              starred
+                ? `Remove ${layer.name} from favourites`
+                : `Add ${layer.name} to favourites`
+            }
+            sx={{
+              flexShrink: 0,
+              padding: "0.125rem",
+              color: theme.palette.secondary.main,
+              ...focusRing(theme),
+            }}
+          >
+            {starred ? (
+              <StarIcon sx={{ fontSize: "1.25rem" }} />
+            ) : (
+              <StarBorderIcon sx={{ fontSize: "1.25rem" }} />
+            )}
+          </IconButton>
+        </Tooltip>
+
         <IconButton
           size="small"
-          onClick={() => toggleFavourite(layer)}
-          aria-pressed={starred}
-          aria-label={
-            starred
-              ? `Remove ${layer.name} from favourites`
-              : `Add ${layer.name} to favourites`
-          }
+          aria-label={`Actions for ${layer.name}`}
           sx={{
             flexShrink: 0,
             padding: "0.125rem",
-            color: theme.palette.secondary.main,
+            color: theme.palette.text.primary,
             ...focusRing(theme),
           }}
         >
-          {starred ? (
-            <StarIcon sx={{ fontSize: "1.25rem" }} />
-          ) : (
-            <StarBorderIcon sx={{ fontSize: "1.25rem" }} />
-          )}
+          <MoreVertIcon sx={{ fontSize: "1.25rem" }} />
         </IconButton>
-      </Tooltip>
 
-      <IconButton
-        size="small"
-        aria-label={`Actions for ${layer.name}`}
-        sx={{
-          flexShrink: 0,
-          padding: "0.125rem",
-          color: theme.palette.text.primary,
-          ...focusRing(theme),
-        }}
-      >
-        <MoreVertIcon sx={{ fontSize: "1.25rem" }} />
-      </IconButton>
+        <IconButton
+          size="small"
+          onClick={() => toggleExpanded(layer.id)}
+          aria-expanded={expanded}
+          aria-controls={infoId}
+          aria-label={`Layer details for ${layer.name}`}
+          sx={{
+            flexShrink: 0,
+            padding: "0.125rem",
+            color: theme.palette.text.primary,
+            transition: theme.transitions.create("transform"),
+            transform: expanded ? "rotate(180deg)" : "none",
+            ...focusRing(theme),
+          }}
+        >
+          <KeyboardArrowDownIcon sx={{ fontSize: "1.25rem" }} />
+        </IconButton>
+      </Box>
 
-      <IconButton
-        size="small"
-        onClick={() => setExpanded((isExpanded) => !isExpanded)}
-        aria-expanded={expanded}
-        aria-label={`Layer details for ${layer.name}`}
-        sx={{
-          flexShrink: 0,
-          padding: "0.125rem",
-          color: theme.palette.text.primary,
-          transition: theme.transitions.create("transform"),
-          transform: expanded ? "rotate(180deg)" : "none",
-          ...focusRing(theme),
-        }}
-      >
-        <KeyboardArrowDownIcon sx={{ fontSize: "1.25rem" }} />
-      </IconButton>
+      <Collapse in={expanded} id={infoId}>
+        <LayerInfo layer={layer} />
+      </Collapse>
     </Box>
   );
 }
