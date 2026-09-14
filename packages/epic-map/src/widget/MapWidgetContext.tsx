@@ -6,7 +6,7 @@ import type {
   MapFeature,
   MapWidgetError,
 } from "@/types";
-import type { HostIdentity } from "@/widget/identity";
+import type { HostIdentity } from "@/utils/identity";
 
 /**
  * The widget's props after defaults are applied and callbacks are made stable.
@@ -28,6 +28,7 @@ export interface MapWidgetContextValue {
   apiBaseUrl: string;
   /** The widget's axios instance: token attachment and 401 retry are already on it. */
   api: AxiosInstance;
+  publicApi: AxiosInstance;
   /**
    * The display claims of the host's signed-in user, or `null` when the token
    * carries none. Resolves the claims and nothing else — this is how a component
@@ -50,15 +51,13 @@ export const MapWidgetProvider = ({
   value: MapWidgetContextValue;
   children: ReactNode;
 }) => (
-  <MapWidgetContext.Provider value={value}>{children}</MapWidgetContext.Provider>
+  <MapWidgetContext.Provider value={value}>
+    {children}
+  </MapWidgetContext.Provider>
 );
 
 /**
  * Read the widget's api client and configuration.
- *
- * Note what is deliberately absent: any way to reach a token. Components call
- * `api`, and the instance attaches the host's token for them; `readHostIdentity`
- * hands back claims, never the token they were read from.
  */
 export const useMapWidget = (): MapWidgetContextValue => {
   const context = useContext(MapWidgetContext);

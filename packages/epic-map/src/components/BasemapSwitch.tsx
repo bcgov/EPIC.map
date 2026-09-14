@@ -1,6 +1,6 @@
 import { ButtonBase, Box, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import { BASEMAPS, otherBasemap, type BasemapId } from "@/config";
+import { BASEMAPS, otherBasemap, type BasemapId } from "@/utils/config";
 
 type BasemapSwitchProps = {
   current: BasemapId;

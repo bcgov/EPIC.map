@@ -3,7 +3,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 import type { MapWidgetError } from "@/types";
-import { AccessTokenError, toMapWidgetError } from "@/api/errors";
+import { AccessTokenError, toMapWidgetError } from "@/utils/errors";
 
 /**
  * Requests carry a flag once they have been retried, so a 401 can be retried

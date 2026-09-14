@@ -9,16 +9,16 @@ import {
 } from "maplibre-gl";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 import BasemapSwitch from "@/components/BasemapSwitch";
+import LayersControl from "@/components/Layers/LayersControl";
 import {
   DEFAULT_BASEMAP,
   DEFAULT_EXTENT,
-  FIT_PADDING,
   MAX_ZOOM,
   MIN_ZOOM,
   WIDGET_ID_PREFIX,
   resolveBasemap,
   type BasemapId,
-} from "@/config";
+} from "@/utils/config";
 
 /**
  * Carry the widget's own sources and layers onto an incoming basemap.
@@ -67,7 +67,6 @@ export default function MapSurface() {
       container,
       style: appliedStyle.current,
       bounds: DEFAULT_EXTENT,
-      fitBoundsOptions: { padding: FIT_PADDING },
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
       dragRotate: false,
@@ -100,7 +99,7 @@ export default function MapSurface() {
 
   useEffect(() => {
     if (!map || !initialExtent) return;
-    map.fitBounds(initialExtent, { padding: FIT_PADDING, duration: 0 });
+    map.fitBounds(initialExtent, { duration: 0 });
   }, [map, initialExtent]);
 
   // setStyle keeps the camera where it is, so a switch changes what is under the
@@ -122,6 +121,7 @@ export default function MapSurface() {
       }}
     >
       <Box ref={containerRef} sx={{ width: "100%", height: "100%" }} />
+      <LayersControl map={map} />
       <BasemapSwitch current={basemap} onSelect={setBasemap} />
     </Box>
   );
