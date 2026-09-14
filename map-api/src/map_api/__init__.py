@@ -9,6 +9,7 @@ from http import HTTPStatus
 import secure
 from flask import Flask, current_app, g, jsonify, request
 from flask_cors import CORS
+from marshmallow import ValidationError
 from werkzeug.exceptions import HTTPException, Unauthorized
 
 from map_api.auth import jwt
@@ -208,6 +209,22 @@ def create_app(run_mode=os.getenv('FLASK_ENV', 'development')):
         return (
             jsonify({'message': error.description or str(error), 'status': error.code}),
             error.code,
+        )
+
+    @app.errorhandler(ValidationError)
+    def handle_validation_error(error):
+        """Return schema validation failures as 400s rather than 500s.
+
+        ValidationError is not an HTTPException, so without this it falls to the
+        catch-all below and a mistyped field reads as a server fault.
+        """
+        return (
+            jsonify({
+                'message': 'Invalid request',
+                'errors': error.messages,
+                'status': HTTPStatus.BAD_REQUEST.value,
+            }),
+            HTTPStatus.BAD_REQUEST,
         )
 
     @app.errorhandler(Exception)

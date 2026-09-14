@@ -21,6 +21,10 @@ from faker import Faker
 from flask import g
 
 from map_api.config import get_named_config
+from map_api.models.user import User as UserModel
+from map_api.models.user_applied_layer import UserAppliedLayer as UserAppliedLayerModel
+from map_api.utils.constant import DEFAULT_LAYER_OPACITY, LAYER_SOURCE_BCDC
+
 
 CONFIG = get_named_config('testing')
 fake = Faker()
@@ -35,6 +39,10 @@ JWT_HEADER = {
 
 TEST_AUTH_GUID = 'a1b2c3d4e5f60718293a4b5c6d7e8f90@idir'
 TEST_IDIR_USERNAME = 'JSMITH'
+
+# A second identity, so ownership tests refuse a real user rather than a made up id.
+SECOND_AUTH_GUID = '0f9e8d7c6b5a43210987654321fedcba@idir'
+SECOND_IDIR_USERNAME = 'BJONES'
 
 # The keycloak client a token is issued to, in the `azp` claim. In the shared
 # EAO realm every EPIC application receives aud "account", so azp is what
@@ -83,3 +91,51 @@ def factory_auth_header(jwt, claims=None, **overrides):
 def set_global_tenant(tenant_id=1):
     """Set the global tenant id."""
     g.tenant_id = tenant_id
+
+
+def factory_user(auth_guid=TEST_AUTH_GUID, username=TEST_IDIR_USERNAME, **overrides):
+    """Return a committed staff_users row."""
+    user = UserModel(
+        auth_guid=auth_guid,
+        username=username,
+        first_name=overrides.pop('first_name', 'Jane'),
+        last_name=overrides.pop('last_name', 'Smith'),
+        email_address=overrides.pop('email_address', 'jane.smith@gov.bc.ca'),
+        **overrides,
+    )
+    user.save()
+    return user
+
+
+def bcdc_layer_payload(**overrides):
+    """Return a valid POST body for applying a catalogue layer."""
+    payload = {
+        'package_id': '0a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d',
+        'object_name': 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES',
+        'display_name': 'Indian Reserves',
+    }
+    payload.update(overrides)
+    return payload
+
+
+def factory_applied_layer(user_id, **overrides):
+    """Return a committed applied layer row for a user's map."""
+    data = bcdc_layer_payload(**{
+        k: overrides.pop(k)
+        for k in ('package_id', 'object_name', 'display_name')
+        if k in overrides
+    })
+    layer = UserAppliedLayerModel(
+        user_id=user_id,
+        source=overrides.pop('source', LAYER_SOURCE_BCDC),
+        package_id=data['package_id'],
+        object_name=data['object_name'],
+        display_name=data['display_name'],
+        opacity=overrides.pop('opacity', DEFAULT_LAYER_OPACITY),
+        sort_order=overrides.pop(
+            'sort_order', UserAppliedLayerModel.next_sort_order(user_id)
+        ),
+        **overrides,
+    )
+    layer.save()
+    return layer
