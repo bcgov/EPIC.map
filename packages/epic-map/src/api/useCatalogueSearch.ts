@@ -13,10 +13,10 @@ import {
 /** A catalogue dataset, reduced to what the layers panel shows and draws. */
 export interface CatalogueLayer {
   id: string;
+  packageId: string;
+  objectName: string | null;
   name: string;
-  wmsObjectName: string | null;
   lastUpdated: string;
-  /** Plain-text summary, trimmed for the panel; null when the record has none. */
   description: string | null;
   metadataUrl: string;
 }
@@ -29,7 +29,6 @@ interface CkanResource {
 
 interface CkanPackage {
   id: string;
-  name: string;
   title: string;
   /** The dataset description, authored as Markdown. */
   notes?: string;
@@ -67,11 +66,12 @@ const toCatalogueLayer = (pkg: CkanPackage): CatalogueLayer => {
 
   return {
     id: `cat-${pkg.id}`,
+    packageId: pkg.id,
+    objectName: wms?.object_name ?? null,
     name: pkg.title,
-    wmsObjectName: wms?.object_name ?? null,
     lastUpdated: formatDate(pkg.record_last_modified),
     description: description || null,
-    metadataUrl: `${CATALOGUE_DATASET_URL}/${pkg.name}`,
+    metadataUrl: `${CATALOGUE_DATASET_URL}/${pkg.id}`,
   };
 };
 

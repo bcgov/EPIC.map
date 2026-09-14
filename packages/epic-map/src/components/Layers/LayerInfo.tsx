@@ -113,7 +113,7 @@ export default function LayerInfo({ layer }: { layer: CatalogueLayer }) {
         <Slider
           value={opacity}
           onChange={(_, value) => setOpacity(layer.id, value as number)}
-          disabled={!layer.wmsObjectName}
+          disabled={!layer.objectName}
           aria-labelledby={`${layer.id}-opacity`}
           getAriaValueText={(value) => `${value} percent`}
           sx={sliderSx(theme)}

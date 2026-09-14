@@ -16,6 +16,7 @@ import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import HighlightedName from "@/components/Layers/HighlightedName";
 import LayerInfo from "@/components/Layers/LayerInfo";
 import { useLayers } from "@/components/Layers/LayersContext";
+import { MAX_VISIBLE_LAYERS } from "@/utils/config";
 
 /** Every control in the row shows the same ring, so tabbing is easy to follow. */
 const focusRing = (theme: Theme) => ({
@@ -87,6 +88,7 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
     visibleIds,
     favourites,
     expandedId,
+    atVisibleLimit,
     toggleVisible,
     toggleFavourite,
     toggleExpanded,
@@ -99,6 +101,25 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
 
   const visible = visibleIds.has(layer.id);
   const starred = favourites.some((favourite) => favourite.id === layer.id);
+
+  const unmappable = !layer.objectName;
+
+  const blockedByLimit = !visible && !unmappable && atVisibleLimit;
+  const toggleNote = unmappable
+    ? "This dataset publishes no mappable layer"
+    : blockedByLimit
+    ? `Switch a layer off first: up to ${MAX_VISIBLE_LAYERS} can be shown at once`
+    : "";
+
+  const toggle = (
+    <Switch
+      checked={visible}
+      onChange={() => toggleVisible(layer)}
+      disabled={unmappable || blockedByLimit}
+      inputProps={{ "aria-label": `Show ${layer.name} on the map` }}
+      sx={toggleSx(theme)}
+    />
+  );
 
   // The tooltip is only useful where the clamp actually cut the name off.
   const nameRef = useRef<HTMLSpanElement | null>(null);
@@ -156,13 +177,15 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
           "&:hover": { backgroundColor: theme.palette.grey[50] },
         }}
       >
-        <Switch
-          checked={visible}
-          onChange={() => toggleVisible(layer)}
-          disabled={!layer.wmsObjectName}
-          inputProps={{ "aria-label": `Show ${layer.name} on the map` }}
-          sx={toggleSx(theme)}
-        />
+        {toggleNote ? (
+          <Tooltip title={toggleNote}>
+            <Box component="span" sx={{ display: "inline-flex" }}>
+              {toggle}
+            </Box>
+          </Tooltip>
+        ) : (
+          toggle
+        )}
 
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           {clamped ? <Tooltip title={layer.name}>{name}</Tooltip> : name}

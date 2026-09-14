@@ -33,8 +33,11 @@ export default function CatalogueSection() {
   const { layers, isLoading, error, retry } =
     useCatalogueSearch(debouncedQuery);
 
-  const searching = query.trim().length >= MIN_CATALOGUE_QUERY_LENGTH;
-  const hasResults = searching && !isLoading && !error && layers.length > 0;
+  const trimmedQuery = query.trim();
+  const searching = trimmedQuery.length >= MIN_CATALOGUE_QUERY_LENGTH;
+  const settled = debouncedQuery.trim() === trimmedQuery;
+  const hasResults =
+    searching && settled && !isLoading && !error && layers.length > 0;
 
   return (
     <LayersSection
@@ -80,7 +83,7 @@ export default function CatalogueSection() {
         </Box>
       )}
 
-      {searching && isLoading && (
+      {searching && (!settled || isLoading) && (
         <Box
           sx={{
             display: "flex",
@@ -101,7 +104,7 @@ export default function CatalogueSection() {
         </Box>
       )}
 
-      {searching && !isLoading && error && (
+      {searching && settled && !isLoading && error && (
         <Box sx={{ padding: "0.75rem 1rem", textAlign: "center" }}>
           <WarningAmberIcon
             aria-hidden
@@ -126,7 +129,7 @@ export default function CatalogueSection() {
         </Box>
       )}
 
-      {searching && !isLoading && !error && layers.length === 0 && (
+      {searching && settled && !isLoading && !error && layers.length === 0 && (
         <Box sx={{ padding: "0.75rem 1rem", textAlign: "center" }}>
           <SearchOffIcon
             aria-hidden
@@ -138,7 +141,7 @@ export default function CatalogueSection() {
               color: theme.palette.text.primary,
             }}
           >
-            No layers match &ldquo;{query.trim()}&rdquo;
+            No layers match &ldquo;{trimmedQuery}&rdquo;
           </Typography>
           <Typography
             sx={{

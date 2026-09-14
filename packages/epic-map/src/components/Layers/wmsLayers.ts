@@ -18,7 +18,11 @@ const whenStyleReady = (map: MapLibreMap, work: () => void) => {
     work();
     return;
   }
-  map.once("load", work);
+  /* 
+  'load' fires once per map, so it never comes round again after a basemap switch. 
+  `styledata` can arrive before the style is ready, hence the recheck.
+  */
+  map.once("styledata", () => whenStyleReady(map, work));
 };
 
 /**
@@ -29,7 +33,8 @@ export const showWmsLayer = (
   layer: CatalogueLayer,
   opacity: number,
 ) => {
-  if (!layer.wmsObjectName) return;
+  const { objectName } = layer;
+  if (!objectName) return;
 
   whenStyleReady(map, () => {
     const source = sourceId(layer.id);
@@ -44,7 +49,7 @@ export const showWmsLayer = (
     if (!map.getSource(source)) {
       map.addSource(source, {
         type: "raster",
-        tiles: [wmsTileUrl(layer.wmsObjectName as string)],
+        tiles: [wmsTileUrl(objectName)],
         tileSize: 256,
       });
     }
@@ -66,15 +71,19 @@ export const setWmsLayerOpacity = (
   layerId: string,
   opacity: number,
 ) => {
-  const raster = rasterId(layerId);
-  if (map.getLayer(raster)) {
-    map.setPaintProperty(raster, "raster-opacity", toRasterOpacity(opacity));
-  }
+  whenStyleReady(map, () => {
+    const raster = rasterId(layerId);
+    if (map.getLayer(raster)) {
+      map.setPaintProperty(raster, "raster-opacity", toRasterOpacity(opacity));
+    }
+  });
 };
 
 export const hideWmsLayer = (map: MapLibreMap, layerId: string) => {
-  const raster = rasterId(layerId);
-  if (map.getLayer(raster)) {
-    map.setLayoutProperty(raster, "visibility", "none");
-  }
+  whenStyleReady(map, () => {
+    const raster = rasterId(layerId);
+    if (map.getLayer(raster)) {
+      map.setLayoutProperty(raster, "visibility", "none");
+    }
+  });
 };

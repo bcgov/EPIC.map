@@ -14,7 +14,7 @@ import {
   setWmsLayerOpacity,
   showWmsLayer,
 } from "@/components/Layers/wmsLayers";
-import { DEFAULT_LAYER_OPACITY } from "@/utils/config";
+import { DEFAULT_LAYER_OPACITY, MAX_VISIBLE_LAYERS } from "@/utils/config";
 
 interface LayersContextValue {
   map: MapLibreMap | null;
@@ -22,6 +22,7 @@ interface LayersContextValue {
   favourites: readonly CatalogueLayer[];
   expandedId: string | null;
   opacities: Readonly<Record<string, number>>;
+  atVisibleLimit: boolean;
   toggleVisible: (layer: CatalogueLayer) => void;
   toggleFavourite: (layer: CatalogueLayer) => void;
   toggleExpanded: (layerId: string) => void;
@@ -55,13 +56,15 @@ export function LayersProvider({
         const next = new Set(current);
         if (next.delete(layer.id)) {
           if (map) hideWmsLayer(map, layer.id);
-        } else {
-          next.add(layer.id);
-          if (map) {
-            const opacity =
-              opacitiesRef.current[layer.id] ?? DEFAULT_LAYER_OPACITY;
-            showWmsLayer(map, layer, opacity);
-          }
+          return next;
+        }
+        if (next.size >= MAX_VISIBLE_LAYERS) return current;
+
+        next.add(layer.id);
+        if (map) {
+          const opacity =
+            opacitiesRef.current[layer.id] ?? DEFAULT_LAYER_OPACITY;
+          showWmsLayer(map, layer, opacity);
         }
         return next;
       });
@@ -91,6 +94,8 @@ export function LayersProvider({
     setExpandedId((current) => (current === layerId ? null : layerId));
   }, []);
 
+  const atVisibleLimit = visibleIds.size >= MAX_VISIBLE_LAYERS;
+
   const value = useMemo(
     () => ({
       map,
@@ -98,6 +103,7 @@ export function LayersProvider({
       favourites,
       expandedId,
       opacities,
+      atVisibleLimit,
       toggleVisible,
       toggleFavourite,
       toggleExpanded,
@@ -109,6 +115,7 @@ export function LayersProvider({
       favourites,
       expandedId,
       opacities,
+      atVisibleLimit,
       toggleVisible,
       toggleFavourite,
       toggleExpanded,

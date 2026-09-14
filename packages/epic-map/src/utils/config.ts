@@ -160,3 +160,10 @@ export const CATALOGUE_DESCRIPTION_LIMIT = 220;
 
 /** Layers arrive fully opaque; the opacity slider starts here. */
 export const DEFAULT_LAYER_OPACITY = 100;
+
+/**
+ * How many layers may draw at once. Each one is a raster source refetching
+ * tiles on every pan and zoom, so the panel stops well short of the row limit
+ * the API enforces on stored layers.
+ */
+export const MAX_VISIBLE_LAYERS = 15;
