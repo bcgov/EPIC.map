@@ -110,7 +110,7 @@ def factory_user(auth_guid=TEST_AUTH_GUID, username=TEST_IDIR_USERNAME, **overri
 def bcdc_layer_payload(**overrides):
     """Return a valid POST body for applying a catalogue layer."""
     payload = {
-        'package_id': 'clab-indian-reserves',
+        'package_id': '0a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d',
         'object_name': 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES',
         'display_name': 'Indian Reserves',
     }

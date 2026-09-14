@@ -200,6 +200,29 @@ def test_post_rejects_an_unsafe_object_name(app, client, jwt, session, object_na
     assert response.status_code == HTTPStatus.BAD_REQUEST
 
 
+@pytest.mark.parametrize(
+    'package_id',
+    [
+        'clab-indian-reserves',                  # a slug, which a retitle changes
+        '0a1b2c3d4e5f4a6b8c9d0e1f2a3b4c5d',      # a uuid without its dashes
+        '0a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c',    # too short in the last group
+        '0a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d5',  # too long in the last group
+        'g0a1b2c3-4e5f-4a6b-8c9d-0e1f2a3b4c5d',  # not hex
+    ],
+)
+def test_post_rejects_a_package_id_that_is_not_a_uuid(
+    app, client, jwt, session, package_id
+):
+    """The uuid is what keeps the metadata link working after a retitle."""
+    response = client.post(
+        ENDPOINT,
+        json=bcdc_layer_payload(package_id=package_id),
+        headers=factory_auth_header(jwt),
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+
+
 @pytest.mark.parametrize('field', ['package_id', 'object_name', 'display_name'])
 def test_post_rejects_a_missing_required_field(app, client, jwt, session, field):
     """Every identifier the client is trusted for must be present."""
@@ -296,19 +319,26 @@ def test_delete_removes_the_layer(app, client, jwt, session):
     assert client.get(ENDPOINT, headers=headers).json == []
 
 
-def test_delete_twice_is_not_found_the_second_time(app, client, jwt, session):
-    """The row is gone, so the second call has nothing to remove."""
+def test_delete_twice_is_idempotent(app, client, jwt, session):
+    """The second call has nothing to remove, which is not an error."""
     headers = factory_auth_header(jwt)
     created = client.post(ENDPOINT, json=bcdc_layer_payload(), headers=headers)
     path = f"{ENDPOINT}/{created.json['id']}"
 
     client.delete(path, headers=headers)
 
-    assert client.delete(path, headers=headers).status_code == HTTPStatus.NOT_FOUND
+    assert client.delete(path, headers=headers).status_code == HTTPStatus.NO_CONTENT
 
 
-def test_delete_another_users_layer_is_not_found(app, client, jwt, session):
-    """And leaves the row where it was."""
+def test_delete_an_unknown_id_is_no_content(app, client, jwt, session):
+    """A layer that never existed is already off the map."""
+    response = client.delete(f'{ENDPOINT}/999999', headers=factory_auth_header(jwt))
+
+    assert response.status_code == HTTPStatus.NO_CONTENT
+
+
+def test_delete_another_users_layer_leaves_the_row_alone(app, client, jwt, session):
+    """204 like any other id - the response says nothing about who owns it."""
     owner = factory_user(auth_guid=SECOND_AUTH_GUID, username=SECOND_IDIR_USERNAME)
     layer = factory_applied_layer(owner.id)
 
@@ -316,7 +346,7 @@ def test_delete_another_users_layer_is_not_found(app, client, jwt, session):
         f'{ENDPOINT}/{layer.id}', headers=factory_auth_header(jwt)
     )
 
-    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.status_code == HTTPStatus.NO_CONTENT
     assert UserAppliedLayer.find_one_for_user(layer.id, owner.id) is not None
 
 

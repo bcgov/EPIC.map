@@ -23,8 +23,12 @@ from marshmallow import EXCLUDE, Schema, fields, validate
 from map_api.utils.constant import DEFAULT_LAYER_OPACITY, MAX_LAYER_OPACITY, MIN_LAYER_OPACITY
 
 
-# A CKAN dataset id or slug.
-_ID_PATTERN = r'^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$'
+# A CKAN dataset uuid. Not a slug: a slug changes when a dataset is retitled
+# and the uuid does not, and the metadata link is built from what is stored.
+_PACKAGE_ID_PATTERN = (
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}'
+    r'-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+)
 
 # A BCGW object name, e.g. WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES. Excludes
 # ':' (smuggling another namespace past the client's 'pub:' prefix), ',' (many
@@ -65,7 +69,7 @@ class UserAppliedLayerRequestSchema(Schema):
 
     package_id = fields.Str(
         data_key='package_id', required=True,
-        validate=validate.Regexp(_ID_PATTERN),
+        validate=validate.Regexp(_PACKAGE_ID_PATTERN),
     )
     object_name = fields.Str(
         data_key='object_name', required=True,

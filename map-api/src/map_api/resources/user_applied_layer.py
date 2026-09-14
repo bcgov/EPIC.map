@@ -108,13 +108,13 @@ class AppliedLayer(Resource):
     @auth.require
     @ApiHelper.swagger_decorators(API, endpoint_description='Remove an applied layer')
     @API.response(code=204, description='Removed')
-    @API.response(404, 'Not Found')
     def delete(layer_id):
         """Take a layer off the map. The row is deleted outright.
 
-        404 here is success. It means the layer is not on the map
+        Idempotent: 204 whether or not the row was there, so a retry or a
+        second click is not an error, and a 204 tells the client nothing about
+        whose layer an id belongs to.
         """
         user = UserService.current_user()
-        if not UserAppliedLayerService.remove_layer(layer_id, user.id):
-            raise ResourceNotFoundError(f'Applied layer {layer_id} not found')
+        UserAppliedLayerService.remove_layer(layer_id, user.id)
         return '', HTTPStatus.NO_CONTENT

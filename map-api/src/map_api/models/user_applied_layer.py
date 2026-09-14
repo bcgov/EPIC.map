@@ -57,7 +57,7 @@ class UserAppliedLayer(BaseModel):
     source = db.Column(
         db.String(20), nullable=False, server_default=LAYER_SOURCE_BCDC
     )
-    # The CKAN dataset, for the metadata link.
+    # The CKAN dataset uuid, for the metadata link. Stable across a retitle.
     package_id = db.Column(db.String(100), nullable=False)
     # The BCGW object name - the identity of the thing drawn.
     object_name = db.Column(db.String(200), nullable=False)
