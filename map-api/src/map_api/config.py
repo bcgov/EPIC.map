@@ -23,6 +23,7 @@ import base64
 import os
 import sys
 from functools import lru_cache
+from urllib.parse import quote_plus
 
 import redis
 import rsa
@@ -113,6 +114,11 @@ def get_named_config(config_name: str = 'development'):
     return config
 
 
+def db_uri(user, password, host, port, name):
+    """Build a Postgres URI, percent-encoding credentials that may contain @ / or :."""
+    return f'postgresql://{quote_plus(user or "")}:{quote_plus(password or "")}@{host}:{int(port)}/{name}'
+
+
 def get_redis_client(config=None):
     """Return a Redis client built from the given (or the current) configuration.
 
@@ -142,7 +148,7 @@ class _Config():  # pylint: disable=too-few-public-methods
     DB_NAME = os.getenv('DATABASE_NAME', '')
     DB_HOST = os.getenv('DATABASE_HOST', '')
     DB_PORT = os.getenv('DATABASE_PORT', '5432')
-    SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{int(DB_PORT)}/{DB_NAME}'
+    SQLALCHEMY_DATABASE_URI = db_uri(DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME)
     SQLALCHEMY_ECHO = True
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
@@ -215,7 +221,7 @@ class DevConfig(_Config):  # pylint: disable=too-few-public-methods
     DEBUG = True
 
     CORS_ORIGINS = parse_csv(os.getenv('CORS_ORIGIN')) or list(LOCAL_CORS_ORIGINS)
-    print(f'SQLAlchemy URL (DevConfig): {_Config.SQLALCHEMY_DATABASE_URI}')
+    print(f'SQLAlchemy target (DevConfig): {_Config.DB_HOST}:{_Config.DB_PORT}/{_Config.DB_NAME}')
 
 
 class TestConfig(_Config):  # pylint: disable=too-few-public-methods
@@ -234,7 +240,7 @@ class TestConfig(_Config):  # pylint: disable=too-few-public-methods
     # CI hands over one connection string rather than setting each piece.
     SQLALCHEMY_DATABASE_URI = (
         os.getenv('DATABASE_TEST_URL') or
-        f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{int(DB_PORT)}/{DB_NAME}'
+        db_uri(DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME)
     )
 
     # REDIS - logical db 1 by default so a test run cannot clobber dev keys
@@ -287,7 +293,7 @@ class DockerConfig(_Config):  # pylint: disable=too-few-public-methods
     DB_NAME = os.getenv('DATABASE_DOCKER_NAME')
     DB_HOST = os.getenv('DATABASE_DOCKER_HOST')
     DB_PORT = os.getenv('DATABASE_DOCKER_PORT', '5432')
-    SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{int(DB_PORT)}/{DB_NAME}'
+    SQLALCHEMY_DATABASE_URI = db_uri(DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME)
 
     CORS_ORIGINS = parse_csv(os.getenv('CORS_ORIGIN')) or list(LOCAL_CORS_ORIGINS)
 
@@ -297,7 +303,7 @@ class DockerConfig(_Config):  # pylint: disable=too-few-public-methods
     REDIS_DB = os.getenv('REDIS_DOCKER_DB', '0')
     REDIS_URL = os.getenv('REDIS_DOCKER_URL') or f'redis://{REDIS_HOST}:{int(REDIS_PORT)}/{REDIS_DB}'
 
-    print(f'SQLAlchemy URL (Docker): {SQLALCHEMY_DATABASE_URI}')
+    print(f'SQLAlchemy target (Docker): {DB_HOST}:{DB_PORT}/{DB_NAME}')
 
 
 class ProdConfig(_Config):  # pylint: disable=too-few-public-methods
