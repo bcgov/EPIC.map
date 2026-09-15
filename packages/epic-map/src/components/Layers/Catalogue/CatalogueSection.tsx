@@ -6,6 +6,7 @@ import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useCatalogueSearch } from "@/api/useCatalogueSearch";
 import CatalogueSearchField from "@/components/Layers/Catalogue/CatalogueSearchField";
+import EnabledLayers from "@/components/Layers/Catalogue/EnabledLayers";
 import LayerRow from "@/components/Layers/LayerRow";
 import LayersSection from "@/components/Layers/LayersSection";
 import {
@@ -45,7 +46,6 @@ export default function CatalogueSection() {
       title="BC Data Catalogue"
       expanded={expanded}
       onToggle={() => setExpanded((isExpanded) => !isExpanded)}
-      divider={!hasResults}
     >
       <CatalogueSearchField value={query} onChange={setQuery} />
 
@@ -177,6 +177,8 @@ export default function CatalogueSection() {
           </Box>
         </>
       )}
+
+      <EnabledLayers />
     </LayersSection>
   );
 }

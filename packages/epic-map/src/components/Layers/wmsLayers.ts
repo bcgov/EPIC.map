@@ -18,11 +18,21 @@ const whenStyleReady = (map: MapLibreMap, work: () => void) => {
     work();
     return;
   }
-  /* 
-  'load' fires once per map, so it never comes round again after a basemap switch. 
-  `styledata` can arrive before the style is ready, hence the recheck.
+
+  /*
+  `isStyleLoaded()` is stricter than this needs: it also waits on every in-view
+  tile and the sprite, so on a fresh load it stays false while the basemap
+  downloads. 'load' is no use either way: it fires once per map, so it never comes round
+  again after a basemap switch.
   */
-  map.once("styledata", () => whenStyleReady(map, work));
+  const run = () => {
+    map.off("styledata", run);
+    map.off("idle", run);
+    work();
+  };
+
+  map.on("styledata", run);
+  map.on("idle", run);
 };
 
 /**
