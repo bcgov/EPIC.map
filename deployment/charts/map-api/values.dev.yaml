@@ -17,7 +17,7 @@ corsOrigin: "https://map-web-c8b80a-dev.apps.gold.devops.gov.bc.ca"
 
 # Keycloak clients whose tokens this API accepts. See ALLOWED_CLIENT_IDS in
 # map-api/src/map_api/config.py for why this is a list and not one audience.
-allowedClientIds: "compliance-web,submit-web,track-web,map-web"
+allowedClientIds: "compliance-web,submit-web,track-web,epic-map"
 
 # Empty until the eao-epic realm has a group for EPIC.map. While it is empty any
 # valid IDIR token from the shared realm is accepted.

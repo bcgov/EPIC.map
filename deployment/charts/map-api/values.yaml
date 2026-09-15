@@ -52,7 +52,10 @@ python:
 auth:
   jwt:
     alg: RS256
-    aud: map-web
+    # Inert as an audience check - auth.py replaces it with allowedClientIds -
+    # but flask-jwt-oidc requires it, and it is the fallback when that list is
+    # unset, so it names this API's own client.
+    aud: epic-map
     cacheEnabled: true
     cacheTimeout: "300"
 

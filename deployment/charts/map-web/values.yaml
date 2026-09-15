@@ -31,7 +31,9 @@ resources:
 keycloak:
   url: "https://dev.loginproxy.gov.bc.ca"
   realm: eao-epic
-  client: map-web
+  # The client registered in the eao-epic realm. It must also appear in map-api's
+  # allowedClientIds, or the API rejects the tokens this client mints.
+  client: epic-map
 
 service:
   port: 8080
