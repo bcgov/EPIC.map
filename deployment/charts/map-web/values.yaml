@@ -1,8 +1,25 @@
+# Shared defaults. Per-environment files carry only what differs.
+# Install with:  helm upgrade --install map-web . -f values.yaml -f values.dev.yaml -n c8b80a-dev
+
 app:
   name: map
-  url: map-web-{{ .Release.Namespace }}.apps.gold.devops.gov.bc.ca
-  api: https://map-api-{{ .Release.Namespace }}.apps.gold.devops.gov.bc.ca
+  title: EPIC.map
+  # Both resolve from the release namespace, so they are correct in every
+  # environment. url carries the scheme because the OIDC redirect_uri is built
+  # from it; the Route template strips it back off for the host field.
+  url: https://map-web-{{ .Release.Namespace }}.apps.gold.devops.gov.bc.ca
+  # Includes /api - config.ts derives the ops url by stripping that suffix.
+  api: https://map-api-{{ .Release.Namespace }}.apps.gold.devops.gov.bc.ca/api
   env: dev
+
+image:
+  # Full registry path. A Deployment resolves the image itself - there is no
+  # ImageStream trigger to rewrite a bare name, so promoting a tag needs an
+  # `oc rollout restart` (see .github/workflows/deploy.yml). dev runs :latest.
+  repository: image-registry.openshift-image-registry.svc:5000/c8b80a-tools/map-web
+  pullPolicy: Always
+  tag: "latest"
+
 resources:
   cpu:
     limit: 300m
@@ -10,17 +27,24 @@ resources:
   memory:
     limit: 200Mi
     request: 100Mi
-image:
-  name: map-web
-  tag: latest
-  repository: image-registry.openshift-image-registry.svc:5000/c72cba-tools/
+
 keycloak:
   url: "https://dev.loginproxy.gov.bc.ca"
   realm: eao-epic
-  client: map-web
+  # The client registered in the eao-epic realm. It must also appear in map-api's
+  # allowedClientIds, or the API rejects the tokens this client mints.
+  client: epic-map
+
 service:
   port: 8080
+
 replicas:
   count: 1
+
 mountPath: /usr/share/nginx/html/config/
 
+# A rollout surges a second pod before dropping the old one. Environments with
+# quota headroom keep that; see values.dev.yaml for the namespace that doesn't.
+rollout:
+  maxSurge: 25%
+  maxUnavailable: 25%

@@ -10,6 +10,10 @@ resources:
 repository:
   ref: develop
   url: https://github.com/bcgov/EPIC.map.git
+# Build context is the repository root, not map-web/: the Dockerfile copies
+# packages/epic-map, a workspace sibling that npm cannot resolve from the
+# registry. Same reason web-cd.yml runs `docker build .` from the root.
 context:
-  dir: /map-web
+  dir: ""
+dockerfilePath: map-web/Dockerfile
 

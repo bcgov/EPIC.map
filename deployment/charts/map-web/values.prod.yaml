@@ -1,0 +1,18 @@
+# c8b80a-prod
+app:
+  env: prod
+
+image:
+  tag: "prod"
+
+keycloak:
+  url: "https://loginproxy.gov.bc.ca"
+
+# nginx serving prebuilt static files.
+resources:
+  cpu:
+    limit: 200m
+    request: 50m
+  memory:
+    limit: 192Mi
+    request: 64Mi

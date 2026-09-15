@@ -1,0 +1,11 @@
+# c8b80a-test
+redis:
+  maxmemory: 192mb
+
+resources:
+  cpu:
+    limit: 200m
+    request: 15m
+  memory:
+    limit: 256Mi
+    request: 96Mi

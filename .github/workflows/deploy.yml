@@ -4,9 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Environment (test/prod)"
+        description: "Environment to promote into"
         required: true
+        type: choice
         default: "test"
+        options:
+          - test
+          - prod
 
 defaults:
   run:
@@ -26,12 +30,49 @@ jobs:
         run: |
           oc login --server=${{secrets.OPENSHIFT_LOGIN_REGISTRY}} --token=${{secrets.OPENSHIFT_SA_TOKEN}}
 
-      - name: Tag Images and Rollout
+      - name: Promote images and roll out
         shell: bash
+        env:
+          ENV: ${{ github.event.inputs.environment }}
+          TOOLS: ${{ secrets.OPENSHIFT_REPOSITORY }}-tools
+          NS: ${{ secrets.OPENSHIFT_REPOSITORY }}-${{ github.event.inputs.environment }}
         run: |
-          oc project ${{ secrets.OPENSHIFT_REPOSITORY }}-tools
-          oc tag map-api:latest map-api:${{ github.event.inputs.environment }}
-          oc tag map-web:latest map-web:${{ github.event.inputs.environment }}
-          
-          oc rollout status dc/map-api -n ${{ secrets.OPENSHIFT_REPOSITORY }}-${{ github.event.inputs.environment }} -w
-          oc rollout status dc/map-web -n ${{ secrets.OPENSHIFT_REPOSITORY }}-${{ github.event.inputs.environment }} -w
+          # Promote the image that is already running one environment back:
+          # latest (what dev runs) -> test, test -> prod. Nothing reaches prod
+          # without having been in test, and no image is rebuilt on the way - the
+          # bytes that ship to prod are the bytes that were tested.
+          if [ "$ENV" = "prod" ]; then
+            SOURCE_TAG=test
+          else
+            SOURCE_TAG=latest
+          fi
+          echo "Promoting $SOURCE_TAG -> $ENV in $TOOLS"
+
+          oc project $TOOLS
+
+          # Before :prod is overwritten, point a dated tag at the image it names
+          # right now, so a bad promotion is undone with one oc tag rather than a
+          # rebuild. Each app is checked separately, and the first prod deploy has
+          # nothing to back up.
+          if [ "$ENV" = "prod" ]; then
+            BACKUP_TAG="prod-backup-$(date -u +%Y%m%d-%H%M%S)"
+            for app in map-api map-web; do
+              if oc get istag $app:prod >/dev/null 2>&1; then
+                oc tag $app:prod $app:$BACKUP_TAG
+                echo "backed up $app:prod -> $app:$BACKUP_TAG"
+              else
+                echo "no $app:prod yet, nothing to back up"
+              fi
+            done
+          fi
+
+          oc tag map-api:$SOURCE_TAG map-api:$ENV
+          oc tag map-web:$SOURCE_TAG map-web:$ENV
+
+          # Deployments carry no ImageChange trigger: moving the tag changes what
+          # the registry serves, and the restart is what makes the pods pull it.
+          oc rollout restart deployment/map-api -n $NS
+          oc rollout restart deployment/map-web -n $NS
+
+          oc rollout status deployment/map-api -n $NS -w
+          oc rollout status deployment/map-web -n $NS -w

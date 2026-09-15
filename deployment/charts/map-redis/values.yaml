@@ -1,0 +1,33 @@
+# Shared defaults for every environment; per-environment files override sizing only.
+# Install with:  helm upgrade --install map-redis . -f values.yaml -f values.dev.yaml -n c8b80a-dev
+
+image:
+  # Pulled through the BC Gov Artifactory Docker Hub mirror, which the cluster-wide
+  # pull secrets cover - no imagePullSecrets and no Docker Hub rate limit.
+  repository: artifacts.developer.gov.bc.ca/docker-remote/redis
+  tag: "7.4-alpine"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 6379
+
+auth:
+  # Left empty, the chart generates a password on first install and reuses the one
+  # already in the cluster on every upgrade. Never set a real password in this file.
+  password: ""
+
+redis:
+  # Logical database map-api uses; tests use 1 locally, so deployed environments stay on 0.
+  db: 0
+  # Keep under the container memory limit - Redis counts data only, not its own overhead.
+  maxmemory: 128mb
+  maxmemoryPolicy: allkeys-lru
+
+resources:
+  cpu:
+    limit: 100m
+    request: 10m
+  memory:
+    limit: 256Mi
+    request: 64Mi

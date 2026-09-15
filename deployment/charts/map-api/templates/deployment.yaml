@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: "{{ .Chart.Name }}"
+  name: "{{ .Chart.Name }}"
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.rollout.maxSurge }}
+      maxUnavailable: {{ .Values.rollout.maxUnavailable }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      initContainers:
+        # Migrations run to completion before any new pod serves traffic. This
+        # replaces the DeploymentConfig pre-hook, which no longer exists.
+        - name: pre-hook
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Invoked through sh: the script is mode 644 in git, the same way the
+          # image's own docker-entrypoint.sh is run as `bash docker-entrypoint.sh`.
+          command: ["sh", "/opt/app-root/pre-hook-update-db.sh"]
+          env:
+            - name: DATABASE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secret }}
+                  key: user
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secret }}
+                  key: password
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secret }}
+                  key: dbname
+            - name: DATABASE_HOST
+              value: {{ .Values.database.service.name }}
+            - name: DATABASE_PORT
+              value: "{{ .Values.database.service.port }}"
+          envFrom:
+            # FLASK_ENV in particular - without it migrations run under DevConfig.
+            - configMapRef:
+                name: {{ .Chart.Name }}
+          resources:
+            limits:
+              cpu: {{ .Values.resources.cpu.limit }}
+              memory: {{ .Values.resources.memory.limit }}
+            requests:
+              cpu: {{ .Values.resources.cpu.request }}
+              memory: {{ .Values.resources.memory.request }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources:
+            limits:
+              cpu: {{ .Values.resources.cpu.limit }}
+              memory: {{ .Values.resources.memory.limit }}
+            requests:
+              cpu: {{ .Values.resources.cpu.request }}
+              memory: {{ .Values.resources.memory.request }}
+          readinessProbe:
+            httpGet:
+              path: /ops/readyz
+              port: 8080
+              scheme: HTTP
+            timeoutSeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /ops/healthz
+              port: 8080
+              scheme: HTTP
+            # healthz reports the database and Redis too, so give it room to
+            # answer before kubelet calls the pod dead.
+            timeoutSeconds: 10
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          env:
+            - name: DATABASE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secret }}
+                  key: user
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secret }}
+                  key: password
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secret }}
+                  key: dbname
+            - name: DATABASE_HOST
+              value: {{ .Values.database.service.name }}
+            - name: DATABASE_PORT
+              value: "{{ .Values.database.service.port }}"
+          envFrom:
+            - configMapRef:
+                name: {{ .Chart.Name }}
+            # Created in the namespace, not by this chart: SECRET_KEY.
+            - secretRef:
+                name: {{ .Values.secretName }}
+            # Written by the map-redis chart: REDIS_URL.
+            - secretRef:
+                name: {{ .Values.redis.secret }}
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          terminationMessagePath: /dev/termination-log
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst

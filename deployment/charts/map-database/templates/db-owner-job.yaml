@@ -1,0 +1,77 @@
+{{- $name := index .Values "crunchy-postgres" "fullnameOverride" -}}
+{{/*
+PGO creates the database as the postgres superuser and grants the application
+role database-level privileges only. Since Postgres 15 that is not enough to
+create a table: schema public is owned by pg_database_owner, so CREATE there
+belongs to whoever owns the database. Handing ownership to the application role
+is what lets its migrations run - without it alembic fails on its very first
+statement with "permission denied for schema public".
+
+Runs after every install and upgrade because it is idempotent and because a
+cluster restored from backup arrives owned by postgres again.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-owner
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}-owner
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: psql
+          image: {{ .Values.ownerJob.image }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              # The cluster is usually still starting when this hook fires.
+              for i in $(seq 1 60); do
+                if psql -qtAX -c 'select 1' >/dev/null 2>&1; then break; fi
+                echo "waiting for {{ $name }} ($i)"; sleep 10
+              done
+              psql -v ON_ERROR_STOP=1 -c 'ALTER DATABASE "{{ $name }}" OWNER TO "{{ $name }}";'
+              echo "{{ $name }} is owned by {{ $name }}"
+          env:
+            - name: PGHOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-pguser-postgres
+                  key: host
+            - name: PGPORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-pguser-postgres
+                  key: port
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-pguser-postgres
+                  key: user
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-pguser-postgres
+                  key: password
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-pguser-postgres
+                  key: dbname
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi

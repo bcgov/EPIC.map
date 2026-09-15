@@ -1,0 +1,11 @@
+# c8b80a-prod
+redis:
+  maxmemory: 384mb
+
+resources:
+  cpu:
+    limit: 400m
+    request: 25m
+  memory:
+    limit: 512Mi
+    request: 128Mi
