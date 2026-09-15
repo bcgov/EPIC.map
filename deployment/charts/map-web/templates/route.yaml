@@ -5,7 +5,8 @@ metadata:
     app: {{ .Values.app.name }}
   name: {{ .Chart.Name }}
 spec:
-  host: {{ tpl .Values.app.url . }}
+  # app.url carries the scheme for the OIDC redirect_uri; a Route host must not.
+  host: {{ tpl .Values.app.url . | replace "https://" "" }}
   tls:
     insecureEdgeTerminationPolicy: Redirect
     termination: edge

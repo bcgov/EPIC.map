@@ -19,10 +19,15 @@ spec:
   postCommit: {}
   source:
     type: Git
+    # contextDir belongs to source, not to git - the API prunes unknown fields
+    # under git without complaining, and the build then looks for the Dockerfile
+    # at the repository root.
+    {{- if .Values.githubContextDir }}
+    contextDir: {{ .Values.githubContextDir }}
+    {{- end }}
     git:
       uri: {{ .Values.githubRepo }}
-      ref: develop  # Can be overridden during install
-      contextDir: {{ .Values.githubContextDir }}
+      ref: {{ .Values.githubRef }}
   triggers:
   - type: ConfigChange
 runPolicy: Serial

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    name: {{ .Chart.Name }}
+  name: {{ .Chart.Name }}
+data:
+  redis.conf: |
+    # A cache, not a datastore: nothing here is worth persisting, and the
+    # catalogue index rewarms from DataBC after a restart.
+    save ""
+    appendonly no
+    maxmemory {{ .Values.redis.maxmemory }}
+    maxmemory-policy {{ .Values.redis.maxmemoryPolicy }}
+    # stdout, so the logs land where OpenShift expects them.
+    logfile ""

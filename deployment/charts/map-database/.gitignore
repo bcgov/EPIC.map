@@ -1,0 +1,2 @@
+# Pulled by `helm dependency update`; Chart.lock pins the version instead.
+charts/

@@ -1,6 +1,7 @@
 app: map-api  # Replace with your desired application name
-githubRepo: https://github.com/bcgov/EPIC.map.git  # Replace with your actual repo URL
-githubContextDir: /map-api
+githubRepo: https://github.com/bcgov/EPIC.map.git
+githubRef: develop
+githubContextDir: map-api  # subdirectory of the repo, no leading slash
 resources:
   limits:
     cpu: 1500m

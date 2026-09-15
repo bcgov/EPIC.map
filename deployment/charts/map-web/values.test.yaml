@@ -1,0 +1,18 @@
+# c8b80a-test
+app:
+  env: test
+
+image:
+  tag: "test"
+
+keycloak:
+  url: "https://test.loginproxy.gov.bc.ca"
+
+# nginx serving prebuilt static files.
+resources:
+  cpu:
+    limit: 200m
+    request: 50m
+  memory:
+    limit: 192Mi
+    request: 64Mi

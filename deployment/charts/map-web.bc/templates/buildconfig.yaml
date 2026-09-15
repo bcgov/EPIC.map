@@ -20,13 +20,15 @@ spec:
   failedBuildsHistoryLimit: 5
   runPolicy: Serial
   source:
+    {{- if .Values.context.dir }}
     contextDir: {{ .Values.context.dir }}
+    {{- end }}
     git:
       ref: {{ .Values.repository.ref }}
       uri: {{ .Values.repository.url }}
   strategy:
     dockerStrategy:
-      dockerfilePath: Dockerfile
+      dockerfilePath: {{ .Values.dockerfilePath }}
     type: Docker
   triggers:
   - imageChange: {}

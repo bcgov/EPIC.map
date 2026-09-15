@@ -1,0 +1,32 @@
+# c8b80a-test
+image:
+  tag: "test"
+
+auth:
+  jwt:
+    issuer: https://test.loginproxy.gov.bc.ca/auth/realms/eao-epic
+    wellKnownConfig: https://test.loginproxy.gov.bc.ca/auth/realms/eao-epic/.well-known/openid-configuration
+  keycloak:
+    uri: https://test.loginproxy.gov.bc.ca
+    realm: eao-epic
+
+# Every EPIC application that embeds the map needs its origin here - the widget
+# runs in the host's page, so the host's origin is what the browser sends. Add
+# EPIC.Centre's dev origin as soon as it embeds the map.
+corsOrigin: "https://map-web-c8b80a-test.apps.gold.devops.gov.bc.ca"
+
+# Keycloak clients whose tokens this API accepts. See ALLOWED_CLIENT_IDS in
+# map-api/src/map_api/config.py for why this is a list and not one audience.
+allowedClientIds: "compliance-web,submit-web,track-web,map-web"
+
+# Empty until the eao-epic realm has a group for EPIC.map. While it is empty any
+# valid IDIR token from the shared realm is accepted.
+authRequiredGroup: ""
+
+resources:
+  cpu:
+    limit: 500m
+    request: 100m
+  memory:
+    limit: 512Mi
+    request: 256Mi

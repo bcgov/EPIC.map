@@ -1,0 +1,11 @@
+# c8b80a-dev
+redis:
+  maxmemory: 128mb
+
+resources:
+  cpu:
+    limit: 100m
+    request: 10m
+  memory:
+    limit: 256Mi
+    request: 64Mi

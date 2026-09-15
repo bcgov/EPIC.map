@@ -1,0 +1,42 @@
+# c8b80a-dev
+image:
+  tag: "latest"
+
+auth:
+  jwt:
+    issuer: https://dev.loginproxy.gov.bc.ca/auth/realms/eao-epic
+    wellKnownConfig: https://dev.loginproxy.gov.bc.ca/auth/realms/eao-epic/.well-known/openid-configuration
+  keycloak:
+    uri: https://dev.loginproxy.gov.bc.ca
+    realm: eao-epic
+
+# Every EPIC application that embeds the map needs its origin here - the widget
+# runs in the host's page, so the host's origin is what the browser sends. Add
+# EPIC.Centre's dev origin as soon as it embeds the map.
+corsOrigin: "https://map-web-c8b80a-dev.apps.gold.devops.gov.bc.ca"
+
+# Keycloak clients whose tokens this API accepts. See ALLOWED_CLIENT_IDS in
+# map-api/src/map_api/config.py for why this is a list and not one audience.
+allowedClientIds: "compliance-web,submit-web,track-web,map-web"
+
+# Empty until the eao-epic realm has a group for EPIC.map. While it is empty any
+# valid IDIR token from the shared realm is accepted.
+authRequiredGroup: ""
+
+# Limits unchanged; the request is what the quota counts, and dev serves one
+# person at a time.
+resources:
+  cpu:
+    limit: 250m
+    request: 75m
+  memory:
+    limit: 384Mi
+    # Burstable on purpose: the limit is what gunicorn actually gets to use, the
+    # request is only what the namespace quota reserves, and c8b80a-dev has 244Mi.
+    request: 128Mi
+
+# c8b80a-dev has no room for a second pod, so replace in place and accept a few
+# seconds of downtime - without this every rollout sits unschedulable at quota.
+rollout:
+  maxSurge: 0
+  maxUnavailable: 1

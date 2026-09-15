@@ -5,14 +5,16 @@ metadata:
     app: {{ .Chart.Name }}
   name: {{ .Chart.Name }}
 data:
+  # Read by map-web/src/utils/config.ts as window._env_, which falls back to
+  # import.meta.env when a key is absent. The names must stay VITE_-prefixed to
+  # match that file - this is a Vite app, not Create React App.
   config.js: |-
-    // runtime-config.js vars
-      window["_env_"] =  {
-        "ENV": "dev",
-        "NODE_ENV": "production",
-        "REACT_APP_API_URL": "{{ .Values.app.api }}",
-        "REACT_APP_KEYCLOAK_URL": "{{ .Values.keycloak.url }}",
-        "REACT_APP_KEYCLOAK_CLIENT": "{{ .Values.keycloak.client }}",
-        "REACT_APP_KEYCLOAK_REALM": "{{ .Values.keycloak.realm }}",
-        "REACT_APP_ENV": "{{ .Values.app.env }}",
-      }
+    window._env_ = {
+      "VITE_API_URL": "{{ tpl .Values.app.api . }}",
+      "VITE_APP_URL": "{{ tpl .Values.app.url . }}",
+      "VITE_APP_TITLE": "{{ .Values.app.title }}",
+      "VITE_ENV": "{{ .Values.app.env }}",
+      "VITE_VERSION": "{{ .Values.image.tag }}",
+      "VITE_OIDC_AUTHORITY": "{{ .Values.keycloak.url }}/auth/realms/{{ .Values.keycloak.realm }}",
+      "VITE_CLIENT_ID": "{{ .Values.keycloak.client }}"
+    };
