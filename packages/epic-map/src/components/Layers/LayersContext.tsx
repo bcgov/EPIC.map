@@ -2,12 +2,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { Map as MapLibreMap } from "maplibre-gl";
+import { useAppliedLayers, type AppliedLayer } from "@/api/useAppliedLayers";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
   hideWmsLayer,
@@ -19,6 +21,13 @@ import { DEFAULT_LAYER_OPACITY, MAX_VISIBLE_LAYERS } from "@/utils/config";
 interface LayersContextValue {
   map: MapLibreMap | null;
   visibleIds: ReadonlySet<string>;
+  /** The layers map-api has stored for this user, bottom of the stack first. */
+  appliedLayers: readonly AppliedLayer[];
+  appliedPending: boolean;
+  appliedError: unknown;
+  retryApplied: () => void;
+  /** Ids with a call in flight, whose switch is held until it lands. */
+  pendingIds: ReadonlySet<string>;
   favourites: readonly CatalogueLayer[];
   expandedId: string | null;
   opacities: Readonly<Record<string, number>>;
@@ -38,38 +47,82 @@ export function LayersProvider({
   map: MapLibreMap | null;
   children: ReactNode;
 }) {
-  const [visibleIds, setVisibleIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const {
+    layers: appliedLayers,
+    isPending: appliedPending,
+    error: appliedError,
+    pendingIds,
+    retry,
+    applyLayer,
+    removeLayer,
+    saveOpacity,
+  } = useAppliedLayers();
+
   const [favourites, setFavourites] = useState<readonly CatalogueLayer[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [opacities, setOpacities] = useState<Readonly<Record<string, number>>>(
-    {},
+
+  const [opacityDrafts, setOpacityDrafts] = useState<
+    Readonly<Record<string, number>>
+  >({});
+
+  const visibleIds = useMemo(
+    () => new Set(appliedLayers.map((layer) => layer.id)),
+    [appliedLayers],
   );
+
+  const opacities = useMemo(() => {
+    const stored: Record<string, number> = {};
+    for (const layer of appliedLayers) stored[layer.id] = layer.opacity;
+    return { ...opacityDrafts, ...stored };
+  }, [appliedLayers, opacityDrafts]);
 
   const opacitiesRef = useRef(opacities);
   opacitiesRef.current = opacities;
 
+  const paintedRef = useRef<Map<string, number>>(new Map());
+  const paintedMapRef = useRef<MapLibreMap | null>(null);
+
+  useEffect(() => {
+    if (!map) return;
+
+    if (paintedMapRef.current !== map) {
+      paintedMapRef.current = map;
+      paintedRef.current = new Map();
+    }
+    const painted = paintedRef.current;
+
+    for (const layer of appliedLayers) {
+      const opacity = opacitiesRef.current[layer.id] ?? DEFAULT_LAYER_OPACITY;
+      const drawn = painted.get(layer.id);
+      painted.set(layer.id, opacity);
+
+      if (drawn === undefined) showWmsLayer(map, layer, opacity);
+      else if (drawn !== opacity) setWmsLayerOpacity(map, layer.id, opacity);
+    }
+
+    const applied = new Set(appliedLayers.map((layer) => layer.id));
+    for (const layerId of painted.keys()) {
+      if (applied.has(layerId)) continue;
+      painted.delete(layerId);
+      hideWmsLayer(map, layerId);
+    }
+  }, [map, appliedLayers]);
+
   const toggleVisible = useCallback(
     (layer: CatalogueLayer) => {
-      setVisibleIds((current) => {
-        const next = new Set(current);
-        if (next.delete(layer.id)) {
-          if (map) hideWmsLayer(map, layer.id);
-          return next;
-        }
-        if (next.size >= MAX_VISIBLE_LAYERS) return current;
+      if (pendingIds.has(layer.id)) return;
+      if (visibleIds.has(layer.id)) {
+        removeLayer(layer.id);
+        return;
+      }
+      if (visibleIds.size >= MAX_VISIBLE_LAYERS) return;
 
-        next.add(layer.id);
-        if (map) {
-          const opacity =
-            opacitiesRef.current[layer.id] ?? DEFAULT_LAYER_OPACITY;
-          showWmsLayer(map, layer, opacity);
-        }
-        return next;
-      });
+      applyLayer(
+        layer,
+        opacitiesRef.current[layer.id] ?? DEFAULT_LAYER_OPACITY,
+      );
     },
-    [map],
+    [pendingIds, visibleIds, applyLayer, removeLayer],
   );
 
   const toggleFavourite = useCallback((layer: CatalogueLayer) => {
@@ -82,17 +135,26 @@ export function LayersProvider({
 
   const setOpacity = useCallback(
     (layerId: string, percent: number) => {
-      setOpacities((current) => ({ ...current, [layerId]: percent }));
-      // Painted straight away rather than through an effect, so the map keeps
-      // pace with the thumb instead of trailing a render behind it.
-      if (map) setWmsLayerOpacity(map, layerId, percent);
+      setOpacityDrafts((current) => ({ ...current, [layerId]: percent }));
+
+      if (map) {
+        setWmsLayerOpacity(map, layerId, percent);
+        if (paintedRef.current.has(layerId)) {
+          paintedRef.current.set(layerId, percent);
+        }
+      }
+      saveOpacity(layerId, percent);
     },
-    [map],
+    [map, saveOpacity],
   );
 
   const toggleExpanded = useCallback((layerId: string) => {
     setExpandedId((current) => (current === layerId ? null : layerId));
   }, []);
+
+  const retryApplied = useCallback(() => {
+    retry();
+  }, [retry]);
 
   const atVisibleLimit = visibleIds.size >= MAX_VISIBLE_LAYERS;
 
@@ -100,6 +162,11 @@ export function LayersProvider({
     () => ({
       map,
       visibleIds,
+      appliedLayers,
+      appliedPending,
+      appliedError,
+      retryApplied,
+      pendingIds,
       favourites,
       expandedId,
       opacities,
@@ -112,6 +179,11 @@ export function LayersProvider({
     [
       map,
       visibleIds,
+      appliedLayers,
+      appliedPending,
+      appliedError,
+      retryApplied,
+      pendingIds,
       favourites,
       expandedId,
       opacities,

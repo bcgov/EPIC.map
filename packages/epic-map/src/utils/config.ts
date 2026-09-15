@@ -167,3 +167,9 @@ export const DEFAULT_LAYER_OPACITY = 100;
  * the API enforces on stored layers.
  */
 export const MAX_VISIBLE_LAYERS = 15;
+
+/**
+ * How long the opacity slider rests before its value is saved. A drag emits a
+ * value per pixel of travel; without this each one would be its own PATCH.
+ */
+export const OPACITY_SAVE_DEBOUNCE_MS = 400;

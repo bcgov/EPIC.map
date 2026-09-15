@@ -88,6 +88,7 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
     visibleIds,
     favourites,
     expandedId,
+    pendingIds,
     atVisibleLimit,
     toggleVisible,
     toggleFavourite,
@@ -104,6 +105,8 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
 
   const unmappable = !layer.objectName;
 
+  const saving = pendingIds.has(layer.id);
+
   const blockedByLimit = !visible && !unmappable && atVisibleLimit;
   const toggleNote = unmappable
     ? "This dataset publishes no mappable layer"
@@ -115,7 +118,7 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
     <Switch
       checked={visible}
       onChange={() => toggleVisible(layer)}
-      disabled={unmappable || blockedByLimit}
+      disabled={unmappable || blockedByLimit || saving}
       inputProps={{ "aria-label": `Show ${layer.name} on the map` }}
       sx={toggleSx(theme)}
     />
