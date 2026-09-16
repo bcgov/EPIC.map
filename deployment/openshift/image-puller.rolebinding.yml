@@ -1,0 +1,23 @@
+# Lets the default service account in each environment namespace pull images out
+# of the tools namespace. Apply once, in c8b80a-tools.
+#
+#   oc apply -f image-puller.rolebinding.yml -n c8b80a-tools
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: 'system:image-puller'
+  namespace: c8b80a-tools
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: c8b80a-dev
+  - kind: ServiceAccount
+    name: default
+    namespace: c8b80a-test
+  - kind: ServiceAccount
+    name: default
+    namespace: c8b80a-prod
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: 'system:image-puller'

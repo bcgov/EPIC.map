@@ -1,0 +1,90 @@
+# Shared defaults for every environment; per-environment files override sizing only.
+# The ownership hook runs psql from the Artifactory Docker Hub mirror, which the
+# cluster-wide pull secrets already cover.
+ownerJob:
+  image: artifacts.developer.gov.bc.ca/docker-remote/postgres:16-alpine
+
+# Install with:  helm install map-db . -f values.yaml -f values.dev.yaml -n c8b80a-dev
+crunchy-postgres:
+  # Names the PostgresCluster, the app role, the database, and the generated
+  # secret map-db-pguser-map-db. Keep it in step with map-api's database.secret.
+  fullnameOverride: map-db
+
+  postgresVersion: 16
+  # PGO resolves this to a crunchy-postgres-gis image it picks by operator version, and creates the
+  # postgis, postgis_topology, fuzzystrmatch and postgis_tiger_geocoder extensions
+  # in every database as superuser, which is why the app role never needs to.
+  postGISVersion: '3.4'
+  imagePullPolicy: IfNotPresent
+  openshift: true
+
+  standby:
+    enabled: false
+    repoName: repo1
+
+  instances:
+    name: ha
+    replicas: 2
+    dataVolumeClaimSpec:
+      storage: 5Gi
+      storageClassName: netapp-block-standard
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    replicaCertCopy:
+      requests:
+        cpu: 1m
+        memory: 32Mi
+
+  dataSource:
+    enabled: false
+
+  pgBackRest:
+    retention: "7"
+    retentionFullType: count
+    repo1:
+      enabled: true
+    repos:
+      schedules:
+        full: 0 8 * * *
+        incremental: 0 0,4,12,16,20 * * *
+      volume:
+        accessModes: "ReadWriteOnce"
+        storage: 5Gi
+        storageClassName: netapp-file-backup
+    repoHost:
+      requests:
+        cpu: 10m
+        memory: 128Mi
+    sidecars:
+      requests:
+        cpu: 5m
+        memory: 64Mi
+    # S3 backups are the prod story; PVC repo1 above is enough for dev and test.
+    s3:
+      enabled: false
+
+  patroni:
+    postgresql:
+      # Reachable only inside the namespace; the network policy is the real boundary.
+      pg_hba: "host all all 0.0.0.0/0 md5"
+      parameters:
+        # Roughly 25% of the instance memory limit.
+        shared_buffers: 256MB
+        wal_buffers: "-1"
+        min_wal_size: 64MB
+        max_wal_size: 256MB
+        max_slot_wal_keep_size: 512MB
+
+  proxy:
+    pgBouncer:
+      replicas: 2
+      requests:
+        cpu: 5m
+        memory: 64Mi
+
+  pgmonitor:
+    enabled: false

@@ -5,6 +5,11 @@
     <link rel="icon" type="image/png" href="/BCFavIcon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Epic.Map</title>
+    <!-- Runtime configuration. In a deployed environment this file is the
+         map-web ConfigMap mounted over /config; locally it is the no-op in
+         public/config so the app falls back to .env. Must load before the
+         bundle, which reads window._env_ at import time. -->
+    <script src="/config/config.js"></script>
   </head>
   <body>
     <div id="root"></div>

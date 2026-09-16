@@ -1,0 +1,35 @@
+# c8b80a-dev. The namespace is shared with Compliance and Track, so dev runs a
+# single instance with no HA - failover behaviour is exercised in test, not here.
+crunchy-postgres:
+  instances:
+    replicas: 1
+    dataVolumeClaimSpec:
+      storage: 2Gi
+    requests:
+      cpu: 25m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 1Gi
+
+  pgBackRest:
+    retention: "2"
+    repos:
+      volume:
+        storage: 2Gi
+    # Backup plumbing for a scratch database - it needs to run, not to be fast.
+    repoHost:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+    sidecars:
+      requests:
+        cpu: 5m
+        memory: 32Mi
+
+  proxy:
+    pgBouncer:
+      replicas: 1
+      requests:
+        cpu: 5m
+        memory: 32Mi

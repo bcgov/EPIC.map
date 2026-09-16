@@ -1,0 +1,27 @@
+# c8b80a-dev
+app:
+  env: dev
+
+image:
+  tag: "latest"
+
+keycloak:
+  url: "https://dev.loginproxy.gov.bc.ca"
+
+# nginx serving prebuilt static files - the inherited 250m/100Mi request was
+# sized for something else entirely.
+resources:
+  cpu:
+    limit: 100m
+    request: 25m
+  memory:
+    limit: 128Mi
+    # alpine nginx serving static files idles around 10-15Mi; the request only
+    # has to cover that, and c8b80a-dev has no room to spare.
+    request: 48Mi
+
+# c8b80a-dev has no room for a second pod, so replace in place and accept a few
+# seconds of downtime - without this every rollout sits unschedulable at quota.
+rollout:
+  maxSurge: 0
+  maxUnavailable: 1

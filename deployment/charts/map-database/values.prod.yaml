@@ -1,0 +1,47 @@
+# c8b80a-prod. Three instances: one primary, two replicas that can be elected.
+# Sized alongside the other EPIC databases in this namespace; the data volume is
+# deliberately modest and expandable - netapp-block-standard grows in place, and
+# nobody knows how large the GIS data really is until Kate's data lands.
+crunchy-postgres:
+  instances:
+    replicas: 3
+    dataVolumeClaimSpec:
+      storage: 4Gi
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 2Gi
+
+  pgBackRest:
+    retention: "30"
+    repos:
+      volume:
+        storage: 8Gi
+    repoHost:
+      requests:
+        cpu: 10m
+        memory: 96Mi
+    sidecars:
+      requests:
+        cpu: 5m
+        memory: 32Mi
+    # TODO: enable S3 (repo2) before go-live so backups survive the namespace.
+    s3:
+      enabled: false
+
+  patroni:
+    postgresql:
+      parameters:
+        # 25% of the 2Gi limit.
+        shared_buffers: 512MB
+        max_wal_size: 512MB
+        max_slot_wal_keep_size: 1GB
+
+  proxy:
+    pgBouncer:
+      replicas: 2
+      requests:
+        cpu: 5m
+        memory: 48Mi

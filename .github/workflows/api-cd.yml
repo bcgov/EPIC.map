@@ -7,12 +7,9 @@ on:
       - develop
     paths:
       - "map-api/**"
+  # No environment input: this workflow only ever builds and tags dev. test and
+  # prod are reached by promoting an existing image in deploy.yml.
   workflow_dispatch:
-    inputs:
-      environment:
-        description: "Environment (dev/test/prod)"
-        required: true
-        default: "dev"
 
 defaults:
   run:
@@ -21,7 +18,8 @@ defaults:
 
 env:
   APP_NAME: "map-api"
-  TAG_NAME: "${{ github.event.inputs.environment || 'dev' }}" # If the environment type is manually selected, use the input value; otherwise, use 'dev' as default
+  # dev runs :latest
+  ENV_NAME: "dev"
 
 jobs:
   api-cd:
@@ -53,10 +51,12 @@ jobs:
           IMAGE_ID=${{ secrets.OPENSHIFT_IMAGE_REGISTRY }}/"${{ secrets.OPENSHIFT_REPOSITORY}}-tools"/$APP_NAME
           docker tag image $IMAGE_ID:latest
           docker push $IMAGE_ID:latest
-          docker image tag $IMAGE_ID:latest $IMAGE_ID:$TAG_NAME
-          docker push $IMAGE_ID:$TAG_NAME
 
+      # A Deployment has no ImageChange trigger, and the image reference in the
+      # chart does not change when the tag is re-pushed, so the restart is what
+      # actually pulls the new image.
       - name: Rollout
         shell: bash
         run: |
-          oc rollout status dc/${{ env.APP_NAME }} -n ${{ secrets.OPENSHIFT_REPOSITORY }}-${{ env.TAG_NAME }} -w
+          oc rollout restart deployment/${{ env.APP_NAME }} -n ${{ secrets.OPENSHIFT_REPOSITORY }}-${{ env.ENV_NAME }}
+          oc rollout status deployment/${{ env.APP_NAME }} -n ${{ secrets.OPENSHIFT_REPOSITORY }}-${{ env.ENV_NAME }} -w

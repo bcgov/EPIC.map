@@ -233,18 +233,88 @@ See `map-web/README.md` for the full front end documentation, and
 [`packages/epic-map/README.md`](packages/epic-map/README.md) for the component package.
 
 # Helm
-In openshift, you should have namespaces as such:
-xxxx-tools
-xxxx-dev
-xxxx-test
-xxxx-prod
+EPIC.map deploys into the `c8b80a` license plate on the Gold cluster, which it shares with
+Compliance and Track:
 
-After the oc login which can be gotten from the openshift command line tool page
-install command https://helm.sh/docs/helm/helm_install/
+    c8b80a-tools     images (ImageStreams, BuildConfigs), common to all environments
+    c8b80a-dev
+    c8b80a-test
+    c8b80a-prod
 
-## Patroni
-You can reuse a patroni chart like https://github.com/bcgov/nr-patroni-chart
-follow instructions on the link
+After the `oc login` you can copy from the OpenShift command line tool page, install helm:
+https://helm.sh/docs/helm/helm_install/
+
+## Database
+
+Postgres 16 with PostGIS 3.4, run by the Crunchy Postgres Operator that Platform Services
+maintains on the cluster. The chart lives in
+[`deployment/charts/map-database`](deployment/charts/map-database/README.md), which carries
+the full rationale, the objects the operator derives, and the verification commands.
+
+    cd deployment/charts/map-database
+    helm dependency update .
+    helm upgrade --install map-db . -f values.yaml -f values.dev.yaml -n c8b80a-dev
+
+Test and prod are the same command with `values.test.yaml` / `values.prod.yaml`. The operator
+creates the `postgis` extension itself, as superuser, in every database - the
+`CREATE EXTENSION` in `migrations/versions/3b1c7a04f9d2` runs as the application role and
+succeeds only because of that.
+
+Connection details are in the operator-generated secret `map-db-pguser-map-db` (keys `user`,
+`password`, `dbname`, `host`, `port`, `uri`), which `map-api`'s chart reads. `map-api` connects
+through the `map-db-pgbouncer` service rather than at the primary directly.
+
+The standalone Patroni chart this replaced pinned Postgres 12 with no PostGIS and has been
+removed; don't reintroduce it without solving the PostGIS image problem first.
+
+## Redis
+
+`map-api` caches the DataBC catalogue index in Redis, and `/ops/healthz` - the api's liveness
+probe - returns 503 when Redis doesn't answer, so a deployed environment needs it running. It
+is its own Deployment and Service, not a sidecar, so the cache is shared across `map-api`
+replicas. See [`deployment/charts/map-redis`](deployment/charts/map-redis/README.md).
+
+    cd deployment/charts/map-redis
+    helm upgrade --install map-redis . -f values.yaml -f values.dev.yaml -n c8b80a-dev
+
+The chart generates the password on first install and reuses it on upgrades. `map-api` reads
+the resulting `REDIS_URL` from the `map-redis` secret.
+
+## API and web
+
+    cd deployment/charts/map-api
+    helm upgrade --install map-api . -f values.yaml -f values.dev.yaml -n c8b80a-dev
+
+    cd ../map-web
+    helm upgrade --install map-web . -f values.yaml -f values.dev.yaml -n c8b80a-dev
+
+Both are `Deployment`s. `map-api` runs its migrations in an initContainer, so a new pod only
+serves traffic after `pre-hook-update-db.sh` has finished. Neither has an ImageChange trigger -
+promoting a tag does not roll the pods by itself, which is why CI ends with
+`oc rollout restart deployment/<name>`. Namespaces that still have the old DeploymentConfigs
+need them deleted first; see
+[`deployment/openshift/README.md`](deployment/openshift/README.md).
+
+Each chart has a base `values.yaml` plus `values.dev.yaml` / `values.test.yaml` /
+`values.prod.yaml`; the per-environment file carries only what differs - image tag, Keycloak
+URLs, CORS origins.
+
+## Secrets
+
+**This repo is public, so no chart templates a credential and no values file contains one.**
+Anything with a real secret in it is created directly in the namespace and referenced by name.
+`map-api` pulls its configuration in with `envFrom`, so a key added to one of those secrets
+reaches the API on the next rollout without a chart change.
+
+| Secret | Created by | Holds |
+|---|---|---|
+| `map-api-secrets` | you, by hand, once per namespace | `SECRET_KEY` |
+| `map-db-pguser-map-db` | the Crunchy operator, on install | database credentials |
+| `map-redis` | the `map-redis` chart, on first install | `REDIS_PASSWORD`, `REDIS_URL` |
+
+Only the first needs a human. See
+[`deployment/openshift/README.md`](deployment/openshift/README.md) for the `oc create secret`
+command and the placeholder template.
 
 - if the resource quota was exceeded you can change the values in values.yaml, you can always do that locally and install like this as well `$ helm install -f myvalues.yaml myredis ./redis`
 
@@ -253,7 +323,7 @@ follow instructions on the link
 can reuse the charts here https://github.com/bcgov/EPIC.submit/tree/develop/deployment/charts the api and the api-bc
 
 ### *api.yml
-Install it in the xxxx-dev with name xxx-api. Upon success you will have the DeploymentConfig, Route, Service, Secrets and ConfigMap
+Install it in the xxxx-dev with name xxx-api. Upon success you will have the Deployment, Route, Service and ConfigMap
 
 ### *bc.yml
 Install it in a xxxx-tools with bane yourApp-api. Upon success you will have BuildConfig and ImageStream.
@@ -294,7 +364,50 @@ You need a policy to allow pods in xxxx-dev to connect with each other
 
 
 # Github Workflows
-you can find a working example here: https://github.com/bcgov/EPIC.map/tree/main/.github/workflows
+
+## Image tags and promotion
+
+One image is built per merge and then promoted; nothing is rebuilt on the way to prod, so the
+bytes that ship to prod are the bytes that were tested.
+
+    develop merge  ->  api-cd / web-cd  ->  :latest        (rolls c8b80a-dev)
+    Deploy (test)  ->  oc tag :latest :test               (rolls c8b80a-test)
+    Deploy (prod)  ->  oc tag :test   :prod               (rolls c8b80a-prod)
+
+Three tags, one per environment: **`:latest` is dev** - the same convention as the other EPIC
+repos - then `:test` and `:prod`. `api-cd.yml` and `web-cd.yml` build on a push to `develop` and
+only ever write `:latest`; they take no environment input, so there is no path that builds
+straight into test or prod. `deploy.yml` is the only way into test and prod: it moves an
+existing tag and never builds.
+
+Because the workloads are Deployments with no ImageChange trigger, moving a tag does not roll
+anything by itself. Every workflow ends with `oc rollout restart deployment/<name>` followed by
+`oc rollout status`.
+
+## Rolling prod back
+
+A prod deploy first points a dated tag at whatever `:prod` names at that moment, so the previous
+image is always still addressable:
+
+    oc get istag -n c8b80a-tools | grep prod-backup
+
+To go back, move `:prod` onto one of those and restart - no rebuild, no branch, no waiting on CI:
+
+    oc project c8b80a-tools
+    oc tag map-api:prod-backup-20260914-183000 map-api:prod
+    oc tag map-web:prod-backup-20260914-183000 map-web:prod
+    oc rollout restart deployment/map-api -n c8b80a-prod
+    oc rollout restart deployment/map-web -n c8b80a-prod
+
+A rollback does **not** undo a database migration - `pre-hook-update-db.sh` has already run
+against prod by then, and the older image may not understand the newer schema. Check what the
+promotion migrated before rolling back across one.
+
+Backup tags accumulate, one pair per prod deploy. Prune old ones when they get noisy:
+
+    oc delete istag map-api:prod-backup-20260914-183000 -n c8b80a-tools
+
+## Setup
 
 - create a github-action service account openshift in the tools namespace and bind to it image puller and image pusher roles
 - Add the following secrets in the repo settings under repository secrets: OPENSHIFT_IMAGE_REGISTRY (the public image repository, ignore the path just the base  url), OPENSHIFT_LOGIN_REGISTRY (you can pull this from the same place you get your oc login command, OPENSHIFT_REPOSITORY, OPENSHIFT_SA_NAME (github_action), OPENSHIFT_SA_TOKEN(github-action token, find it in secrets)

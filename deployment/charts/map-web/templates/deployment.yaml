@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: {{ .Values.app.name }}
+  name: {{ .Chart.Name }}
+spec:
+  replicas: {{ .Values.replicas.count }}
+  selector:
+    matchLabels:
+      app: {{ .Values.app.name }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.rollout.maxSurge }}
+      maxUnavailable: {{ .Values.rollout.maxUnavailable }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app.name }}
+      annotations:
+        # nginx reads config.js at request time, but a config change should still
+        # roll the pods so a stale cached copy cannot outlive it.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          # The DeploymentConfig put these on the rollout strategy instead of the
+          # container, so the pod actually ran unbounded.
+          resources:
+            limits:
+              cpu: {{ .Values.resources.cpu.limit }}
+              memory: {{ .Values.resources.memory.limit }}
+            requests:
+              cpu: {{ .Values.resources.cpu.request }}
+              memory: {{ .Values.resources.memory.request }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+              scheme: HTTP
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 15
+            timeoutSeconds: 5
+            periodSeconds: 20
+            successThreshold: 1
+            failureThreshold: 3
+          volumeMounts:
+            - mountPath: {{ .Values.mountPath }}
+              name: {{ .Chart.Name }}
+              readOnly: true
+      volumes:
+        - name: {{ .Chart.Name }}
+          configMap:
+            defaultMode: 420
+            name: {{ .Chart.Name }}
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30

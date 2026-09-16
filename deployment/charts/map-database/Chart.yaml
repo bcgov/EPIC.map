@@ -1,0 +1,12 @@
+apiVersion: v2
+name: map-database
+description: Postgres 16 + PostGIS for EPIC.map, via the BC Gov Crunchy Postgres (PGO) chart
+type: application
+version: 1.0.0
+# Postgres major version this chart deploys.
+appVersion: "16"
+
+dependencies:
+  - name: crunchy-postgres
+    version: 0.6.6
+    repository: https://bcgov.github.io/crunchy-postgres/

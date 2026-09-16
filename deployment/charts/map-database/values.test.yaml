@@ -1,0 +1,34 @@
+# c8b80a-test. Two instances, so a failover can actually be rehearsed here.
+# Sized alongside the other EPIC databases in this namespace, not above them.
+crunchy-postgres:
+  instances:
+    replicas: 2
+    dataVolumeClaimSpec:
+      storage: 3Gi
+    requests:
+      cpu: 25m
+      memory: 384Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  pgBackRest:
+    retention: "7"
+    repos:
+      volume:
+        storage: 3Gi
+    repoHost:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+    sidecars:
+      requests:
+        cpu: 5m
+        memory: 32Mi
+
+  proxy:
+    pgBouncer:
+      replicas: 2
+      requests:
+        cpu: 5m
+        memory: 32Mi
