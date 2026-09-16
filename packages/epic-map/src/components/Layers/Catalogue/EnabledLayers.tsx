@@ -14,6 +14,14 @@ export default function EnabledLayers() {
   const { appliedLayers, appliedPending, appliedError, retryApplied } =
     useLayers();
 
+  const layerList = () => (
+    <Box component="ul" sx={{ margin: 0, padding: 0 }}>
+      {appliedLayers.map((layer) => (
+        <LayerRow key={layer.id} layer={layer} />
+      ))}
+    </Box>
+  );
+
   const body = () => {
     if (appliedPending) {
       return (
@@ -38,39 +46,51 @@ export default function EnabledLayers() {
       );
     }
 
+    const stale = appliedLayers.length > 0;
+
     if (appliedError) {
       return (
-        <Box sx={{ padding: "0 1rem 0.5rem", textAlign: "center" }}>
-          <Typography
+        <>
+          <Box
             sx={{
-              fontSize: theme.typography.caption.fontSize,
-              color: theme.palette.text.primary,
+              padding: "0 1rem 0.5rem",
+              textAlign: stale ? "left" : "center",
             }}
           >
-            <WarningAmberIcon
-              aria-hidden
+            <Typography
               sx={{
-                verticalAlign: "text-bottom",
-                marginRight: "0.25rem",
-                fontSize: "1rem",
-                color: theme.palette.text.secondary,
+                fontSize: theme.typography.caption.fontSize,
+                color: theme.palette.text.primary,
               }}
-            />
-            Couldn&rsquo;t load your enabled layers
-          </Typography>
-          <Button
-            variant="text"
-            color="secondary"
-            onClick={retryApplied}
-            sx={{ fontSize: theme.typography.caption.fontSize }}
-          >
-            Try again
-          </Button>
-        </Box>
+            >
+              <WarningAmberIcon
+                aria-hidden
+                sx={{
+                  verticalAlign: "text-bottom",
+                  marginRight: "0.25rem",
+                  fontSize: "1rem",
+                  color: theme.palette.text.secondary,
+                }}
+              />
+              {stale
+                ? "Couldn’t refresh your enabled layers"
+                : "Couldn’t load your enabled layers"}
+            </Typography>
+            <Button
+              variant="text"
+              color="secondary"
+              onClick={retryApplied}
+              sx={{ fontSize: theme.typography.caption.fontSize }}
+            >
+              Try again
+            </Button>
+          </Box>
+          {stale && layerList()}
+        </>
       );
     }
 
-    if (appliedLayers.length === 0) {
+    if (!stale) {
       return (
         <DashedEmptyState>
           No layers are switched on. Turn one on above and it is saved to your
@@ -79,13 +99,7 @@ export default function EnabledLayers() {
       );
     }
 
-    return (
-      <Box component="ul" sx={{ margin: 0, padding: 0 }}>
-        {appliedLayers.map((layer) => (
-          <LayerRow key={layer.id} layer={layer} />
-        ))}
-      </Box>
-    );
+    return layerList();
   };
 
   return (

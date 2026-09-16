@@ -21,6 +21,8 @@ export const createPublicClient = ({
   client.interceptors.response.use(
     (response) => response,
     (error: unknown) => {
+      if (axios.isCancel(error)) throw error;
+
       const normalised = toMapWidgetError(error);
 
       onError?.(

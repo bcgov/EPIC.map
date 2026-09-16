@@ -113,6 +113,8 @@ export const useAppliedLayers = () => {
   // One timer per layer, so dragging two sliders in turn saves both.
   const opacityTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
+  const savingOpacity = useRef(new Set<string>());
+
   const { data, isPending, error, refetch } = useQuery({
     queryKey: APPLIED_LAYERS_KEY,
     queryFn: async ({ signal }) => {
@@ -131,11 +133,13 @@ export const useAppliedLayers = () => {
           ...layer,
           lastUpdated: seen.lastUpdated,
           description: seen.description,
-          // A queued save means the server has not been told this layer's
-          // opacity yet, so its answer is stale and the slider is right.
-          opacity: opacityTimers.current.has(layer.id)
-            ? seen.opacity
-            : layer.opacity,
+          // A queued or in-flight save means the server has not stored this
+          // layer's opacity yet, so its answer is stale and the slider is right.
+          opacity:
+            opacityTimers.current.has(layer.id) ||
+              savingOpacity.current.has(layer.id)
+              ? seen.opacity
+              : layer.opacity,
         };
       });
     },
@@ -216,6 +220,9 @@ export const useAppliedLayers = () => {
     onError: (_error, { layerId, previous }) => {
       patchCache(layerId, { opacity: previous });
     },
+    onSettled: (_data, _error, { layerId }) => {
+      savingOpacity.current.delete(layerId);
+    },
   });
 
   const cancelOpacitySave = useCallback((layerId: string) => {
@@ -256,7 +263,13 @@ export const useAppliedLayers = () => {
             saveOpacityRef.current?.(layerId, percent);
             return;
           }
-          opacityMutate({ appliedId: row.appliedId, layerId, previous, opacity: percent });
+          savingOpacity.current.add(layerId);
+          opacityMutate({
+            appliedId: row.appliedId,
+            layerId,
+            previous,
+            opacity: percent,
+          });
         }, OPACITY_SAVE_DEBOUNCE_MS),
       );
     },

@@ -48,6 +48,8 @@ export const createApiClient = ({
   client.interceptors.response.use(
     (response) => response,
     async (error: unknown) => {
+      if (axios.isCancel(error)) throw error;
+
       const config = axios.isAxiosError(error)
         ? (error.config as RetryableConfig | undefined)
         : undefined;
