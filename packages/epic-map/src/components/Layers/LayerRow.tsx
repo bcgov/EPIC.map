@@ -7,16 +7,20 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import CircularProgress from "@mui/material/CircularProgress";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import StarIcon from "@mui/icons-material/Star";
 import StarBorderIcon from "@mui/icons-material/StarBorder";
+import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import { useTheme, type Theme } from "@mui/material/styles";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import HighlightedName from "@/components/Layers/HighlightedName";
 import LayerInfo from "@/components/Layers/LayerInfo";
 import { useLayers } from "@/components/Layers/LayersContext";
 import { MAX_VISIBLE_LAYERS } from "@/utils/config";
+
+const ZOOM_HINT_COLOR = "#8A6A01";
 
 /** Every control in the row shows the same ring, so tabbing is easy to follow. */
 const focusRing = (theme: Theme) => ({
@@ -26,10 +30,6 @@ const focusRing = (theme: Theme) => ({
   },
 });
 
-/**
- * A wide track with a large outlined thumb that overhangs it, per the design.
- * MUI's own switch is smaller and fills its thumb, so every part is restyled.
- */
 const toggleSx = (theme: Theme) => ({
   width: "2.5rem",
   height: "1.25rem",
@@ -89,6 +89,9 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
     favourites,
     expandedId,
     pendingIds,
+    focusPendingIds,
+    focusLayer,
+    belowFloorIds,
     atVisibleLimit,
     toggleVisible,
     toggleFavourite,
@@ -106,6 +109,13 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
   const unmappable = !layer.objectName;
 
   const saving = pendingIds.has(layer.id);
+
+  const focusing = focusPendingIds.has(layer.id);
+
+  // Only worth offering while the layer genuinely cannot draw: past its own
+  // published scale openmaps returns a blank tile, and each layer's scale is
+  // different, so this is per layer rather than one shared zoom.
+  const belowFloor = belowFloorIds.has(layer.id);
 
   const blockedByLimit = !visible && !unmappable && atVisibleLimit;
   const toggleNote = unmappable
@@ -192,6 +202,43 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
 
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           {clamped ? <Tooltip title={layer.name}>{name}</Tooltip> : name}
+
+          {visible && belowFloor && (
+            <Box
+              component="button"
+              type="button"
+              onClick={() => focusLayer(layer)}
+              disabled={focusing}
+              aria-label={`Zoom in to view ${layer.name}`}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.25rem",
+                marginTop: "0.25rem",
+                padding: 0,
+                border: "none",
+                background: "none",
+                font: "inherit",
+                fontSize: theme.typography.caption.fontSize,
+                lineHeight: 1.4,
+                color: ZOOM_HINT_COLOR,
+                cursor: focusing ? "default" : "pointer",
+                "&:hover": { textDecoration: focusing ? "none" : "underline" },
+                ...focusRing(theme),
+              }}
+            >
+              {focusing ? (
+                <CircularProgress
+                  size="0.875rem"
+                  sx={{ color: "inherit" }}
+                  aria-hidden
+                />
+              ) : (
+                <ZoomInIcon aria-hidden sx={{ fontSize: "0.875rem" }} />
+              )}
+              Zoom in to view
+            </Box>
+          )}
         </Box>
 
         <Tooltip

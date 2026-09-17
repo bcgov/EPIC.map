@@ -10,13 +10,21 @@ import {
 } from "react";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useAppliedLayers, type AppliedLayer } from "@/api/useAppliedLayers";
+import { useLayerFocus } from "@/api/useLayerFocus";
+import { useLayerMinZooms } from "@/api/useLayerMinZooms";
+import { layersBelowFloor } from "@/components/Layers/layerFloors";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
   hideWmsLayer,
+  setWmsLayerMinZoom,
   setWmsLayerOpacity,
   showWmsLayer,
 } from "@/components/Layers/wmsLayers";
-import { DEFAULT_LAYER_OPACITY, MAX_VISIBLE_LAYERS } from "@/utils/config";
+import {
+  DEFAULT_LAYER_OPACITY,
+  effectiveMinZoom,
+  MAX_VISIBLE_LAYERS,
+} from "@/utils/config";
 
 interface LayersContextValue {
   map: MapLibreMap | null;
@@ -26,8 +34,10 @@ interface LayersContextValue {
   appliedPending: boolean;
   appliedError: unknown;
   retryApplied: () => void;
-  /** Ids with a call in flight, whose switch is held until it lands. */
   pendingIds: ReadonlySet<string>;
+  focusPendingIds: ReadonlySet<string>;
+  focusLayer: (layer: CatalogueLayer) => void;
+  belowFloorIds: ReadonlySet<string>;
   favourites: readonly CatalogueLayer[];
   expandedId: string | null;
   opacities: Readonly<Record<string, number>>;
@@ -57,6 +67,49 @@ export function LayersProvider({
     removeLayer,
     saveOpacity,
   } = useAppliedLayers();
+
+  const { focusLayer: focusLayerAt, focusPendingIds } = useLayerFocus();
+
+  const appliedObjectNames = useMemo(
+    () =>
+      appliedLayers
+        .map((layer) => layer.objectName)
+        .filter((name): name is string => Boolean(name)),
+    [appliedLayers],
+  );
+
+  const minZooms = useLayerMinZooms(appliedObjectNames);
+
+  const floors = useMemo(
+    () =>
+      appliedLayers.map((layer) => ({
+        id: layer.id,
+        floor: effectiveMinZoom(
+          layer.objectName ? minZooms[layer.objectName] : undefined,
+        ),
+      })),
+    [appliedLayers, minZooms],
+  );
+
+  const [belowFloorIds, setBelowFloorIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  useEffect(() => {
+    if (!map) return undefined;
+
+    const sync = () => {
+      setBelowFloorIds((current) =>
+        layersBelowFloor(floors, map.getZoom(), current),
+      );
+    };
+
+    sync();
+    map.on("zoom", sync);
+    return () => {
+      map.off("zoom", sync);
+    };
+  }, [map, floors]);
 
   const [favourites, setFavourites] = useState<readonly CatalogueLayer[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -108,6 +161,16 @@ export function LayersProvider({
     }
   }, [map, appliedLayers]);
 
+  useEffect(() => {
+    if (!map) return;
+
+    for (const layer of appliedLayers) {
+      if (!layer.objectName) continue;
+      const minZoom = minZooms[layer.objectName];
+      if (minZoom !== undefined) setWmsLayerMinZoom(map, layer.id, minZoom);
+    }
+  }, [map, appliedLayers, minZooms]);
+
   const toggleVisible = useCallback(
     (layer: CatalogueLayer) => {
       if (pendingIds.has(layer.id)) return;
@@ -148,6 +211,14 @@ export function LayersProvider({
     [map, saveOpacity],
   );
 
+  const focusLayer = useCallback(
+    (layer: CatalogueLayer) => {
+      if (!map || !layer.objectName) return;
+      focusLayerAt(layer.id, layer.objectName, map, minZooms[layer.objectName]);
+    },
+    [map, focusLayerAt, minZooms],
+  );
+
   const toggleExpanded = useCallback((layerId: string) => {
     setExpandedId((current) => (current === layerId ? null : layerId));
   }, []);
@@ -167,6 +238,9 @@ export function LayersProvider({
       appliedError,
       retryApplied,
       pendingIds,
+      focusPendingIds,
+      focusLayer,
+      belowFloorIds,
       favourites,
       expandedId,
       opacities,
@@ -184,6 +258,9 @@ export function LayersProvider({
       appliedError,
       retryApplied,
       pendingIds,
+      focusPendingIds,
+      focusLayer,
+      belowFloorIds,
       favourites,
       expandedId,
       opacities,

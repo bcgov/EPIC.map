@@ -1,6 +1,13 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
-import { WIDGET_ID_PREFIX, wmsTileUrl } from "@/utils/config";
+import {
+  MIN_ZOOM,
+  WIDGET_ID_PREFIX,
+  WMS_MAX_LAYER_ZOOM,
+  WMS_MIN_ZOOM,
+  WMS_TILE_SIZE_PX,
+  wmsTileUrl,
+} from "@/utils/config";
 
 /**
  * Source and layer ids carry the widget's prefix so that MapSurface's
@@ -60,7 +67,7 @@ export const showWmsLayer = (
       map.addSource(source, {
         type: "raster",
         tiles: [wmsTileUrl(objectName)],
-        tileSize: 256,
+        tileSize: WMS_TILE_SIZE_PX,
       });
     }
 
@@ -68,8 +75,27 @@ export const showWmsLayer = (
       id: raster,
       type: "raster",
       source,
+      minzoom: WMS_MIN_ZOOM,
       paint: { "raster-opacity": toRasterOpacity(opacity) },
     });
+  });
+};
+
+/**
+ * Gate one layer on the zoom openmaps actually starts drawing it at.
+ */
+export const setWmsLayerMinZoom = (
+  map: MapLibreMap,
+  layerId: string,
+  minZoom: number | null,
+) => {
+  whenStyleReady(map, () => {
+    const raster = rasterId(layerId);
+    // `null` is a layer that draws at every zoom, which the map's own floor
+    // then bounds; there is no zoom below it to gate on.
+    if (map.getLayer(raster)) {
+      map.setLayerZoomRange(raster, minZoom ?? MIN_ZOOM, WMS_MAX_LAYER_ZOOM);
+    }
   });
 };
 

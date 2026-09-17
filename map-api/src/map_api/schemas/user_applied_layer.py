@@ -20,7 +20,7 @@ absent `service_url` column. Do not loosen them without replacing it.
 
 from marshmallow import EXCLUDE, Schema, fields, validate
 
-from map_api.utils.constant import DEFAULT_LAYER_OPACITY, MAX_LAYER_OPACITY, MIN_LAYER_OPACITY
+from map_api.utils.constant import DEFAULT_LAYER_OPACITY, MAX_LAYER_OPACITY, MIN_LAYER_OPACITY, OBJECT_NAME_PATTERN
 
 
 # A CKAN dataset uuid. Not a slug: a slug changes when a dataset is retitled
@@ -29,11 +29,6 @@ _PACKAGE_ID_PATTERN = (
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}'
     r'-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 )
-
-# A BCGW object name, e.g. WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES. Excludes
-# ':' (smuggling another namespace past the client's 'pub:' prefix), ',' (many
-# layers in one LAYERS=) and '/?#%' and whitespace (escaping the parameter).
-_OBJECT_NAME_PATTERN = r'^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$'
 
 
 class UserAppliedLayerSchema(Schema):
@@ -73,7 +68,7 @@ class UserAppliedLayerRequestSchema(Schema):
     )
     object_name = fields.Str(
         data_key='object_name', required=True,
-        validate=validate.Regexp(_OBJECT_NAME_PATTERN),
+        validate=validate.Regexp(OBJECT_NAME_PATTERN),
     )
     display_name = fields.Str(
         data_key='display_name', required=True,

@@ -19,6 +19,43 @@ export const MIN_ZOOM = 3;
 export const MAX_ZOOM = 18;
 
 /**
+ * Provisional floor for a catalogue layer, until its real one is known.
+ *
+ * Every BCGW layer publishes the coarsest scale its style draws at, and past
+ * that scale openmaps answers a tile request with a blank image rather than an
+ * error. Those limits are nothing alike - across the catalogue they run from
+ * 1:50,000 to 1:12,000,000, which is zoom 13 down to zoom 5 - so this is only
+ * what a layer is gated on for the moment it takes `useLayerMinZooms` to fetch
+ * the published figure, which then replaces it.
+ *
+ * It sits in the middle of that range deliberately: too low and a layer flashes
+ * tiles it cannot draw, too high and one that draws at zoom 5 is held back.
+ */
+export const WMS_MIN_ZOOM = 8;
+
+/**
+ * The zoom a layer is really gated on, from what is known of its floor.
+ *
+ * Three states, and they do not collapse into one another: a number is the
+ * layer's published floor, `null` is a layer that declares no limit and so has
+ * none, and `undefined` is one whose floor has not arrived yet - which is what
+ * the raster is gated on meanwhile, so it is what the rest of the UI has to
+ * agree with or it will contradict the map.
+ */
+export const effectiveMinZoom = (
+  minZoom: number | null | undefined,
+): number => (minZoom === null ? MIN_ZOOM : (minZoom ?? WMS_MIN_ZOOM));
+
+/**
+ * Upper bound handed to `setLayerZoomRange`, which takes both ends at once.
+ *
+ * A layer is hidden at zooms at or *above* its maxzoom, so this has to sit
+ * above the map's MAX_ZOOM rather than on it - otherwise the layer would
+ * disappear exactly when fully zoomed in. 24 is MapLibre's own ceiling.
+ */
+export const WMS_MAX_LAYER_ZOOM = 24;
+
+/**
  * Prefix for every source and layer this widget adds to a style.
  */
 export const WIDGET_ID_PREFIX = "epic-";
@@ -138,6 +175,19 @@ export const MIN_CATALOGUE_QUERY_LENGTH = 2;
 export const CATALOGUE_SEARCH_DEBOUNCE_MS = 400;
 
 /**
+ * Edge, in pixels, of one WMS tile. Also the source's `tileSize`, which is what
+ * keeps the ground each tile covers matched to the pixels asked for.
+ *
+ * 512 rather than the conventional 256 because openmaps speaks HTTP/1.1, so the
+ * browser will hold about six connections to it and everything else queues. A
+ * 512px tile covers four 256px tiles at the same resolution, which takes a
+ * viewport of one layer from ~30 requests to ~12 - measured at 1.13s against
+ * 0.43s, and this widget draws up to MAX_VISIBLE_LAYERS of them at once. The
+ * bytes go up slightly; the waiting, which is what is felt, does not.
+ */
+export const WMS_TILE_SIZE_PX = 512;
+
+/**
  * WMS tiles for a BCGW object, as a MapLibre raster template.
  *
  * EPSG:3857 with a `{bbox-epsg-3857}` placeholder is what MapLibre substitutes
@@ -148,7 +198,7 @@ export const wmsTileUrl = (objectName: string): string =>
   "SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1" +
   `&LAYERS=pub:${objectName}` +
   "&FORMAT=image/png&TRANSPARENT=TRUE" +
-  "&WIDTH=256&HEIGHT=256&SRS=EPSG:3857" +
+  `&WIDTH=${WMS_TILE_SIZE_PX}&HEIGHT=${WMS_TILE_SIZE_PX}&SRS=EPSG:3857` +
   "&BBOX={bbox-epsg-3857}";
 
 /**
@@ -167,6 +217,23 @@ export const DEFAULT_LAYER_OPACITY = 100;
  * the API enforces on stored layers.
  */
 export const MAX_VISIBLE_LAYERS = 15;
+
+/**
+ * Breathing room, in pixels, left around a layer's features when the map is
+ * flown to them. Without it a feature lands hard against the panel and the
+ * edges of the widget.
+ */
+export const FOCUS_PADDING_PX = 48;
+
+/**
+ * How far in "Zoom in to view" is willing to go. A single point comes back as a
+ * zero-width box, which would otherwise resolve to the maximum zoom and leave
+ * the user staring at a rooftop with no context.
+ */
+export const FOCUS_MAX_ZOOM = 14;
+
+/** Long enough to read as travel rather than a cut, short enough not to wait. */
+export const FOCUS_FLY_MS = 800;
 
 /**
  * How long the opacity slider rests before its value is saved. A drag emits a
