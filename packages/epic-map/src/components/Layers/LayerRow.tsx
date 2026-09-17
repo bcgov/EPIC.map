@@ -87,6 +87,7 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
   const {
     visibleIds,
     favourites,
+    favouritePendingIds,
     expandedId,
     pendingIds,
     atVisibleLimit,
@@ -106,6 +107,15 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
   const unmappable = !layer.objectName;
 
   const saving = pendingIds.has(layer.id);
+
+  const starSaving = favouritePendingIds.has(layer.id);
+
+  // The API stores an object name, so a dataset with none cannot be starred.
+  const starNote = unmappable
+    ? "This dataset publishes no mappable layer"
+    : starred
+    ? "Remove from favourites"
+    : "Add to favourites";
 
   const blockedByLimit = !visible && !unmappable && atVisibleLimit;
   const toggleNote = unmappable
@@ -194,31 +204,32 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
           {clamped ? <Tooltip title={layer.name}>{name}</Tooltip> : name}
         </Box>
 
-        <Tooltip
-          title={starred ? "Remove from favourites" : "Add to favourites"}
-        >
-          <IconButton
-            size="small"
-            onClick={() => toggleFavourite(layer)}
-            aria-pressed={starred}
-            aria-label={
-              starred
-                ? `Remove ${layer.name} from favourites`
-                : `Add ${layer.name} to favourites`
-            }
-            sx={{
-              flexShrink: 0,
-              padding: "0.125rem",
-              color: theme.palette.secondary.main,
-              ...focusRing(theme),
-            }}
-          >
-            {starred ? (
-              <StarIcon sx={{ fontSize: "1.25rem" }} />
-            ) : (
-              <StarBorderIcon sx={{ fontSize: "1.25rem" }} />
-            )}
-          </IconButton>
+        <Tooltip title={starNote}>
+          <Box component="span" sx={{ display: "inline-flex" }}>
+            <IconButton
+              size="small"
+              onClick={() => toggleFavourite(layer)}
+              disabled={unmappable || starSaving}
+              aria-pressed={starred}
+              aria-label={
+                starred
+                  ? `Remove ${layer.name} from favourites`
+                  : `Add ${layer.name} to favourites`
+              }
+              sx={{
+                flexShrink: 0,
+                padding: "0.125rem",
+                color: theme.palette.secondary.main,
+                ...focusRing(theme),
+              }}
+            >
+              {starred ? (
+                <StarIcon sx={{ fontSize: "1.25rem" }} />
+              ) : (
+                <StarBorderIcon sx={{ fontSize: "1.25rem" }} />
+              )}
+            </IconButton>
+          </Box>
         </Tooltip>
 
         <IconButton
