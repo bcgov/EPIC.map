@@ -112,7 +112,7 @@ def create_app(run_mode=os.getenv('FLASK_ENV', 'development')):
         # CORS preflight never carries an Authorization header; let flask-cors
         # answer it. Only the API blueprint is gated - /ops health probes and
         # anything else stay open.
-        if request.method == 'OPTIONS' or not (request.path + '/').startswith(URL_PREFIX):
+        if request.method == 'OPTIONS' or not (request.path + '/').startswith(f'{URL_PREFIX}/'):
             return
 
         # Swagger UI and its spec are only registered outside production-like
