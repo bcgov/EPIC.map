@@ -92,7 +92,7 @@ NEAREST_CACHE_PRECISION_DEGREES = 0.25
 # poor answer, but it is the honest one and it beats a dead button.
 BC_EXTENT = (-139.1, 48.2, -114.0, 60.1)
 
-# Bytes of a warehouse answer this pod will carry before it stops reading. A
+# Bytes of feature geometry this pod will carry before it stops reading. A
 # single BCGW polygon can run past half a megabyte of coordinates - watershed
 # groups do - and decompressing and parsing that holds the GIL on a quarter of a
 # core, stalling every other request in the process. Past this the search window
@@ -100,6 +100,15 @@ BC_EXTENT = (-139.1, 48.2, -114.0, 60.1)
 # Set well above the few kilobytes a feature of a zoomable layer actually weighs,
 # so this bounds the tail rather than shaping the common answer.
 NEAREST_GEOMETRY_BYTE_LIMIT = 128 * 1024
+
+# Bytes of a capabilities document this pod will carry. Separate from the
+# geometry cap because the two failures are not alike: a feature too big to
+# carry has the search window to fall back on, whereas a capabilities document
+# cut short has no floor in it to read, and reading that as "declares no limit"
+# is the exact fault the min-zoom endpoint exists to remove. Measured per-object
+# documents run 15-19KB, so this is an order of magnitude of headroom and only
+# ever trips on something that has gone wrong upstream.
+BCGW_CAPABILITIES_BYTE_LIMIT = 256 * 1024
 
 # Read granularity for the capped read above: large enough not to loop per
 # packet, small enough to notice the cap before much past it.
@@ -114,6 +123,17 @@ BCGW_READ_CHUNK_BYTES = 32 * 1024
 # That has to stay under gunicorn's 30 second default, which does not fail one
 # request - it kills the worker, taking every other request on the pod with it.
 BCGW_SEARCH_BUDGET_SECONDS = 15
+
+# How long a thread will wait on another thread's identical in-flight search
+# before giving up its place in the queue. Sized to one upstream hop, so a
+# waiter always outlasts a single warehouse call - the whole of a min-zoom
+# lookup, and the common one or two hops of a nearest-feature search. Past that
+# the answer is worth less than the thread: eight threads waiting out a search
+# that runs its full budget is the pod serving nothing, sign-in included, which
+# is the failure the thread pool exists to prevent. A thread that gives up says
+# so rather than starting a second search - the stampede is what the lock is
+# for, and the caller's retry will usually find the answer cached.
+BCGW_SINGLE_FLIGHT_WAIT_SECONDS = BCGW_WFS_TIMEOUT_SECONDS
 
 # Connections kept open to the warehouse. A fresh connection per hop costs a TLS
 # handshake to openmaps - measured at ~120ms, on every window of every search -

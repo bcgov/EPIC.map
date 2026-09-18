@@ -59,7 +59,7 @@ class NearestFeature(Resource):
     @API.response(code=200, model=nearest_feature_model, description='Success')
     @API.response(400, 'Bad Request')
     @API.response(404, 'The layer publishes no features')
-    @API.response(503, 'The warehouse did not answer')
+    @API.response(503, 'The warehouse did not answer, or is already being asked')
     def get(object_name: str):
         """Return the bounds of the feature nearest `lon`/`lat`.
 
@@ -99,7 +99,7 @@ class LayerMinZoom(Resource):
     )
     @API.response(code=200, model=layer_min_zoom_model, description='Success')
     @API.response(400, 'Bad Request')
-    @API.response(503, 'The warehouse did not answer')
+    @API.response(503, 'The warehouse did not answer, or is already being asked')
     def get(object_name: str):
         """Return the layer's minimum drawing zoom, or null for no limit.
 

@@ -31,10 +31,11 @@ export const useLayerMinZooms = (objectNames: readonly string[]) => {
         );
         return response.data.minZoom;
       },
-      // A style is revised on the scale of months; a session is not that long.
       staleTime: Infinity,
       gcTime: Infinity,
-      retry: 1,
+      retry: 2,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
     })),
     combine: (results) => {
       const minZooms: Record<string, number | null> = {};

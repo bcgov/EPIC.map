@@ -29,7 +29,8 @@ import requests
 from map_api.exceptions import ServiceUnavailableError
 from map_api.services.bcgw_service import IN_FLIGHT, BcgwService
 from map_api.utils.cache import cache
-from map_api.utils.constant import BC_EXTENT, NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES
+from map_api.utils.constant import (
+    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES)
 
 
 OBJECT_NAME = 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES'
@@ -334,6 +335,43 @@ def test_threads_asking_the_same_question_run_one_search(app):
     assert len(calls) == 1
 
 
+def test_a_thread_that_gives_up_waiting_says_so_rather_than_searching(app):
+    """The wait is bounded, and giving up must not become a second search.
+
+    Eight threads parked behind one slow warehouse call is the pod serving
+    nothing, sign-in included - the failure the thread count exists to prevent.
+    A thread that runs out of patience releases its slot and asks the caller to
+    try again, by which time the answer is usually cached.
+    """
+    inside = threading.Event()
+    get, calls = _answers({'features': [_point_feature(-123.0, 49.0)]})
+
+    def slow_get(*args, **kwargs):
+        inside.set()
+        time.sleep(0.5)
+        return get(*args, **kwargs)
+
+    searched = []
+
+    def search():
+        with app.app_context():
+            searched.append(BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0))
+
+    with patch('map_api.services.bcgw_service.SESSION.get', slow_get), \
+            patch('map_api.services.bcgw_service.BCGW_SINGLE_FLIGHT_WAIT_SECONDS', 0.05):
+        searcher = threading.Thread(target=search)
+        searcher.start()
+        assert inside.wait(timeout=5), 'the first thread never reached the warehouse'
+
+        with app.app_context(), pytest.raises(ServiceUnavailableError):
+            BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0)
+
+        searcher.join(timeout=10)
+
+    assert len(calls) == 1
+    assert searched == [[-123.0, 49.0, -123.0, 49.0]]
+
+
 def test_a_finished_search_leaves_no_lock_behind(app):
     """Otherwise the lock map grows with the day's traffic rather than its load."""
     get, _ = _answers({'features': [_point_feature(-123.0, 49.0)]})
@@ -424,3 +462,74 @@ def test_a_scale_in_scientific_notation_is_read(app):
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         # 1:12,000,000 at BC's latitudes, which the live service draws from z5.
         assert BcgwService.layer_min_zoom(OBJECT_NAME) == 5
+
+
+def test_threads_asking_for_one_layers_scale_read_it_once(app):
+    """The widget asks for every applied layer at once, so a cold cache is a burst.
+
+    Without the lock each thread misses, and one panel opening becomes one
+    GetCapabilities per layer per thread rather than per layer.
+    """
+    started = threading.Barrier(2, timeout=5)
+    get, calls = _answers(_capabilities(250000.0))
+
+    def slow_get(*args, **kwargs):
+        time.sleep(0.2)
+        return get(*args, **kwargs)
+
+    results = []
+
+    def ask():
+        with app.app_context():
+            started.wait()
+            results.append(BcgwService.layer_min_zoom(OBJECT_NAME))
+
+    with patch('map_api.services.bcgw_service.SESSION.get', slow_get):
+        threads = [threading.Thread(target=ask) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+    assert results == [11, 11]
+    assert len(calls) == 1
+    assert not IN_FLIGHT
+
+
+def test_a_truncated_capabilities_document_is_not_read_as_no_limit(app):
+    """The geometry cap must not reach the document that carries the floor.
+
+    "No limit" is the reading that draws a layer at zooms openmaps only answers
+    with a blank tile, which is the exact fault this endpoint exists to remove.
+    A document too long to read is a 503, and nothing is remembered.
+    """
+    oversized = '<WMS_Capabilities>' + 'x' * (BCGW_CAPABILITIES_BYTE_LIMIT + 1)
+    get, calls = _answers(oversized, _capabilities(250000.0))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        with pytest.raises(ServiceUnavailableError):
+            BcgwService.layer_min_zoom(OBJECT_NAME)
+
+        # Nothing was stored, so the next caller reads the document rather than
+        # being handed a floor that was never in it.
+        assert BcgwService.layer_min_zoom(OBJECT_NAME) == 11
+
+    assert len(calls) == 2
+
+
+def test_a_capabilities_document_heavier_than_a_feature_is_still_read(app):
+    """The two caps are different sizes on purpose, and this is the gap between.
+
+    A document past what a feature is allowed to weigh is not by itself a
+    document worth abandoning - there is no window to fall back on here, only
+    the floor the document carries.
+    """
+    padding = 'x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1)
+    body = (
+        f'<WMS_Capabilities><Layer><Name>pub:x</Name><Abstract>{padding}</Abstract>'
+        '<MaxScaleDenominator>250000.0</MaxScaleDenominator></Layer></WMS_Capabilities>'
+    )
+    get, _ = _answers(body)
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.layer_min_zoom(OBJECT_NAME) == 11

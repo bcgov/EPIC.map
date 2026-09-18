@@ -39,9 +39,10 @@ from requests.adapters import HTTPAdapter
 from map_api.exceptions import ServiceUnavailableError
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
-    BC_EXTENT, BCGW_CONNECTION_POOL_SIZE, BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES, BCGW_SEARCH_BUDGET_SECONDS,
-    BCGW_WFS_TIMEOUT_SECONDS, LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, NEAREST_CACHE_PRECISION_DEGREES,
-    NEAREST_CACHE_TTL_SECONDS, NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES, WMS_MAX_LAYER_MIN_ZOOM,
+    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_CONNECTION_POOL_SIZE, BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES,
+    BCGW_SEARCH_BUDGET_SECONDS, BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_WFS_TIMEOUT_SECONDS,
+    LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS,
+    NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES, WMS_MAX_LAYER_MIN_ZOOM,
     WMS_SCALE_DENOMINATOR_AT_ZOOM_ZERO, WMS_SCALE_REFERENCE_LATITUDE)
 
 
@@ -63,6 +64,14 @@ MAX_SCALE_DENOMINATOR = re.compile(
 # How "this layer declares no scale limit" is remembered: a cached None is
 # indistinguishable from a cache miss, and 0 is a legitimate minzoom.
 NO_SCALE_LIMIT = -1
+
+# The warehouse did not answer, or did not answer in a shape this can read.
+UNAVAILABLE_MESSAGE = 'The BC Geographic Warehouse did not answer. Please try again.'
+
+# Another thread is already asking this exact question and this one ran out of
+# patience waiting. A retry is the right move: by then the answer is usually
+# cached, and saying so beats holding a thread until the first search finishes.
+BUSY_MESSAGE = 'Still asking the BC Geographic Warehouse. Please try again.'
 
 
 def _pooled_session() -> requests.Session:
@@ -96,22 +105,36 @@ IN_FLIGHT_GUARD = threading.Lock()
 
 @contextmanager
 def _single_flight(key: str):
-    """Hold the one lock for `key` while this thread searches."""
+    """Hold the one lock for `key`, yielding whether this thread got it.
+
+    Waiting is bounded: a thread that cannot have the lock within
+    BCGW_SINGLE_FLIGHT_WAIT_SECONDS yields False and is expected to give up
+    rather than start a second search. Blocking indefinitely would trade one
+    stampede for another failure - every thread of the pod parked behind one
+    slow warehouse call, which is what the thread count exists to avoid.
+    """
     with IN_FLIGHT_GUARD:
         lock = IN_FLIGHT.get(key)
         if lock is None:
             lock = IN_FLIGHT[key] = threading.Lock()
 
-    with lock:
-        try:
-            yield
-        finally:
-            # A thread already waiting on this lock keeps its own reference and
-            # will find the cached answer; one arriving after the drop takes a
-            # fresh lock and finds the same. Dropping it is what keeps the map
-            # the size of the work in flight rather than of the day's traffic.
-            with IN_FLIGHT_GUARD:
-                IN_FLIGHT.pop(key, None)
+    if not lock.acquire(timeout=BCGW_SINGLE_FLIGHT_WAIT_SECONDS):
+        current_app.logger.info(
+            'Gave up waiting on an in-flight BCGW call for %s.', key
+        )
+        yield False
+        return
+
+    try:
+        yield True
+    finally:
+        lock.release()
+        # A thread already waiting on this lock keeps its own reference and
+        # will find the cached answer; one arriving after the drop takes a
+        # fresh lock and finds the same. Dropping it is what keeps the map
+        # the size of the work in flight rather than of the day's traffic.
+        with IN_FLIGHT_GUARD:
+            IN_FLIGHT.pop(key, None)
 
 
 class BcgwService:
@@ -139,12 +162,12 @@ class BcgwService:
             # None is indistinguishable from a cache miss.
             return remembered or None
 
-        with _single_flight(key):
-            # Another thread may have answered this exact question while this
-            # one waited for the lock, which is the point of holding it.
+        with _single_flight(key) as searching:
             remembered = cache.get(key)
             if remembered is not None:
                 return remembered or None
+            if not searching:
+                raise ServiceUnavailableError(BUSY_MESSAGE)
 
             bounds = cls._search(object_name, lon, lat)
             cache.set(key, bounds or [], timeout=NEAREST_CACHE_TTL_SECONDS)
@@ -168,15 +191,22 @@ class BcgwService:
         if remembered is not None:
             return None if remembered == NO_SCALE_LIMIT else remembered
 
-        denominator = cls._max_scale_denominator(object_name)
-        zoom = None if denominator is None else cls._zoom_for_scale(denominator)
+        with _single_flight(key) as reading:
+            remembered = cache.get(key)
+            if remembered is not None:
+                return None if remembered == NO_SCALE_LIMIT else remembered
+            if not reading:
+                raise ServiceUnavailableError(BUSY_MESSAGE)
 
-        cache.set(
-            key,
-            NO_SCALE_LIMIT if zoom is None else zoom,
-            timeout=LAYER_MIN_ZOOM_CACHE_TTL_SECONDS,
-        )
-        return zoom
+            denominator = cls._max_scale_denominator(object_name)
+            zoom = None if denominator is None else cls._zoom_for_scale(denominator)
+
+            cache.set(
+                key,
+                NO_SCALE_LIMIT if zoom is None else zoom,
+                timeout=LAYER_MIN_ZOOM_CACHE_TTL_SECONDS,
+            )
+            return zoom
 
     @staticmethod
     def _min_zoom_key(object_name: str) -> str:
@@ -191,12 +221,28 @@ class BcgwService:
         spells the same limit as a `ScaleHint` in diagonal metres per pixel,
         which would need converting twice to arrive back here.
         """
-        body = cls._read(object_name, {
-            'service': 'WMS',
-            'version': '1.3.0',
-            'request': 'GetCapabilities',
-        })
-        found = MAX_SCALE_DENOMINATOR.findall(body or '')
+        body = cls._read(
+            object_name,
+            {
+                'service': 'WMS',
+                'version': '1.3.0',
+                'request': 'GetCapabilities',
+            },
+            BCGW_CAPABILITIES_BYTE_LIMIT,
+        )
+        if body is None:
+            # A document cut short cannot be read as "declares no limit": that
+            # is the reading which draws a layer at zooms the warehouse only
+            # ever answers with a blank tile, and removing it is the whole point
+            # of this endpoint. Say nothing is known instead of the wrong thing.
+            current_app.logger.warning(
+                'BCGW capabilities for %s passed %d bytes; the published scale '
+                'cannot be read from a truncated document.',
+                object_name, BCGW_CAPABILITIES_BYTE_LIMIT
+            )
+            raise ServiceUnavailableError(UNAVAILABLE_MESSAGE)
+
+        found = MAX_SCALE_DENOMINATOR.findall(body)
         if not found:
             return None
 
@@ -357,7 +403,11 @@ class BcgwService:
         cls, object_name: str, count: int, bbox: Optional[tuple] = None
     ) -> Optional[list]:
         """Features as GeoJSON, or None when the answer was too big to carry."""
-        body = cls._read(object_name, cls._feature_params(object_name, count, bbox))
+        body = cls._read(
+            object_name,
+            cls._feature_params(object_name, count, bbox),
+            NEAREST_GEOMETRY_BYTE_LIMIT,
+        )
         if body is None:
             return None
 
@@ -367,9 +417,7 @@ class BcgwService:
             current_app.logger.warning(
                 'BCGW returned an unreadable body for %s: %s', object_name, exc
             )
-            raise ServiceUnavailableError(
-                'The BC Geographic Warehouse did not answer. Please try again.'
-            ) from exc
+            raise ServiceUnavailableError(UNAVAILABLE_MESSAGE) from exc
 
         # A layer with no WFS endpoint answers 200 with an OWS exception report
         # rather than a feature collection, so the shape is what to trust.
@@ -387,12 +435,18 @@ class BcgwService:
         params = cls._feature_params(object_name, count=1, bbox=bbox)
         params['resultType'] = 'hits'
 
-        matched = MATCHED_COUNT.search(cls._read(object_name, params) or '')
+        body = cls._read(object_name, params, NEAREST_GEOMETRY_BYTE_LIMIT)
+        matched = MATCHED_COUNT.search(body or '')
         return int(matched.group(1)) if matched else 0
 
     @staticmethod
-    def _read(object_name: str, params: dict) -> Optional[str]:
-        """GET from the warehouse, or None once the answer passes the byte cap.
+    def _read(object_name: str, params: dict, byte_limit: int) -> Optional[str]:
+        """GET from the warehouse, or None once the answer passes `byte_limit`.
+
+        The cap is the caller's to choose, because what an over-long answer
+        means is the caller's too: a feature too heavy to carry still leaves the
+        search window to frame, while a capabilities document cut short leaves
+        nothing worth reading.
         """
         try:
             response = SESSION.get(
@@ -406,20 +460,17 @@ class BcgwService:
                 body = bytearray()
                 for chunk in response.iter_content(BCGW_READ_CHUNK_BYTES):
                     body.extend(chunk)
-                    if len(body) > NEAREST_GEOMETRY_BYTE_LIMIT:
+                    if len(body) > byte_limit:
                         current_app.logger.info(
-                            'BCGW answer for %s passed %d bytes; framing the '
-                            'search window instead.',
-                            object_name, NEAREST_GEOMETRY_BYTE_LIMIT
+                            'BCGW answer for %s passed %d bytes; stopped '
+                            'reading it.', object_name, byte_limit
                         )
                         return None
         except requests.RequestException as exc:
             current_app.logger.warning(
                 'BCGW request failed for %s: %s', object_name, exc
             )
-            raise ServiceUnavailableError(
-                'The BC Geographic Warehouse did not answer. Please try again.'
-            ) from exc
+            raise ServiceUnavailableError(UNAVAILABLE_MESSAGE) from exc
 
         return body.decode('utf-8', 'replace')
 
