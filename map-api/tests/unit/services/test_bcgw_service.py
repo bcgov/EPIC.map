@@ -30,7 +30,8 @@ from map_api.exceptions import ServiceUnavailableError
 from map_api.services.bcgw_service import IN_FLIGHT, BcgwService
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
-    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES)
+    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_READ_CHUNK_BYTES, BCGW_WFS_TIMEOUT_SECONDS,
+    NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES)
 
 
 OBJECT_NAME = 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES'
@@ -145,24 +146,55 @@ def test_bounds_span_the_whole_feature(app):
     assert bounds == [-121.0, 55.0, -119.0, 56.0]
 
 
-def test_widening_asks_only_whether_a_window_holds_anything(app):
-    """Past the closest window the answer is the window, so geometry is waste."""
+def test_widening_costs_one_count_per_window_and_one_feature_in_all(app):
+    """Counts say which way to travel; geometry says where to stop."""
     near_empty = {'features': []}
-    get, calls = _answers(near_empty, 0, 3)
+    found = {'features': [_point_feature(-119.5, 52.5)]}
+    get, calls = _answers(near_empty, 0, 3, found)
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         bounds = BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0)
 
-    # The window that reported features, not a feature inside it.
-    third = NEAREST_SEARCH_WINDOWS_DEGREES[2]
-    assert bounds == [-123.0 - third, 49.0 - third, -123.0 + third, 49.0 + third]
-    assert len(calls) == 3
-    # Only the first call carries geometry back; the widening hops are counts.
-    assert [call.get('resultType') for call in calls] == [None, 'hits', 'hits']
+    assert bounds == [-119.5, 52.5, -119.5, 52.5]
+    # A count per window, then geometry once - for the window that answered yes.
+    assert [call.get('resultType') for call in calls] == [None, 'hits', 'hits', None]
     # Each retry asks about a wider box than the one before it.
     widths = [float(call['bbox'].split(',')[2]) - float(call['bbox'].split(',')[0])
-              for call in calls]
+              for call in calls[:3]]
     assert widths == sorted(widths) and widths[0] < widths[-1]
+
+
+def test_a_wider_window_does_not_send_the_camera_back_where_it_started(app):
+    """The window is centred on the user - the one place already ruled out.
+
+    Framing it and then zooming to the layer's floor lands on the user's own
+    centre, which the closest hop has just proved holds nothing of this layer.
+    """
+    near_empty = {'features': []}
+    elsewhere = {'features': [_point_feature(-119.5, 52.5)]}
+    get, _ = _answers(near_empty, 0, 3, elsewhere)
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        west, south, east, north = BcgwService.nearest_feature_bounds(
+            OBJECT_NAME, -123.0, 49.0
+        )
+
+    centre = ((west + east) / 2, (south + north) / 2)
+    assert centre != (-123.0, 49.0)
+    assert centre == (-119.5, 52.5)
+
+
+def test_a_wider_window_frames_a_feature_too_heavy_to_measure(app):
+    """The window is still the fallback, just no longer the first answer."""
+    near_empty = {'features': []}
+    oversized = 'x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1)
+    get, _ = _answers(near_empty, 0, 3, oversized)
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        bounds = BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0)
+
+    third = NEAREST_SEARCH_WINDOWS_DEGREES[2]
+    assert bounds == [-123.0 - third, 49.0 - third, -123.0 + third, 49.0 + third]
 
 
 def test_falls_back_to_the_first_feature_when_none_are_near(app):
@@ -249,6 +281,72 @@ def test_asks_for_longitude_first(app):
     assert crs == 'urn:ogc:def:crs:OGC:1.3:CRS84'
     assert float(west) < float(east) < 0      # longitudes, west of Greenwich
     assert 0 < float(south) < float(north)    # latitudes, north of the equator
+
+
+class _Clock:
+    """A monotonic clock the test moves itself, in place of the wall one."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+class _DrippingResponse(_Response):
+    """A warehouse that answers, slowly enough to never trip a read timeout.
+
+    This is the shape of the stall that matters: `timeout` bounds the wait for
+    the next piece of an answer, so a sender that keeps sending holds the
+    connection however long it likes.
+    """
+
+    def __init__(self, body, clock, seconds_per_chunk):
+        super().__init__(body)
+        self.clock = clock
+        self.seconds_per_chunk = seconds_per_chunk
+
+    def iter_content(self, chunk_size):
+        for chunk in super().iter_content(chunk_size):
+            self.clock.now += self.seconds_per_chunk
+            yield chunk
+
+
+def test_a_warehouse_that_drips_its_answer_is_given_up_on(app):
+    """One hop cannot outlast the timeout, whatever the warehouse is doing."""
+    clock = _Clock()
+    # Comfortably inside the byte cap, so it is the clock that stops this and
+    # not the size of the answer.
+    body = 'x' * (BCGW_READ_CHUNK_BYTES * 3)
+    seconds_per_chunk = BCGW_WFS_TIMEOUT_SECONDS
+
+    def get(url, params=None, timeout=None, stream=None):  # pylint: disable=unused-argument
+        return _DrippingResponse(body, clock, seconds_per_chunk)
+
+    with app.app_context(), \
+            patch('map_api.services.bcgw_service.time.monotonic', clock), \
+            patch('map_api.services.bcgw_service.SESSION.get', get), \
+            pytest.raises(ServiceUnavailableError):
+        BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0)
+
+    assert clock.now <= BCGW_WFS_TIMEOUT_SECONDS * 2
+
+
+def test_an_answer_that_arrives_in_time_is_read_to_the_end(app):
+    """The cap is on the clock, not on how many pieces an answer arrives in."""
+    clock = _Clock()
+    feature = json.dumps({'features': [_point_feature(-123.0, 49.0)]})
+    body = feature + ' ' * (BCGW_READ_CHUNK_BYTES * 3)
+
+    def get(url, params=None, timeout=None, stream=None):  # pylint: disable=unused-argument
+        return _DrippingResponse(body, clock, 0.5)
+
+    with app.app_context(), \
+            patch('map_api.services.bcgw_service.time.monotonic', clock), \
+            patch('map_api.services.bcgw_service.SESSION.get', get):
+        bounds = BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0)
+
+    assert bounds == [-123.0, 49.0, -123.0, 49.0]
 
 
 def test_a_warehouse_outage_is_reported_as_unavailable(app):

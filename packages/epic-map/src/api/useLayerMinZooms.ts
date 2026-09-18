@@ -1,4 +1,5 @@
 import { useQueries } from "@tanstack/react-query";
+import { MIN_ZOOM_RETRY_MS } from "@/utils/config";
 import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 
@@ -36,6 +37,8 @@ export const useLayerMinZooms = (objectNames: readonly string[]) => {
       retry: 2,
       refetchOnWindowFocus: true,
       refetchOnReconnect: true,
+      refetchInterval: (query: { state: { status: string } }) =>
+        query.state.status === "error" ? MIN_ZOOM_RETRY_MS : false,
     })),
     combine: (results) => {
       const minZooms: Record<string, number | null> = {};

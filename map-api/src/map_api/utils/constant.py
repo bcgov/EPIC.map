@@ -119,7 +119,9 @@ BCGW_READ_CHUNK_BYTES = 32 * 1024
 # a slow layer cannot hold a worker thread for a multiple of it.
 #
 # The budget is checked between hops, so the true ceiling is this plus the hop
-# that crosses it plus the unfiltered fallback: 8 + 8 + 8 at the timeout above.
+# that crosses it plus the unfiltered fallback: 8 + 8 + 8 at the timeout above,
+# which holds only because that timeout is enforced against the clock for the
+# whole of a hop rather than per read. See `_read`.
 # That has to stay under gunicorn's 30 second default, which does not fail one
 # request - it kills the worker, taking every other request on the pod with it.
 BCGW_SEARCH_BUDGET_SECONDS = 15

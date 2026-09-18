@@ -236,6 +236,11 @@ export const FOCUS_MAX_ZOOM = 14;
 export const FOCUS_FLY_MS = 800;
 
 /**
+ * How long to wait before asking again for a layer's floor that would not come.
+ */
+export const MIN_ZOOM_RETRY_MS = 30_000;
+
+/**
  * Whether a layer's floor sits past the furthest this map will ever zoom.
  *
  * A published scale converts to a zoom of its own, and a handful of the

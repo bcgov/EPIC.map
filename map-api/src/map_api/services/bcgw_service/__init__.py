@@ -278,11 +278,11 @@ class BcgwService:
     def _search(cls, object_name: str, lon: float, lat: float) -> Optional[Bounds]:
         """Ask the warehouse, widest net last.
 
-        Only the closest window is worth a feature's geometry. Past it the
-        camera is travelling tens of kilometres anyway, so the window frames the
-        answer as well as the feature inside it would - and asking a window only
-        whether it holds anything keeps those hops under a kilobyte each, against
-        the hundreds of kilobytes one warehouse polygon can weigh.
+        Each window is asked only whether it holds anything, which keeps a hop
+        under a kilobyte against the hundreds one warehouse polygon can weigh.
+        Geometry is fetched once, for the window that answers yes: a window is
+        centred on the user rather than on the layer, so it says which direction
+        to travel and nothing about where to stop.
         """
         if cls._known_to_be_empty(object_name):
             # Nothing anywhere means nothing in any window either, so every hop
@@ -304,8 +304,10 @@ class BcgwService:
                 )
                 break
             window = cls._window(lon, lat, half_size)
-            if cls._count_features(object_name, window):
-                return list(window)
+            if not cls._count_features(object_name, window):
+                continue
+
+            return cls._bounds_near(object_name, window) or list(window)
 
         return cls._bounds_anywhere(object_name)
 
@@ -470,8 +472,13 @@ class BcgwService:
         The cap is the caller's to choose, because what an over-long answer
         means is the caller's too: a feature too heavy to carry still leaves the
         search window to frame, while a capabilities document cut short leaves
-        nothing worth reading.
+        nothing worth reading. Running out of time is not the caller's to read
+        either way, so it is raised rather than returned.
         """
+        # `timeout` is what requests calls a read timeout: the wait for the next
+        # piece of the answer, not for the answer.
+        deadline = time.monotonic() + BCGW_WFS_TIMEOUT_SECONDS
+
         try:
             response = SESSION.get(
                 BCGW_OWS_URL.format(object_name=object_name),
@@ -483,6 +490,14 @@ class BcgwService:
                 response.raise_for_status()
                 body = bytearray()
                 for chunk in response.iter_content(BCGW_READ_CHUNK_BYTES):
+                    if time.monotonic() > deadline:
+                        current_app.logger.warning(
+                            'BCGW took longer than %ds to answer for %s; '
+                            'stopped waiting on it.',
+                            BCGW_WFS_TIMEOUT_SECONDS, object_name
+                        )
+                        raise ServiceUnavailableError(UNAVAILABLE_MESSAGE)
+
                     body.extend(chunk)
                     if len(body) > byte_limit:
                         current_app.logger.info(
