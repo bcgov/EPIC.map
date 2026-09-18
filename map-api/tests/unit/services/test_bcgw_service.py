@@ -55,6 +55,16 @@ def _polygon_feature(points):
     return {'geometry': {'type': 'Polygon', 'coordinates': [[list(p) for p in points]]}}
 
 
+def _exception_report(code='InvalidParameterValue', locator='typeName'):
+    """Return the report openmaps sends for a typeName it does not publish."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/1.1" version="2.0.0">'
+        f'<ows:Exception exceptionCode="{code}" locator="{locator}"/>'
+        '</ows:ExceptionReport>'
+    )
+
+
 def _hits(matched):
     """Return a resultType=hits FeatureCollection, XML whatever was asked for."""
     return f'<wfs:FeatureCollection numberMatched="{matched}" numberReturned="0"/>'
@@ -200,13 +210,32 @@ def test_returns_none_when_the_layer_has_no_features(app):
         assert BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0) is None
 
 
-def test_treats_an_exception_report_as_no_features(app):
-    """A WMS-only layer answers 200 with an OWS report rather than features."""
-    report = {'exceptions': [{'exceptionCode': 'InvalidParameterValue'}]}
-    get, _ = _answers(*_nothing_near(report))
+def test_a_json_body_that_is_not_a_feature_collection_is_no_features(app):
+    """The shape is what to trust: a 200 does not promise a feature collection."""
+    get, _ = _answers(*_nothing_near({'totalFeatures': 'unknown'}))
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         assert BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0) is None
+
+
+def test_a_layer_with_no_wfs_is_no_features_rather_than_an_outage(app):
+    """A layer published as WMS tiles but no WFS feature type answers this way.
+
+    An OWS exception report, as XML, with a 200, however the output format was
+    asked for - so nothing but the body says anything is wrong. Parsed as the
+    GeoJSON it is not it raises, and the user is told the warehouse is down and
+    to try again, which cannot start working. The honest answer is that there is
+    nothing to zoom to, and it is worth caching rather than re-asking.
+    """
+    hops = len(NEAREST_SEARCH_WINDOWS_DEGREES) + 1
+    get, calls = _answers(*[_exception_report()] * hops)
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0) is None
+        # Asked once, not once per press: _answers fails on a call past the end.
+        assert BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0) is None
+
+    assert len(calls) == hops
 
 
 def test_asks_for_longitude_first(app):
@@ -382,6 +411,100 @@ def test_a_finished_search_leaves_no_lock_behind(app):
     assert not IN_FLIGHT
 
 
+def _held_lock(key):
+    """Hold the in-flight lock for `key`, standing in for a thread mid-search.
+
+    Deterministic where a second thread is not: the wait expires because the
+    lock is held, at no particular moment and with no sleep to tune.
+    """
+    lock = threading.Lock()
+    lock.acquire()
+    IN_FLIGHT[key] = lock
+    return lock
+
+
+def _release(key, lock):
+    """Put the lock map back, so a later test still finds it empty."""
+    lock.release()
+    IN_FLIGHT.pop(key, None)
+
+
+def test_a_thread_that_gives_up_waiting_takes_an_answer_that_landed_meanwhile(app):
+    """Giving up on the lock is not giving up on the answer.
+
+    The search stores its answer before releasing, so a thread whose wait
+    expires in that window has the answer available to it. Reading the cache
+    once more before failing is what turns that into a hit rather than a 503 the
+    user did not need to see.
+    """
+    key = BcgwService._cache_key(OBJECT_NAME, -123.0, 49.0)  # pylint: disable=protected-access
+    bounds = [-123.0, 49.0, -123.0, 49.0]
+    lock = _held_lock(key)
+
+    def never(*_args, **_kwargs):
+        raise AssertionError('the warehouse was asked despite a cached answer')
+
+    try:
+        with app.app_context(), \
+                patch('map_api.services.bcgw_service.SESSION.get', never), \
+                patch('map_api.services.bcgw_service.BCGW_SINGLE_FLIGHT_WAIT_SECONDS', 0.01), \
+                patch.object(cache, 'get', side_effect=[None, bounds]):
+            assert BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0) == bounds
+    finally:
+        _release(key, lock)
+
+
+def test_a_search_that_runs_out_of_budget_stops_widening(app):
+    """The budget bounds the sequence of hops, not just each one.
+
+    Four windows at the per-request timeout is a multiple of it, and gunicorn
+    does not fail a request that slow - it kills the worker, taking every other
+    request on the pod with it.
+    """
+    get, calls = _answers({'features': []}, {'features': [_point_feature(-120.0, 55.0)]})
+
+    with app.app_context(), \
+            patch('map_api.services.bcgw_service.SESSION.get', get), \
+            patch('map_api.services.bcgw_service.BCGW_SEARCH_BUDGET_SECONDS', -1):
+        assert BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0) == [
+            -120.0, 55.0, -120.0, 55.0
+        ]
+
+    # The closest window, then the unfiltered fallback. None of the widening
+    # hops in between, which is the whole point of the budget.
+    assert len(calls) == 2
+
+
+def test_a_body_that_is_neither_geojson_nor_a_report_is_an_outage(app):
+    """A proxy's error page arrives as a 200 carrying HTML, and is not an answer.
+
+    Unlike an OWS exception report - which says the layer has no features - this
+    says nothing about the layer, so there is nothing to cache and a 503 is the
+    honest reply.
+    """
+    get, _ = _answers('<html><head><title>502 Bad Gateway</title></head></html>')
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        with pytest.raises(ServiceUnavailableError):
+            BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0)
+
+
+def test_a_feature_with_no_geometry_frames_the_window_instead(app):
+    """A row the warehouse publishes without geometry still says where to look.
+
+    There is nothing in it to measure, but it was returned for this window, so
+    the window is the answer - the same fallback a feature too heavy to carry
+    takes.
+    """
+    get, _ = _answers({'features': [{'type': 'Feature', 'geometry': None}]})
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        bounds = BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0)
+
+    near = NEAREST_SEARCH_WINDOWS_DEGREES[0]
+    assert bounds == [-123.0 - near, 49.0 - near, -123.0 + near, 49.0 + near]
+
+
 def _capabilities(*denominators):
     """Return a WMS 1.3.0 capabilities document carrying these scale limits."""
     rules = ''.join(
@@ -391,7 +514,7 @@ def _capabilities(*denominators):
 
 
 def test_min_zoom_comes_from_the_published_scale(app):
-    """1:250,000 is zoom 11 in BC - the figure the live service agrees with."""
+    """1:250,000 is zoom 11, which is where the live service starts drawing."""
     get, calls = _answers(_capabilities(250000.0))
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
@@ -460,7 +583,7 @@ def test_a_scale_in_scientific_notation_is_read(app):
     get, _ = _answers(_capabilities('1.2E7'))
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
-        # 1:12,000,000 at BC's latitudes, which the live service draws from z5.
+        # 1:12,000,000, which the live service draws from z5.
         assert BcgwService.layer_min_zoom(OBJECT_NAME) == 5
 
 
@@ -533,3 +656,35 @@ def test_a_capabilities_document_heavier_than_a_feature_is_still_read(app):
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         assert BcgwService.layer_min_zoom(OBJECT_NAME) == 11
+
+
+def test_the_conversion_is_not_off_by_a_zoom_level(app):
+    """Both of these draw a level before the 256 pixel scale set would say.
+
+    MapLibre's zoom 0 spans 512 pixels rather than 256, and GeoServer reads the
+    scale off the projected bounding box with no latitude term. Get either wrong
+    and most layers still land on the right zoom, so these two are the regression
+    test: openmaps was asked, and draws them from exactly these zooms.
+    """
+    get, _ = _answers(_capabilities(2500000.0))
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.layer_min_zoom(OBJECT_NAME) == 7
+
+    cache.clear()
+
+    get, _ = _answers(_capabilities(35000000.0))
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.layer_min_zoom(OBJECT_NAME) == 3
+
+
+def test_a_thread_that_gives_up_on_a_scale_lookup_says_so(app):
+    """The bounded wait applies to this lookup too, and giving up is a 503."""
+    key = BcgwService._min_zoom_key(OBJECT_NAME)  # pylint: disable=protected-access
+    lock = _held_lock(key)
+
+    try:
+        with app.app_context(), patch('map_api.services.bcgw_service.BCGW_SINGLE_FLIGHT_WAIT_SECONDS', 0.01):
+            with pytest.raises(ServiceUnavailableError):
+                BcgwService.layer_min_zoom(OBJECT_NAME)
+    finally:
+        _release(key, lock)

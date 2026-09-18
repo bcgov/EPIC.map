@@ -43,7 +43,7 @@ from map_api.utils.constant import (
     BCGW_SEARCH_BUDGET_SECONDS, BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_WFS_TIMEOUT_SECONDS,
     LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS,
     NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES, WMS_MAX_LAYER_MIN_ZOOM,
-    WMS_SCALE_DENOMINATOR_AT_ZOOM_ZERO, WMS_SCALE_REFERENCE_LATITUDE)
+    WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO)
 
 
 # A [west, south, east, north] box, which is what the client fits the map to.
@@ -60,6 +60,18 @@ MATCHED_COUNT = re.compile(r'numberMatched="(\d+)"')
 MAX_SCALE_DENOMINATOR = re.compile(
     r'<MaxScaleDenominator>\s*([\d.eE+-]+)\s*</MaxScaleDenominator>'
 )
+
+# An OWS exception report, which is how the warehouse says it does not publish
+# what was asked of it - including a layer with WMS tiles but no WFS feature
+# type. It comes back as XML with a 200 whatever output format was requested, so
+# a request for GeoJSON can be answered with this and nothing about the status
+# says so. Matched on the local name because the prefix is only conventionally
+# `ows:`.
+OWS_EXCEPTION_REPORT = re.compile(r'<(?:\w+:)?ExceptionReport\b')
+
+# Logged when one is met, because a typeName the warehouse does not publish and
+# anything else that can go wrong here are worth telling apart afterwards.
+OWS_EXCEPTION_CODE = re.compile(r'exceptionCode="([^"]+)"')
 
 # How "this layer declares no scale limit" is remembered: a cached None is
 # indistinguishable from a cache miss, and 0 is a legitimate minzoom.
@@ -252,10 +264,14 @@ class BcgwService:
 
     @staticmethod
     def _zoom_for_scale(denominator: float) -> int:
-        """Lowest web-mercator zoom whose scale is finer than `denominator`."""
-        narrowing = math.cos(math.radians(WMS_SCALE_REFERENCE_LATITUDE))
-        at_zoom_zero = WMS_SCALE_DENOMINATOR_AT_ZOOM_ZERO * narrowing
-        zoom = math.ceil(math.log2(at_zoom_zero / denominator))
+        """Lowest map zoom the warehouse draws this layer at.
+
+        The first zoom whose scale is at least as fine as the layer's published
+        limit. See WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO for why that figure is
+        the one to divide, and why neither the latitude nor the 256 pixel scale
+        set belongs in here.
+        """
+        zoom = math.ceil(math.log2(WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO / denominator))
         return max(0, min(zoom, WMS_MAX_LAYER_MIN_ZOOM))
 
     @classmethod
@@ -411,6 +427,14 @@ class BcgwService:
         if body is None:
             return None
 
+        if OWS_EXCEPTION_REPORT.search(body):
+            code = OWS_EXCEPTION_CODE.search(body)
+            current_app.logger.info(
+                'BCGW publishes no WFS features for %s (%s).',
+                object_name, code.group(1) if code else 'no exception code'
+            )
+            return []
+
         try:
             payload = json.loads(body)
         except ValueError as exc:
@@ -419,8 +443,8 @@ class BcgwService:
             )
             raise ServiceUnavailableError(UNAVAILABLE_MESSAGE) from exc
 
-        # A layer with no WFS endpoint answers 200 with an OWS exception report
-        # rather than a feature collection, so the shape is what to trust.
+        # Anything else that is not a feature collection is read as an empty
+        # one: the shape is what to trust, not the status.
         features = payload.get('features')
         return features if isinstance(features, list) else []
 

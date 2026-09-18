@@ -142,16 +142,23 @@ BCGW_SINGLE_FLIGHT_WAIT_SECONDS = BCGW_WFS_TIMEOUT_SECONDS
 # Read from the same variable gunicorn does, so the two cannot drift.
 BCGW_CONNECTION_POOL_SIZE = int(os.getenv('GUNICORN_THREADS', '8'))
 
-# OGC's scale denominator for web-mercator zoom 0 at the equator, from a 0.28mm
-# reference pixel. Halves with every zoom level, and narrows with the cosine of
-# the latitude, which is what turns a layer's published scale limit into a zoom.
-WMS_SCALE_DENOMINATOR_AT_ZOOM_ZERO = 559082264.028
-
-# Latitude the conversion above is done at. A MapLibre layer takes one minzoom,
-# but scale varies with latitude, so this is the south edge of the province -
-# where the scale is coarsest, and so the zoom it yields is the one that holds
-# for all of BC rather than only for the north. Matches BC_EXTENT's south.
-WMS_SCALE_REFERENCE_LATITUDE = 48.2
+# Scale denominator at map zoom 0, from OGC's 0.28mm reference pixel, halving
+# with every zoom level. This is what turns a layer's published scale limit into
+# a minzoom, and it is half of OGC's own 559,082,264: that figure spans a 256
+# pixel world, MapLibre's zoom 0 spans 512, so a MapLibre layer at zoom z draws
+# at the scale the 256 pixel scale set calls z+1.
+#
+# No cosine-of-latitude term. GeoServer takes the scale straight off the
+# EPSG:3857 bounding box in projected metres, so the denominator it weighs
+# against a layer's MaxScaleDenominator does not vary with latitude.
+#
+# Both halves of that are load bearing, and both were checked against openmaps
+# rather than reasoned about: ADM_NR_DISTRICTS_SPG publishes 1:35,000,000 and
+# draws from map zoom 3, where this gives 1:34,942,641, and comes back blank at
+# zoom 2. Get either half wrong and the figures still look plausible - they land
+# on the right zoom for about three layers in five - so a layer like that one is
+# the only thing that tells you.
+WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO = 559082264.028 / 2
 
 # Ceiling for a derived minzoom, because MapLibre rejects a layer minzoom above
 # this. A layer whose limit converts past it is one the widget can never draw,
