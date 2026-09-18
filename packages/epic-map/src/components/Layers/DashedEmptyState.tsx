@@ -5,15 +5,18 @@ import { useTheme } from "@mui/material/styles";
 /** The dashed "nothing here yet" box used by Favourites and My Layers. */
 export default function DashedEmptyState({
   children,
+  margin = "0 1rem 0.5rem",
 }: {
   children: ReactNode;
+  /** Overridden inside a folder, where the box is inset under the name field. */
+  margin?: string;
 }) {
   const theme = useTheme();
 
   return (
     <Box
       sx={{
-        margin: "0 1rem 0.5rem",
+        margin,
         padding: "0.75rem",
         background: theme.palette.grey[50],
         border: `1px dashed ${theme.palette.divider}`,

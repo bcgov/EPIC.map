@@ -132,21 +132,3 @@ class CatalogueLayerReference:  # pylint: disable=no-member
             if existing is None:
                 raise
             return existing, False
-
-    @classmethod
-    def reorder(cls, user_id: int, row_ids: list[int]) -> list:
-        """Renumber the user's rows to match the order given.
-
-        The caller has already checked that the ids are exactly this user's
-        rows. Positions are rewritten as 1..N in one transaction.
-        """
-        rows = {row.id: row for row in cls.find_by_user(user_id)}
-        for position, row_id in enumerate(row_ids, start=1):
-            rows[row_id].sort_order = position
-        db.session.commit()
-        return cls.find_by_user(user_id)
-
-    @classmethod
-    def find_ids_for_user(cls, user_id: int) -> list[int]:
-        """Return the ids of the user's rows, in list order."""
-        return [row.id for row in cls.find_by_user(user_id)]

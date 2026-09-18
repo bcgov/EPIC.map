@@ -23,8 +23,9 @@ from flask import g
 from map_api.config import get_named_config
 from map_api.models.user import User as UserModel
 from map_api.models.user_applied_layer import UserAppliedLayer as UserAppliedLayerModel
+from map_api.models.user_favourite_folder import UserFavouriteFolder as UserFavouriteFolderModel
 from map_api.models.user_favourite_layer import UserFavouriteLayer as UserFavouriteLayerModel
-from map_api.utils.constant import DEFAULT_LAYER_OPACITY, LAYER_SOURCE_BCDC
+from map_api.utils.constant import DEFAULT_FOLDER_NAME, DEFAULT_LAYER_OPACITY, LAYER_SOURCE_BCDC
 
 
 CONFIG = get_named_config('testing')
@@ -166,3 +167,18 @@ def factory_favourite_layer(user_id, **overrides):
     )
     favourite.save()
     return favourite
+
+
+def factory_favourite_folder(user_id, **overrides):
+    """Return a committed favourite folder row for a user."""
+    folder = UserFavouriteFolderModel(
+        user_id=user_id,
+        name=overrides.pop('name', DEFAULT_FOLDER_NAME),
+        is_collapsed=overrides.pop('is_collapsed', False),
+        sort_order=overrides.pop(
+            'sort_order', UserFavouriteFolderModel.next_sort_order(user_id)
+        ),
+        **overrides,
+    )
+    folder.save()
+    return folder

@@ -46,3 +46,14 @@ MAX_APPLIED_LAYERS_PER_MAP = 50
 
 # Favourites are a bookmark list, not layers drawn on the map
 MAX_FAVOURITE_LAYERS = 200
+
+# Favourites may be filed into folders. A folder holds no layer state of its
+# own, so it is capped separately from the layers inside it.
+MAX_FAVOURITE_FOLDERS = 50
+
+# What an unnamed folder is called. The client shows this pre-selected when a
+# folder is created, and a name that is blank or only whitespace falls back to it.
+DEFAULT_FOLDER_NAME = 'Untitled folder'
+
+# The longest a folder name may be, matching the column it is stored in.
+MAX_FOLDER_NAME_LENGTH = 100
