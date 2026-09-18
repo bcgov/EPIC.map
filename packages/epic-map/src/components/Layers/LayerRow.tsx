@@ -91,8 +91,10 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
     expandedId,
     pendingIds,
     focusPendingIds,
+    focusErrors,
     focusLayer,
     belowFloorIds,
+    beyondReachIds,
     atVisibleLimit,
     toggleVisible,
     toggleFavourite,
@@ -117,6 +119,12 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
   // published scale openmaps returns a blank tile, and each layer's scale is
   // different, so this is per layer rather than one shared zoom.
   const belowFloor = belowFloorIds.has(layer.id);
+
+  // A floor past the map's own ceiling is one no amount of zooming reaches, so
+  // the row says so instead of offering a button that cannot keep its word.
+  const beyondReach = beyondReachIds.has(layer.id);
+
+  const focusError = focusErrors[layer.id];
 
   // Star is pending while the API request is out.
   const starSaving = favouritePendingIds.has(layer.id);
@@ -190,6 +198,83 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
     </Box>
   );
 
+  const hintSx = {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.25rem",
+    marginTop: "0.25rem",
+    width: "100%",
+    textAlign: "left",
+    fontSize: theme.typography.caption.fontSize,
+    lineHeight: 1.4,
+  } as const;
+
+  // The icon is a flex item like any other, so without this it is the thing
+  // that gives way when the column is narrow: it squashes to a sliver and the
+  // label wraps around where it used to be.
+  const hintIconSx = { flexShrink: 0, fontSize: "0.875rem" } as const;
+
+  const zoomInButton = (
+    <Box
+      component="button"
+      type="button"
+      onClick={() => focusLayer(layer)}
+      disabled={focusing}
+      aria-label={
+        focusError
+          ? `Zoom in to view ${layer.name}. ${focusError}`
+          : `Zoom in to view ${layer.name}`
+      }
+      sx={{
+        ...hintSx,
+        padding: 0,
+        border: "none",
+        background: "none",
+        font: "inherit",
+        fontSize: theme.typography.caption.fontSize,
+        color: focusError ? theme.palette.error.main : ZOOM_HINT_COLOR,
+        cursor: focusing ? "default" : "pointer",
+        "&:hover": { textDecoration: focusing ? "none" : "underline" },
+        ...focusRing(theme),
+      }}
+    >
+      {focusing ? (
+        <CircularProgress size="0.875rem" sx={hintIconSx} aria-hidden />
+      ) : (
+        <ZoomInIcon aria-hidden sx={hintIconSx} />
+      )}
+      <Typography
+        variant="caption"
+        component="span"
+        sx={{ minWidth: 0, color: "inherit" }}
+      >
+        Zoom in to view
+      </Typography>
+    </Box>
+  );
+
+  // The button stays pressable after a failure: the warehouse being slow or
+  // busy is the usual reason, and a second press is what fixes it.
+  const zoomIn = focusError ? (
+    <Tooltip title={focusError}>{zoomInButton}</Tooltip>
+  ) : (
+    zoomInButton
+  );
+
+  const unreachableNote = (
+    <Tooltip title="This layer only draws closer in than this map can zoom">
+      <Typography
+        component="span"
+        sx={{ ...hintSx, color: ZOOM_HINT_COLOR, cursor: "default" }}
+      >
+        <ZoomInIcon aria-hidden sx={hintIconSx} />
+        <Box component="span" sx={{ minWidth: 0 }}>
+          Not visible at any zoom
+        </Box>
+      </Typography>
+    </Tooltip>
+  );
+
   return (
     <Box component="li" sx={{ listStyle: "none" }}>
       <Box
@@ -214,42 +299,7 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           {clamped ? <Tooltip title={layer.name}>{name}</Tooltip> : name}
 
-          {visible && belowFloor && (
-            <Box
-              component="button"
-              type="button"
-              onClick={() => focusLayer(layer)}
-              disabled={focusing}
-              aria-label={`Zoom in to view ${layer.name}`}
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.25rem",
-                marginTop: "0.25rem",
-                padding: 0,
-                border: "none",
-                background: "none",
-                font: "inherit",
-                fontSize: theme.typography.caption.fontSize,
-                lineHeight: 1.4,
-                color: ZOOM_HINT_COLOR,
-                cursor: focusing ? "default" : "pointer",
-                "&:hover": { textDecoration: focusing ? "none" : "underline" },
-                ...focusRing(theme),
-              }}
-            >
-              {focusing ? (
-                <CircularProgress
-                  size="0.875rem"
-                  sx={{ color: "inherit" }}
-                  aria-hidden
-                />
-              ) : (
-                <ZoomInIcon aria-hidden sx={{ fontSize: "0.875rem" }} />
-              )}
-              Zoom in to view
-            </Box>
-          )}
+          {visible && belowFloor && (beyondReach ? unreachableNote : zoomIn)}
         </Box>
 
         <Tooltip title={starNote}>

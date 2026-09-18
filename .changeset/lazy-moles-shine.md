@@ -27,3 +27,31 @@ GetCapabilities is readable from a browser - openmaps sends no
 `access-control-allow-origin` on either:
 `GET /catalogue/layers/{object_name}/nearest-feature` and
 `GET /catalogue/layers/{object_name}/min-zoom`.
+
+Draw a layer's own shapes while it is too far out to draw itself. An enabled
+layer below its published scale is outlined on the map in blue - not a box
+around where it is, but the real geometry, stroked and unfilled - so a user
+looking at the whole province can see the shape of what they have switched on.
+The scale limit that hides a layer is published in its *style* rather than in
+its data, so the outline is the same warehouse rendering the same features under
+a style of ours that declares no limit. Points are drawn as small circles;
+everything else is stroked as it is. Verified against openmaps: a request over
+the whole province comes back fully transparent under the published style and
+carries the layer's outlines under this one.
+
+The handoff is MapLibre's rather than the panel's - the outline's maxzoom is the
+layer's floor and the layer's own minzoom is the same number - so the outline
+gives way to the real layer on the frame the zoom crosses it, on the same tile
+grid, pixel for pixel.
+
+A layer whose published scale converts past the map's own maximum zoom no longer
+offers "Zoom in to view" - there is no zoom that reaches it, so the row says
+"Not visible at any zoom" instead of offering a button that cannot keep its
+word. Its shapes are still outlined, which is now the only way to see it at
+all.
+
+A press of "Zoom in to view" that fails now says so on the row rather than
+stopping the spinner and leaving the map where it was: a layer the warehouse
+publishes no features for is told apart from a warehouse that did not answer,
+and the second stays pressable because pressing again is what fixes it.
+

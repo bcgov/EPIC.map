@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import axios from "axios";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { MapExtent } from "@/types";
 import {
@@ -11,6 +12,21 @@ import {
 import { useMapWidget } from "@/widget/MapWidgetContext";
 
 const CATALOGUE_LAYERS_PATH = "/catalogue/layers";
+
+/**
+ * What the row says when a press did not move the map.
+ *
+ * Both are worth telling apart: one is the layer, and pressing again will
+ * always fail the same way; the other is the warehouse, and pressing again is
+ * exactly the right move.
+ */
+const NO_FEATURES_MESSAGE = "This layer publishes nothing to zoom to";
+const UNREACHABLE_MESSAGE = "Could not reach the data catalogue - try again";
+
+const messageFor = (error: unknown): string =>
+  axios.isAxiosError(error) && error.response?.status === 404
+    ? NO_FEATURES_MESSAGE
+    : UNREACHABLE_MESSAGE;
 
 interface NearestFeatureResponse {
   bounds: MapExtent;
@@ -31,12 +47,23 @@ export const useLayerFocus = () => {
     () => new Set(),
   );
 
+  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+
   const markPending = useCallback((layerId: string, pending: boolean) => {
     setPendingIds((current) => {
       const next = new Set(current);
       if (pending) next.add(layerId);
       else next.delete(layerId);
       return next;
+    });
+  }, []);
+
+  const clearError = useCallback((layerId: string) => {
+    setErrors((current) => {
+      if (!(layerId in current)) return current;
+      const rest = { ...current };
+      delete rest[layerId];
+      return rest;
     });
   }, []);
 
@@ -60,7 +87,10 @@ export const useLayerFocus = () => {
       );
       return response.data.bounds;
     },
-    onMutate: ({ layerId }) => markPending(layerId, true),
+    onMutate: ({ layerId }) => {
+      clearError(layerId);
+      markPending(layerId, true);
+    },
     onSuccess: (bounds, { map, minZoom }) => {
       const camera = map.cameraForBounds(bounds, {
         padding: FOCUS_PADDING_PX,
@@ -74,6 +104,9 @@ export const useLayerFocus = () => {
         zoom: Math.max(camera.zoom ?? floor, floor),
         duration: FOCUS_FLY_MS,
       });
+    },
+    onError: (error, { layerId }) => {
+      setErrors((current) => ({ ...current, [layerId]: messageFor(error) }));
     },
     onSettled: (_bounds, _error, { layerId }) => markPending(layerId, false),
   });
@@ -92,5 +125,5 @@ export const useLayerFocus = () => {
     [pendingIds, mutate],
   );
 
-  return { focusLayer, focusPendingIds: pendingIds };
+  return { focusLayer, focusPendingIds: pendingIds, focusErrors: errors };
 };

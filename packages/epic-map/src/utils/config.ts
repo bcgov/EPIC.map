@@ -236,6 +236,91 @@ export const FOCUS_MAX_ZOOM = 14;
 export const FOCUS_FLY_MS = 800;
 
 /**
+ * Whether a layer's floor sits past the furthest this map will ever zoom.
+ *
+ * A published scale converts to a zoom of its own, and a handful of the
+ * catalogue's finest layers convert past MAX_ZOOM. Such a layer cannot be
+ * reached by zooming, so offering "Zoom in to view" for it is offering a button
+ * that cannot do what it says - the map travels as far as it goes and the layer
+ * still draws nothing.
+ */
+export const isBeyondMapZoom = (floor: number): boolean => floor > MAX_ZOOM;
+
+/**
+ * Blue for the outline a layer is drawn as while it cannot draw itself.
+ *
+ * `themeBlue70` of the BC design tokens rather than the theme's primary
+ * `#013366`: the outline has to read against satellite imagery as well as
+ * against the provincial basemap, and the primary navy disappears into both.
+ * A constant rather than a theme lookup because it is spent on a WMS request,
+ * outside React's tree.
+ */
+export const OUTLINE_COLOR = "#5595D9";
+
+/** Thin enough not to swallow a small feature, thick enough to see at z4. */
+export const OUTLINE_WIDTH_PX = 2;
+
+/** How big a point is drawn, which has no outline of its own to trace. */
+export const OUTLINE_POINT_SIZE_PX = 7;
+
+/**
+ * A style that draws the layer as its own shapes, stroked and unfilled, at any
+ * zoom at all.
+ *
+ * The scale limit that stops a layer drawing is published in its *style*, not
+ * in the data, so handing openmaps a style of our own is what lifts it - and
+ * because it is still the warehouse rendering its own geometry, what comes back
+ * is the real shape of the thing rather than a box approximating where it is.
+ * Verified against openmaps: a GetMap over the whole province returns a fully
+ * transparent tile under the published style and the layer's actual outlines
+ * under this one.
+ *
+ * Two rules rather than one because a PointSymbolizer alongside the others
+ * would put a circle on every polygon's centroid as well. `ElseFilter` catches
+ * everything the first rule did not, which is every geometry that is not a
+ * point - and is shorter than spelling out the negation, which matters in
+ * something that has to survive being a query parameter.
+ */
+const outlineSld = (objectName: string): string => {
+  const stroke =
+    "<Stroke>" +
+    `<CssParameter name="stroke">${OUTLINE_COLOR}</CssParameter>` +
+    `<CssParameter name="stroke-width">${OUTLINE_WIDTH_PX}</CssParameter>` +
+    "</Stroke>";
+
+  return (
+    '<StyledLayerDescriptor xmlns="http://www.opengis.net/sld"' +
+    ' xmlns:ogc="http://www.opengis.net/ogc" version="1.0.0">' +
+    `<NamedLayer><Name>pub:${objectName}</Name>` +
+    "<UserStyle><FeatureTypeStyle>" +
+    '<Rule><ogc:Filter>' +
+    '<ogc:PropertyIsLike wildCard="*" singleChar="." escapeChar="!">' +
+    '<ogc:Function name="geometryType"><ogc:Function name="geometry"/>' +
+    "</ogc:Function><ogc:Literal>*Point*</ogc:Literal>" +
+    "</ogc:PropertyIsLike></ogc:Filter>" +
+    "<PointSymbolizer><Graphic><Mark>" +
+    `<WellKnownName>circle</WellKnownName>${stroke}</Mark>` +
+    `<Size>${OUTLINE_POINT_SIZE_PX}</Size></Graphic></PointSymbolizer></Rule>` +
+    "<Rule><ElseFilter/>" +
+    `<PolygonSymbolizer>${stroke}</PolygonSymbolizer>` +
+    `<LineSymbolizer>${stroke}</LineSymbolizer></Rule>` +
+    "</FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>"
+  );
+};
+
+/**
+ * WMS tiles of a layer's outline, as a MapLibre raster template.
+ *
+ * The same request as `wmsTileUrl` with a style attached, so the two sit on the
+ * same tile grid and the outline gives way to the layer itself pixel for pixel.
+ * Roughly 1.8kB of URL once encoded, which is well inside what a GET carries.
+ */
+export const outlineTileUrl = (objectName: string): string =>
+  `${wmsTileUrl(objectName)}&SLD_BODY=${encodeURIComponent(
+    outlineSld(objectName),
+  )}`;
+
+/**
  * How long the opacity slider rests before its value is saved. A drag emits a
  * value per pixel of travel; without this each one would be its own PATCH.
  */

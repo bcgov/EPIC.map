@@ -12,21 +12,25 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import { useAppliedLayers, type AppliedLayer } from "@/api/useAppliedLayers";
 import { useLayerFocus } from "@/api/useLayerFocus";
 import { useLayerMinZooms } from "@/api/useLayerMinZooms";
-import { layersBelowFloor } from "@/components/Layers/layerFloors";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
   useFavouriteLayers,
   type FavouriteLayer,
 } from "@/api/useFavouriteLayers";
 import {
+  hideOutlineLayer,
   hideWmsLayer,
+  layersBelowFloor,
+  setOutlineLayerMaxZoom,
   setWmsLayerMinZoom,
   setWmsLayerOpacity,
+  showOutlineLayer,
   showWmsLayer,
-} from "@/components/Layers/wmsLayers";
+} from "@/components/Layers/layerUtils";
 import {
   DEFAULT_LAYER_OPACITY,
   effectiveMinZoom,
+  isBeyondMapZoom,
   MAX_VISIBLE_LAYERS,
 } from "@/utils/config";
 
@@ -40,8 +44,12 @@ interface LayersContextValue {
   retryApplied: () => void;
   pendingIds: ReadonlySet<string>;
   focusPendingIds: ReadonlySet<string>;
+  /** Why the last press of "Zoom in to view" did not move the map, by layer. */
+  focusErrors: Readonly<Record<string, string>>;
   focusLayer: (layer: CatalogueLayer) => void;
   belowFloorIds: ReadonlySet<string>;
+  /** Enabled layers whose floor is past anything the map can zoom to. */
+  beyondReachIds: ReadonlySet<string>;
   /** The layers map-api has starred for this user, newest first. */
   favourites: readonly FavouriteLayer[];
   favouritesPending: boolean;
@@ -78,7 +86,11 @@ export function LayersProvider({
     saveOpacity,
   } = useAppliedLayers();
 
-  const { focusLayer: focusLayerAt, focusPendingIds } = useLayerFocus();
+  const {
+    focusLayer: focusLayerAt,
+    focusPendingIds,
+    focusErrors,
+  } = useLayerFocus();
 
   const appliedObjectNames = useMemo(
     () =>
@@ -120,6 +132,17 @@ export function LayersProvider({
       map.off("zoom", sync);
     };
   }, [map, floors]);
+
+  const beyondReachIds = useMemo(
+    () =>
+      new Set(
+        floors
+          .filter(({ floor }) => isBeyondMapZoom(floor))
+          .map(({ id }) => id),
+      ),
+    [floors],
+  );
+
 
   const {
     favourites,
@@ -168,8 +191,12 @@ export function LayersProvider({
       const drawn = painted.get(layer.id);
       painted.set(layer.id, opacity);
 
-      if (drawn === undefined) showWmsLayer(map, layer, opacity);
-      else if (drawn !== opacity) setWmsLayerOpacity(map, layer.id, opacity);
+      if (drawn === undefined) {
+        showWmsLayer(map, layer, opacity);
+        showOutlineLayer(map, layer);
+      } else if (drawn !== opacity) {
+        setWmsLayerOpacity(map, layer.id, opacity);
+      }
     }
 
     const applied = new Set(appliedLayers.map((layer) => layer.id));
@@ -177,6 +204,7 @@ export function LayersProvider({
       if (applied.has(layerId)) continue;
       painted.delete(layerId);
       hideWmsLayer(map, layerId);
+      hideOutlineLayer(map, layerId);
     }
   }, [map, appliedLayers]);
 
@@ -186,7 +214,9 @@ export function LayersProvider({
     for (const layer of appliedLayers) {
       if (!layer.objectName) continue;
       const minZoom = minZooms[layer.objectName];
-      if (minZoom !== undefined) setWmsLayerMinZoom(map, layer.id, minZoom);
+      if (minZoom === undefined) continue;
+      setWmsLayerMinZoom(map, layer.id, minZoom);
+      setOutlineLayerMaxZoom(map, layer.id, minZoom);
     }
   }, [map, appliedLayers, minZooms]);
 
@@ -271,8 +301,10 @@ export function LayersProvider({
       retryApplied,
       pendingIds,
       focusPendingIds,
+      focusErrors,
       focusLayer,
       belowFloorIds,
+      beyondReachIds,
       favourites,
       favouritesPending,
       favouritesError,
@@ -295,8 +327,10 @@ export function LayersProvider({
       retryApplied,
       pendingIds,
       focusPendingIds,
+      focusErrors,
       focusLayer,
       belowFloorIds,
+      beyondReachIds,
       favourites,
       favouritesPending,
       favouritesError,

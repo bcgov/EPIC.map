@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   layersBelowFloor,
   type LayerFloor,
-} from "@/components/Layers/layerFloors";
+} from "@/components/Layers/layerUtils";
+import { isBeyondMapZoom, MAX_ZOOM } from "@/utils/config";
 
 // Real published floors: parks draw from z5, reserves z8, lakes z11.
 const floors: LayerFloor[] = [
@@ -85,5 +86,17 @@ describe("layersBelowFloor", () => {
     }
 
     expect([...current]).toEqual([]);
+  });
+});
+
+describe("isBeyondMapZoom", () => {
+  it("tells a floor the map can reach from one it cannot", () => {
+    // A layer published from 1:50,000 draws at z13, well inside the map.
+    expect(isBeyondMapZoom(13)).toBe(false);
+    // The furthest the map goes still counts as reachable.
+    expect(isBeyondMapZoom(MAX_ZOOM)).toBe(false);
+    // Past it there is no gesture that brings the layer on screen, so the row
+    // must not offer to zoom there.
+    expect(isBeyondMapZoom(MAX_ZOOM + 1)).toBe(true);
   });
 });
