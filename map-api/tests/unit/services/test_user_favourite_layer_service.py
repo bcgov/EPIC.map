@@ -18,7 +18,8 @@ from map_api.exceptions import BadRequestError, UnprocessableEntityError
 from map_api.models.user_favourite_layer import UserFavouriteLayer
 from map_api.services.user_favourite_layer_service import UserFavouriteLayerService
 from tests.utilities.factory_utils import (
-    SECOND_AUTH_GUID, SECOND_IDIR_USERNAME, bcdc_layer_payload, factory_favourite_layer, factory_user)
+    SECOND_AUTH_GUID, SECOND_IDIR_USERNAME, bcdc_layer_payload, factory_favourite_folder, factory_favourite_layer,
+    factory_user)
 
 
 OTHER_OBJECT = 'WHSE_FOREST_TENURE.FTEN_RANGE_POLY_SVW'
@@ -128,3 +129,90 @@ def test_reorder_favourites_rejects_another_users_id(app, session):
 
     with pytest.raises(BadRequestError):
         UserFavouriteLayerService.reorder_favourites(user.id, [theirs.id])
+
+
+def test_move_favourite_files_it_into_a_folder(app, session):
+    """The layer is in the folder it was dropped on."""
+    user = factory_user()
+    folder = factory_favourite_folder(user.id)
+    favourite = factory_favourite_layer(user.id)
+
+    moved = UserFavouriteLayerService.move_favourite(favourite.id, user.id, folder.id)
+
+    assert moved.folder_id == folder.id
+
+
+def test_move_favourite_to_the_top_level(app, session):
+    """None is the top level, so a layer can always come back out."""
+    user = factory_user()
+    folder = factory_favourite_folder(user.id)
+    favourite = factory_favourite_layer(user.id, folder_id=folder.id)
+
+    moved = UserFavouriteLayerService.move_favourite(favourite.id, user.id, None)
+
+    assert moved.folder_id is None
+
+
+def test_move_favourite_refuses_an_unknown_folder(app, session):
+    """A folder deleted in another tab is a bad request, not a layer filed nowhere."""
+    user = factory_user()
+    favourite = factory_favourite_layer(user.id)
+
+    with pytest.raises(BadRequestError):
+        UserFavouriteLayerService.move_favourite(favourite.id, user.id, 999999)
+
+
+def test_move_favourite_refuses_another_users_folder(app, session):
+    """Refused the same way as an unknown folder, so nothing is confirmed."""
+    owner = factory_user(auth_guid=SECOND_AUTH_GUID, username=SECOND_IDIR_USERNAME)
+    user = factory_user()
+    theirs = factory_favourite_folder(owner.id)
+    favourite = factory_favourite_layer(user.id)
+
+    with pytest.raises(BadRequestError):
+        UserFavouriteLayerService.move_favourite(favourite.id, user.id, theirs.id)
+
+
+def test_move_favourite_refuses_another_users_favourite(app, session):
+    """None rather than an exception: the resource decides what to say."""
+    owner = factory_user(auth_guid=SECOND_AUTH_GUID, username=SECOND_IDIR_USERNAME)
+    user = factory_user()
+    theirs = factory_favourite_layer(owner.id)
+    folder = factory_favourite_folder(user.id)
+
+    assert UserFavouriteLayerService.move_favourite(theirs.id, user.id, folder.id) is None
+    assert theirs.folder_id is None
+
+
+def test_reorder_favourites_is_scoped_to_one_folder(app, session):
+    """The ids must be that folder's, not every favourite the user has."""
+    user = factory_user()
+    folder = factory_favourite_folder(user.id)
+    factory_favourite_layer(user.id)
+    filed = factory_favourite_layer(user.id, object_name=OTHER_OBJECT, folder_id=folder.id)
+
+    rows = UserFavouriteLayerService.reorder_favourites(user.id, [filed.id], folder.id)
+
+    assert [row.id for row in rows] == [filed.id]
+
+
+def test_reorder_favourites_rejects_an_id_from_another_container(app, session):
+    """A reorder cannot move a layer between folders; that is a move."""
+    user = factory_user()
+    folder = factory_favourite_folder(user.id)
+    top_level = factory_favourite_layer(user.id)
+    filed = factory_favourite_layer(user.id, object_name=OTHER_OBJECT, folder_id=folder.id)
+
+    with pytest.raises(BadRequestError):
+        UserFavouriteLayerService.reorder_favourites(user.id, [filed.id, top_level.id], folder.id)
+
+
+def test_reorder_favourites_rejects_another_users_folder(app, session):
+    """Refused before any position is written."""
+    owner = factory_user(auth_guid=SECOND_AUTH_GUID, username=SECOND_IDIR_USERNAME)
+    user = factory_user()
+    theirs = factory_favourite_folder(owner.id)
+    favourite = factory_favourite_layer(user.id)
+
+    with pytest.raises(BadRequestError):
+        UserFavouriteLayerService.reorder_favourites(user.id, [favourite.id], theirs.id)

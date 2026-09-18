@@ -31,6 +31,7 @@ from .apihelper import Api
 from .ops import API as OPS_API
 from .user import API as USER_API
 from .user_applied_layer import API as APPLIED_LAYER_API
+from .user_favourite_folder import API as FAVOURITE_FOLDER_API
 from .user_favourite_layer import API as FAVOURITE_API
 
 
@@ -88,5 +89,7 @@ API.init_app(API_BLUEPRINT, add_specs=DOCS_ENABLED)
 API.add_namespace(USER_API)
 # Mounted under /users/me so the path says whose layers these are.
 API.add_namespace(APPLIED_LAYER_API, path='/users/me/layers')
-# Folders land under this path too, as /users/me/favourites/folders.
 API.add_namespace(FAVOURITE_API, path='/users/me/favourites')
+# Folders sit under the favourites path: 'folders' is not an int, so it cannot
+# be confused with /users/me/favourites/<favourite_id>.
+API.add_namespace(FAVOURITE_FOLDER_API, path='/users/me/favourites/folders')

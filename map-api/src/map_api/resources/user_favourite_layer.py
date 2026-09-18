@@ -18,8 +18,10 @@ from http import HTTPStatus
 from flask_restx import Namespace, Resource
 
 from map_api.auth import auth
+from map_api.exceptions import ResourceNotFoundError
 from map_api.schemas.user_favourite_layer import (
-    UserFavouriteLayerOrderSchema, UserFavouriteLayerRequestSchema, UserFavouriteLayerSchema)
+    UserFavouriteLayerOrderSchema, UserFavouriteLayerRequestSchema, UserFavouriteLayerSchema,
+    UserFavouriteLayerUpdateSchema)
 from map_api.services.user_favourite_layer_service import UserFavouriteLayerService
 from map_api.services.user_service import UserService
 from map_api.utils.util import cors_preflight
@@ -39,6 +41,9 @@ favourite_request_model = ApiHelper.convert_ma_schema_to_restx_model(
 )
 favourite_order_model = ApiHelper.convert_ma_schema_to_restx_model(
     API, UserFavouriteLayerOrderSchema(), 'FavouriteOrder'
+)
+favourite_update_model = ApiHelper.convert_ma_schema_to_restx_model(
+    API, UserFavouriteLayerUpdateSchema(), 'FavouriteUpdate'
 )
 
 
@@ -95,24 +100,51 @@ class FavouritesOrder(Resource):
     @API.response(code=200, model=[favourite_model], description='Success')
     @API.response(400, 'Bad Request')
     def put():
-        """Put the favourites in the order given and return the whole list.
+        """Put one container's favourites in the order given and return it.
 
-        The body carries every favourite id. The
-        result does not depend on what the client sent before.
+        The body carries every favourite id in the container - a folder, or the
+        top level when `folder_id` is absent. The result does not depend on what
+        the client sent before.
         """
         payload = UserFavouriteLayerOrderSchema().load(API.payload)
         user = UserService.current_user()
         favourites = UserFavouriteLayerService.reorder_favourites(
-            user.id, payload['favourite_ids']
+            user.id, payload['favourite_ids'], payload['folder_id']
         )
         return UserFavouriteLayerSchema(many=True).dump(favourites), HTTPStatus.OK
 
 
-@cors_preflight('OPTIONS, DELETE')
-@API.route('/<int:favourite_id>', methods=['DELETE', 'OPTIONS'])
+@cors_preflight('OPTIONS, PATCH, DELETE')
+@API.route('/<int:favourite_id>', methods=['PATCH', 'DELETE', 'OPTIONS'])
 @API.doc(params={'favourite_id': 'The favourite identifier'})
 class Favourite(Resource):
     """One favourite layer."""
+
+    @staticmethod
+    @auth.require
+    @ApiHelper.swagger_decorators(
+        API, endpoint_description='Move a favourite into a folder or out of one'
+    )
+    @API.expect(favourite_update_model)
+    @API.response(code=200, model=favourite_model, description='Success')
+    @API.response(400, 'Bad Request')
+    @API.response(404, 'Not Found')
+    def patch(favourite_id):
+        """File a favourite into a folder, or back out to the top level.
+
+        One request per drop: a layer is in one folder at a time, so arriving in
+        a folder is what takes it out of the one it was in. `folder_id` null is
+        the top level. The layer lands at the top of wherever it arrives; a drag
+        within a container is a PUT on /order.
+        """
+        payload = UserFavouriteLayerUpdateSchema().load(API.payload)
+        user = UserService.current_user()
+        favourite = UserFavouriteLayerService.move_favourite(
+            favourite_id, user.id, payload['folder_id']
+        )
+        if not favourite:
+            raise ResourceNotFoundError(f'Favourite {favourite_id} not found')
+        return UserFavouriteLayerSchema().dump(favourite), HTTPStatus.OK
 
     @staticmethod
     @auth.require

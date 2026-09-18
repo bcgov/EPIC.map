@@ -14,7 +14,8 @@
 """Tests for the favourite layer model."""
 from map_api.models.user_favourite_layer import UserFavouriteLayer
 from tests.utilities.factory_utils import (
-    SECOND_AUTH_GUID, SECOND_IDIR_USERNAME, bcdc_layer_payload, factory_favourite_layer, factory_user)
+    SECOND_AUTH_GUID, SECOND_IDIR_USERNAME, bcdc_layer_payload, factory_favourite_folder, factory_favourite_layer,
+    factory_user)
 
 
 OTHER_OBJECT = 'WHSE_FOREST_TENURE.FTEN_RANGE_POLY_SVW'
@@ -107,7 +108,7 @@ def test_reorder_renumbers_the_list_from_one(app, session):
     second = factory_favourite_layer(user.id, object_name=OTHER_OBJECT)
     third = factory_favourite_layer(user.id, object_name=THIRD_OBJECT)
 
-    reordered = UserFavouriteLayer.reorder(user.id, [third.id, first.id, second.id])
+    reordered = UserFavouriteLayer.reorder_in_folder(user.id, [third.id, first.id, second.id])
 
     assert [row.id for row in reordered] == [third.id, first.id, second.id]
     assert [row.sort_order for row in reordered] == [1, 2, 3]
@@ -121,7 +122,122 @@ def test_reorder_leaves_another_users_list_alone(app, session):
     first = factory_favourite_layer(user.id)
     second = factory_favourite_layer(user.id, object_name=OTHER_OBJECT)
 
-    UserFavouriteLayer.reorder(user.id, [second.id, first.id])
+    UserFavouriteLayer.reorder_in_folder(user.id, [second.id, first.id])
 
     session.refresh(theirs)
     assert theirs.sort_order == 7
+
+
+def test_a_new_favourite_is_not_in_a_folder(app, session):
+    """Starring files nothing: a layer arrives at the top level."""
+    user = factory_user()
+
+    favourite, _ = UserFavouriteLayer.add_favourite(user.id, bcdc_layer_payload())
+
+    assert favourite.folder_id is None
+
+
+def test_move_to_folder_takes_the_layer_out_of_the_one_before(app, session):
+    """Membership is a single column, so one folder at a time is structural."""
+    user = factory_user()
+    first = factory_favourite_folder(user.id, name='Wildfire')
+    second = factory_favourite_folder(user.id, name='Roads')
+    favourite = factory_favourite_layer(user.id)
+
+    UserFavouriteLayer.move_to_folder(favourite, first.id)
+    UserFavouriteLayer.move_to_folder(favourite, second.id)
+
+    assert UserFavouriteLayer.find_ids_in_folder(user.id, first.id) == []
+    assert UserFavouriteLayer.find_ids_in_folder(user.id, second.id) == [favourite.id]
+
+
+def test_a_layer_arriving_in_a_folder_leads_it(app, session):
+    """A dropped layer is the one the user just placed, so it is on top."""
+    user = factory_user()
+    folder = factory_favourite_folder(user.id)
+    first = factory_favourite_layer(user.id)
+    second = factory_favourite_layer(user.id, object_name=OTHER_OBJECT)
+
+    UserFavouriteLayer.move_to_folder(first, folder.id)
+    UserFavouriteLayer.move_to_folder(second, folder.id)
+
+    assert UserFavouriteLayer.find_ids_in_folder(user.id, folder.id) == [
+        second.id, first.id,
+    ]
+
+
+def test_positions_are_per_container(app, session):
+    """Two containers both start at 1; a position only compares inside one."""
+    user = factory_user()
+    folder = factory_favourite_folder(user.id)
+    top_level = factory_favourite_layer(user.id)
+    filed = factory_favourite_layer(user.id, object_name=OTHER_OBJECT)
+
+    UserFavouriteLayer.move_to_folder(filed, folder.id)
+
+    assert filed.sort_order == 1
+    assert top_level.sort_order == 1
+
+
+def test_the_top_level_does_not_include_what_is_in_folders(app, session):
+    """A null folder_id is the top level, not "any folder"."""
+    user = factory_user()
+    folder = factory_favourite_folder(user.id)
+    top_level = factory_favourite_layer(user.id)
+    filed = factory_favourite_layer(user.id, object_name=OTHER_OBJECT)
+    UserFavouriteLayer.move_to_folder(filed, folder.id)
+
+    assert UserFavouriteLayer.find_ids_in_folder(user.id) == [top_level.id]
+
+
+def test_emptying_a_folder_returns_the_layers_to_the_top_level(app, session):
+    """Ungrouping keeps what is starred and only changes where it sits."""
+    user = factory_user()
+    folder = factory_favourite_folder(user.id)
+    first = factory_favourite_layer(user.id)
+    second = factory_favourite_layer(user.id, object_name=OTHER_OBJECT)
+    for favourite in (first, second):
+        UserFavouriteLayer.move_to_folder(favourite, folder.id)
+
+    moved = UserFavouriteLayer.empty_folder(user.id, folder.id)
+
+    assert {row.id for row in moved} == {first.id, second.id}
+    assert UserFavouriteLayer.find_ids_in_folder(user.id, folder.id) == []
+    assert UserFavouriteLayer.count_for_user(user.id) == 2
+
+
+def test_ungrouped_layers_land_below_the_top_level(app, session):
+    """The list the user was looking at keeps its order; the arrivals follow."""
+    user = factory_user()
+    folder = factory_favourite_folder(user.id)
+    staying = factory_favourite_layer(user.id)
+    filed = factory_favourite_layer(user.id, object_name=OTHER_OBJECT)
+    UserFavouriteLayer.move_to_folder(filed, folder.id)
+
+    UserFavouriteLayer.empty_folder(user.id, folder.id)
+
+    assert UserFavouriteLayer.find_ids_in_folder(user.id) == [staying.id, filed.id]
+
+
+def test_emptying_an_empty_folder_moves_nothing(app, session):
+    """A folder with no layers is not a special case worth an error."""
+    user = factory_user()
+    folder = factory_favourite_folder(user.id)
+
+    assert UserFavouriteLayer.empty_folder(user.id, folder.id) == []
+
+
+def test_reorder_renumbers_only_the_container_it_was_given(app, session):
+    """A drag inside a folder leaves the top level where it was."""
+    user = factory_user()
+    folder = factory_favourite_folder(user.id)
+    top_level = factory_favourite_layer(user.id, sort_order=7)
+    first = factory_favourite_layer(user.id, object_name=OTHER_OBJECT)
+    second = factory_favourite_layer(user.id, object_name=THIRD_OBJECT)
+    for favourite in (first, second):
+        UserFavouriteLayer.move_to_folder(favourite, folder.id)
+
+    rows = UserFavouriteLayer.reorder_in_folder(user.id, [first.id, second.id], folder.id)
+
+    assert [row.sort_order for row in rows] == [1, 2]
+    assert top_level.sort_order == 7

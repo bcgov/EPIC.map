@@ -35,6 +35,7 @@ class UserFavouriteLayerSchema(Schema):
     package_id = fields.Str(data_key='package_id')
     object_name = fields.Str(data_key='object_name')
     display_name = fields.Str(data_key='display_name')
+    folder_id = fields.Int(data_key='folder_id', allow_none=True)
     sort_order = fields.Int(data_key='sort_order')
     created_date = fields.DateTime(data_key='created_date')
     updated_date = fields.DateTime(data_key='updated_date')
@@ -62,11 +63,32 @@ class UserFavouriteLayerRequestSchema(Schema):
     )
 
 
+class UserFavouriteLayerUpdateSchema(Schema):
+    """Where a favourite lives: a folder, or the top level.
+
+    `folder_id` is required and nullable rather than optional, so a client
+    always says which container it means - null is "the top level", not
+    "leave it where it is".
+    """
+
+    class Meta:  # pylint: disable=too-few-public-methods
+        """Exclude unknown fields in the deserialized output."""
+
+        unknown = EXCLUDE
+
+    folder_id = fields.Int(data_key='folder_id', required=True, allow_none=True)
+
+
 class UserFavouriteLayerOrderSchema(Schema):
-    """The new order of a user's favourites, as a complete list of ids.
+    """The new order of one container's favourites, as a complete list of ids.
 
     The whole list rather than one moved id: a drag is then one request.
     Required and non empty. An empty PUT is a 400.
+
+    `folder_id` names the container being reordered and defaults to the top
+    level, so a client with no folders sends what it always sent. Positions
+    only ever compare inside one container, so a reorder cannot move a layer
+    between them - that is a PATCH on the favourite.
     """
 
     class Meta:  # pylint: disable=too-few-public-methods
@@ -77,4 +99,7 @@ class UserFavouriteLayerOrderSchema(Schema):
     favourite_ids = fields.List(
         fields.Int(), data_key='favourite_ids', required=True,
         validate=validate.Length(min=1),
+    )
+    folder_id = fields.Int(
+        data_key='folder_id', load_default=None, allow_none=True
     )
