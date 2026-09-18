@@ -111,6 +111,10 @@ spec:
               value: {{ .Values.database.service.name }}
             - name: DATABASE_PORT
               value: "{{ .Values.database.service.port }}"
+            - name: GUNICORN_PROCESSES
+              value: "{{ .Values.gunicorn.processes }}"
+            - name: GUNICORN_THREADS
+              value: "{{ .Values.gunicorn.threads }}"
           envFrom:
             - configMapRef:
                 name: {{ .Chart.Name }}

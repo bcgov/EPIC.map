@@ -28,6 +28,7 @@ from flask import Blueprint
 from map_api.config import PRODUCTION_LIKE_ENVIRONMENTS
 
 from .apihelper import Api
+from .catalogue_layer import API as CATALOGUE_LAYER_API
 from .ops import API as OPS_API
 from .user import API as USER_API
 from .user_applied_layer import API as APPLIED_LAYER_API
@@ -88,5 +89,6 @@ API.init_app(API_BLUEPRINT, add_specs=DOCS_ENABLED)
 API.add_namespace(USER_API)
 # Mounted under /users/me so the path says whose layers these are.
 API.add_namespace(APPLIED_LAYER_API, path='/users/me/layers')
+API.add_namespace(CATALOGUE_LAYER_API, path='/catalogue/layers')
 # Folders land under this path too, as /users/me/favourites/folders.
 API.add_namespace(FAVOURITE_API, path='/users/me/favourites')
