@@ -12,6 +12,10 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import { useAppliedLayers, type AppliedLayer } from "@/api/useAppliedLayers";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
+  useFavouriteLayers,
+  type FavouriteLayer,
+} from "@/api/useFavouriteLayers";
+import {
   hideWmsLayer,
   setWmsLayerOpacity,
   showWmsLayer,
@@ -28,7 +32,13 @@ interface LayersContextValue {
   retryApplied: () => void;
   /** Ids with a call in flight, whose switch is held until it lands. */
   pendingIds: ReadonlySet<string>;
-  favourites: readonly CatalogueLayer[];
+  /** The layers map-api has starred for this user, newest first. */
+  favourites: readonly FavouriteLayer[];
+  favouritesPending: boolean;
+  favouritesError: unknown;
+  retryFavourites: () => void;
+  /** Ids with a star call in flight, whose star is held until it lands. */
+  favouritePendingIds: ReadonlySet<string>;
   expandedId: string | null;
   opacities: Readonly<Record<string, number>>;
   atVisibleLimit: boolean;
@@ -58,7 +68,16 @@ export function LayersProvider({
     saveOpacity,
   } = useAppliedLayers();
 
-  const [favourites, setFavourites] = useState<readonly CatalogueLayer[]>([]);
+  const {
+    favourites,
+    isPending: favouritesPending,
+    error: favouritesError,
+    pendingIds: favouritePendingIds,
+    retry: retryFavouritesQuery,
+    addFavourite,
+    removeFavourite,
+  } = useFavouriteLayers();
+
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [opacityDrafts, setOpacityDrafts] = useState<
@@ -125,13 +144,22 @@ export function LayersProvider({
     [pendingIds, visibleIds, applyLayer, removeLayer],
   );
 
-  const toggleFavourite = useCallback((layer: CatalogueLayer) => {
-    setFavourites((current) =>
-      current.some((favourite) => favourite.id === layer.id)
-        ? current.filter((favourite) => favourite.id !== layer.id)
-        : [...current, layer],
-    );
-  }, []);
+  const favouriteIds = useMemo(
+    () => new Set(favourites.map((favourite) => favourite.id)),
+    [favourites],
+  );
+
+  const toggleFavourite = useCallback(
+    (layer: CatalogueLayer) => {
+      if (favouritePendingIds.has(layer.id)) return;
+      if (favouriteIds.has(layer.id)) {
+        removeFavourite(layer.id);
+        return;
+      }
+      addFavourite(layer);
+    },
+    [favouritePendingIds, favouriteIds, addFavourite, removeFavourite],
+  );
 
   const setOpacity = useCallback(
     (layerId: string, percent: number) => {
@@ -156,6 +184,10 @@ export function LayersProvider({
     retry();
   }, [retry]);
 
+  const retryFavourites = useCallback(() => {
+    retryFavouritesQuery();
+  }, [retryFavouritesQuery]);
+
   const atVisibleLimit = visibleIds.size >= MAX_VISIBLE_LAYERS;
 
   const value = useMemo(
@@ -168,6 +200,10 @@ export function LayersProvider({
       retryApplied,
       pendingIds,
       favourites,
+      favouritesPending,
+      favouritesError,
+      retryFavourites,
+      favouritePendingIds,
       expandedId,
       opacities,
       atVisibleLimit,
@@ -185,6 +221,10 @@ export function LayersProvider({
       retryApplied,
       pendingIds,
       favourites,
+      favouritesPending,
+      favouritesError,
+      retryFavourites,
+      favouritePendingIds,
       expandedId,
       opacities,
       atVisibleLimit,

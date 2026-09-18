@@ -23,6 +23,7 @@ from flask import g
 from map_api.config import get_named_config
 from map_api.models.user import User as UserModel
 from map_api.models.user_applied_layer import UserAppliedLayer as UserAppliedLayerModel
+from map_api.models.user_favourite_layer import UserFavouriteLayer as UserFavouriteLayerModel
 from map_api.utils.constant import DEFAULT_LAYER_OPACITY, LAYER_SOURCE_BCDC
 
 
@@ -108,7 +109,11 @@ def factory_user(auth_guid=TEST_AUTH_GUID, username=TEST_IDIR_USERNAME, **overri
 
 
 def bcdc_layer_payload(**overrides):
-    """Return a valid POST body for applying a catalogue layer."""
+    """Return a valid POST body for a catalogue layer.
+
+    Shared by applied layers and favourites: both reference a catalogue layer
+    by the same identifiers, so there is one canonical payload.
+    """
     payload = {
         'package_id': '0a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d',
         'object_name': 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES',
@@ -139,3 +144,25 @@ def factory_applied_layer(user_id, **overrides):
     )
     layer.save()
     return layer
+
+
+def factory_favourite_layer(user_id, **overrides):
+    """Return a committed favourite layer row for a user."""
+    data = bcdc_layer_payload(**{
+        k: overrides.pop(k)
+        for k in ('package_id', 'object_name', 'display_name')
+        if k in overrides
+    })
+    favourite = UserFavouriteLayerModel(
+        user_id=user_id,
+        source=overrides.pop('source', LAYER_SOURCE_BCDC),
+        package_id=data['package_id'],
+        object_name=data['object_name'],
+        display_name=data['display_name'],
+        sort_order=overrides.pop(
+            'sort_order', UserFavouriteLayerModel.next_sort_order(user_id)
+        ),
+        **overrides,
+    )
+    favourite.save()
+    return favourite

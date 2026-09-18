@@ -151,3 +151,6 @@ node_modules/
 # needs is a per-machine choice, so it stays out of the repo:
 #   -P ubuntu-24.04=catthehacker/ubuntu:act-latest
 .actrc
+
+# Local docker-compose port overrides (per-machine, not shared)
+docker-compose.override.yml

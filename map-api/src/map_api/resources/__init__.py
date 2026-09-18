@@ -31,11 +31,12 @@ from .apihelper import Api
 from .ops import API as OPS_API
 from .user import API as USER_API
 from .user_applied_layer import API as APPLIED_LAYER_API
+from .user_favourite_layer import API as FAVOURITE_API
 
 
 __all__ = ('API_BLUEPRINT', 'DOC_PATHS', 'DOCS_ENABLED', 'OPS_BLUEPRINT', 'URL_PREFIX')
 
-URL_PREFIX = '/api/'
+URL_PREFIX = '/api'
 API_BLUEPRINT = Blueprint('API', __name__, url_prefix=URL_PREFIX)
 
 # Health checks live on their own blueprint outside the authenticated API surface,
@@ -69,7 +70,7 @@ DOCS_ENABLED = os.getenv('FLASK_ENV', 'development') not in PRODUCTION_LIKE_ENVI
 
 # The two doc routes, spelled the way request.path reports them, so the
 # authentication hook can let them through where they are registered.
-DOC_PATHS = frozenset({URL_PREFIX.rstrip('/'), f'{URL_PREFIX}swagger.json'})
+DOC_PATHS = frozenset({URL_PREFIX, f'{URL_PREFIX}/swagger.json'})
 
 API = Api(
     title='MAP API',
@@ -87,3 +88,5 @@ API.init_app(API_BLUEPRINT, add_specs=DOCS_ENABLED)
 API.add_namespace(USER_API)
 # Mounted under /users/me so the path says whose layers these are.
 API.add_namespace(APPLIED_LAYER_API, path='/users/me/layers')
+# Folders land under this path too, as /users/me/favourites/folders.
+API.add_namespace(FAVOURITE_API, path='/users/me/favourites')

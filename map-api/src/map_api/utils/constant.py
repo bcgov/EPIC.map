@@ -43,3 +43,6 @@ MAX_LAYER_OPACITY = 100
 
 # Max layers per map for performance
 MAX_APPLIED_LAYERS_PER_MAP = 50
+
+# Favourites are a bookmark list, not layers drawn on the map
+MAX_FAVOURITE_LAYERS = 200
