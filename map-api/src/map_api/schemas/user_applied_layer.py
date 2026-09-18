@@ -32,7 +32,6 @@ _PACKAGE_ID_PATTERN = (
 )
 
 
-
 class UserAppliedLayerSchema(Schema):
     """One layer the user currently has on the map."""
 
