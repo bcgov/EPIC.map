@@ -7,6 +7,8 @@ on:
       - develop
     paths:
       - "map-web/**"
+      # Trigger on widget update until we swtich to module federattion
+      - "packages/epic-map/**" 
   # No environment input: this workflow only ever builds and tags dev. test and
   # prod are reached by promoting an existing image in deploy.yml.
   workflow_dispatch:
@@ -31,6 +33,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install OpenShift CLI
+        run: |
+          curl -sLO "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/openshift-client-linux.tar.gz"
+          tar -xzf openshift-client-linux.tar.gz oc
+          sudo mv oc /usr/local/bin/
+          rm -f openshift-client-linux.tar.gz
 
       - name: Login Openshift
         shell: bash

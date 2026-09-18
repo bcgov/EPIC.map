@@ -169,3 +169,6 @@ WMS_MAX_LAYER_MIN_ZOOM = 24
 # published style, which is revised on the scale of months, so this leans long -
 # it is the difference between one GetCapabilities per layer and one per press.
 LAYER_MIN_ZOOM_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+
+# Favourites are a bookmark list, not layers drawn on the map
+MAX_FAVOURITE_LAYERS = 200
