@@ -8,6 +8,7 @@ const row = {
   package_id: "0c1c0e2d-6a5e-4d9d-9c3f-1e2b3c4d5e6f",
   object_name: "WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES",
   display_name: "Indian Reserves",
+  folder_id: null,
   sort_order: 1,
 };
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import {
   Box,
   Collapse,
@@ -7,6 +7,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import CircularProgress from "@mui/material/CircularProgress";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
@@ -16,6 +17,8 @@ import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import { useTheme, type Theme } from "@mui/material/styles";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import HighlightedName from "@/components/Layers/HighlightedName";
+import { setLiftedDragImage } from "@/components/Layers/Favourites/dragImage";
+import { startFavouriteDrag } from "@/components/Layers/Favourites/favouriteDrag";
 import LayerInfo from "@/components/Layers/LayerInfo";
 import { useLayers } from "@/components/Layers/LayersContext";
 import { MAX_VISIBLE_LAYERS } from "@/utils/config";
@@ -73,16 +76,22 @@ type LayerRowProps = {
   layer: CatalogueLayer;
   /** Highlighted within the name. Pass "" outside a search context. */
   query?: string;
+  /** Favourites only: a catalogue result is filed nowhere, so it has no grip. */
+  draggable?: boolean;
 };
 
 /**
  * One layer in the panel: visibility toggle, name, star, actions menu, expand
  * chevron.
  *
- * Shared by the catalogue results and Favourites. The catalogue has no drag
- * handle - reordering belongs to Favourites, and lands with that ticket.
+ * Shared by the catalogue results and Favourites. Only a Favourites row drags:
+ * a catalogue result belongs to no list, so there is nowhere to drop it.
  */
-export default function LayerRow({ layer, query = "" }: LayerRowProps) {
+export default function LayerRow({
+  layer,
+  query = "",
+  draggable = false,
+}: LayerRowProps) {
   const theme = useTheme();
   const {
     visibleIds,
@@ -156,6 +165,7 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
   // The tooltip is only useful where the clamp actually cut the name off.
   const nameRef = useRef<HTMLSpanElement | null>(null);
   const [clamped, setClamped] = useState(false);
+  const [dragging, setDragging] = useState(false);
   useEffect(() => {
     const element = nameRef.current;
     if (element) setClamped(element.scrollHeight > element.clientHeight + 1);
@@ -197,6 +207,25 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
       </Typography>
     </Box>
   );
+
+  // The whole row is the drag surface; the grip is the cue, not the handle.
+  const dragProps = draggable
+    ? {
+        draggable: true,
+        onDragStart: (event: DragEvent<HTMLDivElement>) => {
+          startFavouriteDrag(event.dataTransfer, layer.id);
+          setLiftedDragImage(event, {
+            background: theme.palette.background.paper,
+            boxShadow: theme.shadows[3],
+            borderRadius: `${theme.shape.borderRadius}px`,
+          });
+          // Deferred a frame: restyling the source inside dragstart aborts
+          // the drag in some browsers.
+          requestAnimationFrame(() => setDragging(true));
+        },
+        onDragEnd: () => setDragging(false),
+      }
+    : {};
 
   const hintSx = {
     display: "flex",
@@ -278,14 +307,41 @@ export default function LayerRow({ layer, query = "" }: LayerRowProps) {
   return (
     <Box component="li" sx={{ listStyle: "none" }}>
       <Box
+        {...dragProps}
         sx={{
           display: "flex",
           alignItems: "center",
           gap: "0.5rem",
           padding: "0.25rem 1rem",
+          cursor: draggable ? "grab" : "default",
+          // Lifts off the panel rather than fading: this is the row in hand.
+          borderRadius: `${theme.shape.borderRadius}px`,
+          ...(dragging && {
+            backgroundColor: theme.palette.background.paper,
+            boxShadow: theme.shadows[3],
+          }),
           "&:hover": { backgroundColor: theme.palette.grey[50] },
+          "&:hover .epic-map-grip, &:focus-within .epic-map-grip": {
+            opacity: 1,
+          },
         }}
       >
+        {draggable && (
+          <DragIndicatorIcon
+            aria-hidden
+            className="epic-map-grip"
+            sx={{
+              flexShrink: 0,
+              marginLeft: "-0.5rem",
+              fontSize: "1.125rem",
+              color: theme.palette.text.disabled,
+              // Space is held either way, so the row does not jump on hover.
+              opacity: dragging ? 1 : 0,
+              transition: theme.transitions.create("opacity"),
+            }}
+          />
+        )}
+
         {toggleNote ? (
           <Tooltip title={toggleNote}>
             <Box component="span" sx={{ display: "inline-flex" }}>

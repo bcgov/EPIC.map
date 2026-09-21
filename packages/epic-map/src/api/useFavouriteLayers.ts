@@ -2,12 +2,13 @@ import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import { CATALOGUE_DATASET_URL } from "@/utils/config";
+import { isPendingId, nextPendingId } from "@/api/pendingIds";
 import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 
 const FAVOURITES_PATH = "/users/me/favourites";
 
-const FAVOURITES_KEY = epicMapQueryKey("users", "me", "favourites");
+export const FAVOURITES_KEY = epicMapQueryKey("users", "me", "favourites");
 
 /** Shared by both toggles, so each can tell whether the other is still out. */
 const TOGGLE_MUTATION_KEY = epicMapQueryKey(
@@ -23,19 +24,19 @@ interface FavouriteLayerResponse {
   package_id: string;
   object_name: string;
   display_name: string;
+  folder_id: number | null;
   sort_order: number;
 }
 
 export interface FavouriteLayer extends CatalogueLayer {
   /** Primary key of the row. */
   favouriteId: number;
+  /** The folder it is filed in, or null for the top level. */
+  folderId: number | null;
 }
 
 /** A layer with something to draw. The API rejects one without. */
 type MappableLayer = CatalogueLayer & { objectName: string };
-
-/** Stands in for the row id between the star filling and the POST returning. */
-const PENDING_FAVOURITE_ID = -1;
 
 const NO_FAVOURITES: readonly FavouriteLayer[] = [];
 
@@ -50,6 +51,7 @@ export const toFavouriteLayer = (
   description: null,
   metadataUrl: `${CATALOGUE_DATASET_URL}/${row.package_id}`,
   favouriteId: row.id,
+  folderId: row.folder_id ?? null,
 });
 
 /**
@@ -133,7 +135,7 @@ export const useFavouriteLayers = () => {
       const previous = readCache();
       // Prepended, matching where map-api puts it.
       writeCache([
-        { ...layer, favouriteId: PENDING_FAVOURITE_ID },
+        { ...layer, favouriteId: nextPendingId(), folderId: null },
         ...previous.filter((entry) => entry.id !== layer.id),
       ]);
       return { previous };
@@ -176,6 +178,41 @@ export const useFavouriteLayers = () => {
     },
   });
 
+  const { mutate: moveMutate } = useMutation({
+    mutationFn: async ({
+      favourite,
+      folderId,
+    }: {
+      favourite: FavouriteLayer;
+      folderId: number | null;
+    }) => {
+      const response = await api.patch<FavouriteLayerResponse>(
+        `${FAVOURITES_PATH}/${favourite.favouriteId}`,
+        { folder_id: folderId },
+      );
+      return response.data;
+    },
+    onMutate: async ({ favourite, folderId }) => {
+      await queryClient.cancelQueries({ queryKey: FAVOURITES_KEY });
+      const previous = readCache();
+      // Moved to the front, so it lands at the top of its new container, where
+      // map-api puts it, rather than jumping there when the refetch lands.
+      const current =
+        previous.find((entry) => entry.id === favourite.id) ?? favourite;
+      writeCache([
+        { ...current, folderId },
+        ...previous.filter((entry) => entry.id !== favourite.id),
+      ]);
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context) writeCache(context.previous);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: FAVOURITES_KEY });
+    },
+  });
+
   const addFavourite = useCallback(
     (layer: CatalogueLayer) => {
       const { objectName } = layer;
@@ -190,10 +227,24 @@ export const useFavouriteLayers = () => {
     (layerId: string) => {
       const favourite = readCache().find((entry) => entry.id === layerId);
       // A star still waiting on its POST has no row id to delete yet.
-      if (!favourite || favourite.favouriteId === PENDING_FAVOURITE_ID) return;
+      if (!favourite || isPendingId(favourite.favouriteId)) return;
       removeMutate(favourite);
     },
     [readCache, removeMutate],
+  );
+
+  const moveFavourite = useCallback(
+    (layerId: string, folderId: number | null) => {
+      const favourite = readCache().find((entry) => entry.id === layerId);
+      // A star still waiting on its POST has no row id to file yet.
+      if (!favourite || isPendingId(favourite.favouriteId)) return;
+      // Nor a folder to file it into until that folder's POST lands.
+      if (isPendingId(folderId)) return;
+      // Dropping a layer back where it already is is not a change.
+      if (favourite.folderId === folderId) return;
+      moveMutate({ favourite, folderId });
+    },
+    [readCache, moveMutate],
   );
 
   const favourites = useMemo(() => data ?? NO_FAVOURITES, [data]);
@@ -206,5 +257,6 @@ export const useFavouriteLayers = () => {
     retry: refetch,
     addFavourite,
     removeFavourite,
+    moveFavourite,
   };
 };

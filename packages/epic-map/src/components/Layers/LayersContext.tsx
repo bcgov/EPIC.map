@@ -14,6 +14,10 @@ import { useLayerFocus } from "@/api/useLayerFocus";
 import { useLayerMinZooms } from "@/api/useLayerMinZooms";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
+  useFavouriteFolders,
+  type FavouriteFolder,
+} from "@/api/useFavouriteFolders";
+import {
   useFavouriteLayers,
   type FavouriteLayer,
 } from "@/api/useFavouriteLayers";
@@ -57,6 +61,21 @@ interface LayersContextValue {
   retryFavourites: () => void;
   /** Ids with a star call in flight, whose star is held until it lands. */
   favouritePendingIds: ReadonlySet<string>;
+  /** The folders the user has filed favourites into, newest first. */
+  folders: readonly FavouriteFolder[];
+  foldersPending: boolean;
+  foldersError: unknown;
+  retryFolders: () => void;
+  createFolder: (name: string) => void;
+  renameFolder: (folderId: number, name: string) => void;
+  setFolderCollapsed: (folderId: number, isCollapsed: boolean) => void;
+  /** Ungroup: removes the folder and moves its layers to the top level. */
+  deleteFolder: (folderId: number) => void;
+  /** Why the last folder change was rolled back, or null. */
+  folderSaveError: string | null;
+  clearFolderSaveError: () => void;
+  /** File a favourite into a folder, or back out to the top level with null. */
+  moveFavourite: (layerId: string, folderId: number | null) => void;
   expandedId: string | null;
   opacities: Readonly<Record<string, number>>;
   atVisibleLimit: boolean;
@@ -152,7 +171,21 @@ export function LayersProvider({
     retry: retryFavouritesQuery,
     addFavourite,
     removeFavourite,
+    moveFavourite,
   } = useFavouriteLayers();
+
+  const {
+    folders,
+    isPending: foldersPending,
+    error: foldersError,
+    retry: retryFoldersQuery,
+    createFolder,
+    renameFolder,
+    setFolderCollapsed,
+    deleteFolder,
+    saveError: folderSaveError,
+    clearSaveError: clearFolderSaveError,
+  } = useFavouriteFolders();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -289,6 +322,10 @@ export function LayersProvider({
     retryFavouritesQuery();
   }, [retryFavouritesQuery]);
 
+  const retryFolders = useCallback(() => {
+    retryFoldersQuery();
+  }, [retryFoldersQuery]);
+
   const atVisibleLimit = visibleIds.size >= MAX_VISIBLE_LAYERS;
 
   const value = useMemo(
@@ -310,6 +347,17 @@ export function LayersProvider({
       favouritesError,
       retryFavourites,
       favouritePendingIds,
+      folders,
+      foldersPending,
+      foldersError,
+      retryFolders,
+      createFolder,
+      renameFolder,
+      setFolderCollapsed,
+      deleteFolder,
+      folderSaveError,
+      clearFolderSaveError,
+      moveFavourite,
       expandedId,
       opacities,
       atVisibleLimit,
@@ -336,6 +384,17 @@ export function LayersProvider({
       favouritesError,
       retryFavourites,
       favouritePendingIds,
+      folders,
+      foldersPending,
+      foldersError,
+      retryFolders,
+      createFolder,
+      renameFolder,
+      setFolderCollapsed,
+      deleteFolder,
+      folderSaveError,
+      clearFolderSaveError,
+      moveFavourite,
       expandedId,
       opacities,
       atVisibleLimit,

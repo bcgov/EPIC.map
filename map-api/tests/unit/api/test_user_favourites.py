@@ -19,13 +19,15 @@ import pytest
 from map_api.models.user import User
 from map_api.models.user_favourite_layer import UserFavouriteLayer
 from tests.utilities.factory_utils import (
-    SECOND_AUTH_GUID, SECOND_IDIR_USERNAME, bcdc_layer_payload, factory_auth_header, factory_favourite_layer,
-    factory_user, idir_claims)
+    SECOND_AUTH_GUID, SECOND_IDIR_USERNAME, bcdc_layer_payload, factory_auth_header, factory_favourite_folder,
+    factory_favourite_layer, factory_user, idir_claims)
 
 
 ENDPOINT = '/api/users/me/favourites'
 ORDER_ENDPOINT = f'{ENDPOINT}/order'
+FOLDERS_ENDPOINT = f'{ENDPOINT}/folders'
 OTHER_OBJECT = 'WHSE_FOREST_TENURE.FTEN_RANGE_POLY_SVW'
+THIRD_OBJECT = 'WHSE_BASEMAPPING.GBA_RAILWAY_TRACKS_SP'
 
 
 def second_user_auth_header(jwt):
@@ -47,12 +49,25 @@ def star(client, headers, **overrides):
     ).json
 
 
+def new_folder(client, headers, **body):
+    """Create a folder and return the response body."""
+    return client.post(FOLDERS_ENDPOINT, json=body, headers=headers).json
+
+
+def move(client, headers, favourite, folder_id):
+    """File a favourite into a folder, or back out to the top level."""
+    return client.patch(
+        f"{ENDPOINT}/{favourite['id']}", json={'folder_id': folder_id}, headers=headers
+    )
+
+
 @pytest.mark.parametrize(
     'method, path',
     [
         ('get', ENDPOINT),
         ('post', ENDPOINT),
         ('put', ORDER_ENDPOINT),
+        ('patch', f'{ENDPOINT}/1'),
         ('delete', f'{ENDPOINT}/1'),
     ],
 )
@@ -374,3 +389,239 @@ def test_a_non_numeric_favourite_id_is_not_found(app, client, jwt, session):
     response = client.delete(f'{ENDPOINT}/abc', headers=factory_auth_header(jwt))
 
     assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_a_new_favourite_is_at_the_top_level(app, client, jwt, session):
+    """Starring files nothing: a layer arrives outside every folder."""
+    response = client.post(
+        ENDPOINT, json=bcdc_layer_payload(), headers=factory_auth_header(jwt)
+    )
+
+    assert response.json['folder_id'] is None
+
+
+def test_patch_files_a_favourite_into_a_folder(app, client, jwt, session):
+    """Dropping a layer on a folder is one request, and it sticks."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers, name='Wildfire')
+    favourite = star(client, headers)
+
+    response = move(client, headers, favourite, folder['id'])
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json['folder_id'] == folder['id']
+    assert client.get(ENDPOINT, headers=headers).json[0]['folder_id'] == folder['id']
+
+
+def test_a_favourite_lands_at_the_top_of_the_folder_it_arrives_in(app, client, jwt, session):
+    """Positions are per container, so the first layer in a folder is 1."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers)
+    star(client, headers)
+    second = star(client, headers, object_name=OTHER_OBJECT)
+
+    response = move(client, headers, second, folder['id'])
+
+    assert response.json['sort_order'] == 1
+
+
+def test_a_favourite_is_in_one_folder_at_a_time(app, client, jwt, session):
+    """Moving into a folder is what takes the layer out of the one before."""
+    headers = factory_auth_header(jwt)
+    first = new_folder(client, headers, name='Wildfire')
+    second = new_folder(client, headers, name='Roads')
+    favourite = star(client, headers)
+    move(client, headers, favourite, first['id'])
+
+    response = move(client, headers, favourite, second['id'])
+
+    assert response.json['folder_id'] == second['id']
+
+
+def test_patch_moves_a_favourite_back_to_the_top_level(app, client, jwt, session):
+    """A null folder is the top level, not "leave it where it is"."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers)
+    favourite = star(client, headers)
+    move(client, headers, favourite, folder['id'])
+
+    response = move(client, headers, favourite, None)
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json['folder_id'] is None
+
+
+def test_moving_a_favourite_does_not_un_favourite_it(app, client, jwt, session):
+    """Filing is not starring: the row is the same one, still in the list."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers)
+    favourite = star(client, headers)
+
+    response = move(client, headers, favourite, folder['id'])
+
+    assert response.json['id'] == favourite['id']
+    assert len(client.get(ENDPOINT, headers=headers).json) == 1
+
+
+def test_patch_rejects_a_body_without_a_folder(app, client, jwt, session):
+    """folder_id is required, so a client always says which container it means."""
+    headers = factory_auth_header(jwt)
+    favourite = star(client, headers)
+
+    response = client.patch(f"{ENDPOINT}/{favourite['id']}", json={}, headers=headers)
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+
+
+def test_patch_rejects_an_unknown_folder(app, client, jwt, session):
+    """A folder deleted in another tab is a 400, not a layer filed nowhere."""
+    headers = factory_auth_header(jwt)
+    favourite = star(client, headers)
+
+    response = move(client, headers, favourite, 999999)
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+
+
+def test_patch_cannot_file_a_favourite_into_another_users_folder(app, client, jwt, session):
+    """Refused like any unknown folder, and the favourite does not move."""
+    owner = factory_user(auth_guid=SECOND_AUTH_GUID, username=SECOND_IDIR_USERNAME)
+    theirs = factory_favourite_folder(owner.id)
+    headers = factory_auth_header(jwt)
+    favourite = star(client, headers)
+
+    response = move(client, headers, favourite, theirs.id)
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert client.get(ENDPOINT, headers=headers).json[0]['folder_id'] is None
+
+
+def test_patch_of_an_unknown_favourite_is_not_found(app, client, jwt, session):
+    """There is nothing to file."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers)
+
+    response = client.patch(
+        f'{ENDPOINT}/999999', json={'folder_id': folder['id']}, headers=headers
+    )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_patch_cannot_reach_another_users_favourite(app, client, jwt, session):
+    """Refused like any unknown id, and their favourite is untouched."""
+    owner = factory_user(auth_guid=SECOND_AUTH_GUID, username=SECOND_IDIR_USERNAME)
+    theirs = factory_favourite_layer(owner.id)
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers)
+
+    response = client.patch(
+        f'{ENDPOINT}/{theirs.id}', json={'folder_id': folder['id']}, headers=headers
+    )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    session.refresh(theirs)
+    assert theirs.folder_id is None
+
+
+def test_put_order_reorders_inside_a_folder(app, client, jwt, session):
+    """A drag within a folder renumbers that folder and nothing else."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers)
+    first = star(client, headers)
+    second = star(client, headers, object_name=OTHER_OBJECT)
+    for favourite in (first, second):
+        move(client, headers, favourite, folder['id'])
+
+    response = client.put(
+        ORDER_ENDPOINT,
+        json={'favourite_ids': [first['id'], second['id']], 'folder_id': folder['id']},
+        headers=headers,
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert [row['id'] for row in response.json] == [first['id'], second['id']]
+    assert [row['sort_order'] for row in response.json] == [1, 2]
+
+
+def test_put_order_returns_only_the_folder_it_reordered(app, client, jwt, session):
+    """The response is the container the client sent, not the whole list."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers)
+    inside = star(client, headers)
+    star(client, headers, object_name=OTHER_OBJECT)
+    move(client, headers, inside, folder['id'])
+
+    response = client.put(
+        ORDER_ENDPOINT,
+        json={'favourite_ids': [inside['id']], 'folder_id': folder['id']},
+        headers=headers,
+    )
+
+    assert [row['id'] for row in response.json] == [inside['id']]
+
+
+def test_put_order_rejects_an_id_from_another_container(app, client, jwt, session):
+    """A reorder cannot quietly move a layer between folders; that is a PATCH."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers)
+    inside = star(client, headers)
+    outside = star(client, headers, object_name=OTHER_OBJECT)
+    move(client, headers, inside, folder['id'])
+
+    response = client.put(
+        ORDER_ENDPOINT,
+        json={'favourite_ids': [inside['id'], outside['id']], 'folder_id': folder['id']},
+        headers=headers,
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+
+
+def test_put_order_at_the_top_level_ignores_what_is_in_folders(app, client, jwt, session):
+    """The top level is a container like any other, so a filed layer is not in it."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers)
+    filed = star(client, headers)
+    first = star(client, headers, object_name=OTHER_OBJECT)
+    second = star(client, headers, object_name=THIRD_OBJECT)
+    move(client, headers, filed, folder['id'])
+
+    response = client.put(
+        ORDER_ENDPOINT,
+        json={'favourite_ids': [first['id'], second['id']]},
+        headers=headers,
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert [row['id'] for row in response.json] == [first['id'], second['id']]
+
+
+def test_put_order_rejects_another_users_folder(app, client, jwt, session):
+    """Refused like any unknown folder, before any position is written."""
+    owner = factory_user(auth_guid=SECOND_AUTH_GUID, username=SECOND_IDIR_USERNAME)
+    theirs = factory_favourite_folder(owner.id)
+    headers = factory_auth_header(jwt)
+    favourite = star(client, headers)
+
+    response = client.put(
+        ORDER_ENDPOINT,
+        json={'favourite_ids': [favourite['id']], 'folder_id': theirs.id},
+        headers=headers,
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+
+
+def test_folder_membership_survives_a_reload(app, client, jwt, session):
+    """What the panel reopens with is what map-api stored."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers, name='Wildfire')
+    favourite = star(client, headers)
+    move(client, headers, favourite, folder['id'])
+
+    folders = client.get(FOLDERS_ENDPOINT, headers=headers).json
+    favourites = client.get(ENDPOINT, headers=headers).json
+
+    assert [row['name'] for row in folders] == ['Wildfire']
+    assert [row['folder_id'] for row in favourites] == [folder['id']]
