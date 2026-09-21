@@ -77,6 +77,7 @@ export default function MapSurface() {
     });
 
     if (!instance.painter) {
+      instance.remove();
       setUnsupported(true);
       onError({
         kind: "unknown",
