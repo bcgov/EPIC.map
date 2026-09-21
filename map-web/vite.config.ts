@@ -18,9 +18,14 @@ import { sharedModules } from "./federation.shared.mjs";
  */
 const WIDGET_DEV_ENTRY = "http://127.0.0.1:5174/remoteEntry.js";
 
+// The plugin prefetches any absolute entry at startup, before runtime plugins
+// run, so a build would send every user's browser to 127.0.0.1. A relative
+// placeholder is never prefetched; remoteEntryUrl.ts always replaces it.
+const WIDGET_BUILD_ENTRY = "/epic-map-remote-entry-set-at-runtime.js";
+
 // https://vitejs.dev/config/
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [
     TanStackRouterVite(),
     react(),
@@ -34,7 +39,7 @@ export default defineConfig({
         epicMap: {
           type: "module",
           name: "epicMap",
-          entry: WIDGET_DEV_ENTRY,
+          entry: command === "build" ? WIDGET_BUILD_ENTRY : WIDGET_DEV_ENTRY,
         },
       },
       shared: sharedModules,
@@ -59,4 +64,4 @@ export default defineConfig({
     // target predates it and the build fails outright.
     target: "chrome89",
   },
-});
+}));
