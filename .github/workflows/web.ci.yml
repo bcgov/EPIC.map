@@ -7,6 +7,7 @@ on:
     paths:
       - "map-web/**"
       - "packages/epic-map/**"
+      - "packages/epic-map-types/**"
       - "package.json"
       - "package-lock.json"
   push:
@@ -45,6 +46,13 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install dependencies
         run: npm ci
+
+      # The contract first: both the widget and map-web are typed against it, so
+      # a break here is a break in two places and the error is clearest at the
+      # source.
+      - name: Typecheck the public contract
+        run: npm run typecheck --workspace @bcgov/epic-map-types
+
       # The widget package carries the map's behaviour, so it is checked
       # first. Its eslint config also enforces the rules that keep it
       # embeddable - no ambient credentials, no router, no auth client.
@@ -76,14 +84,35 @@ jobs:
       - name: Test the widget package
         run: npm test --workspace @bcgov/epic-map
 
-      # map-web resolves @bcgov/epic-map to the package's built dist/, which
-      # npm ci links but does not build.
-      - name: Build the widget package
+      # map-web's component tests include the one thing neither side's own build
+      # can check: that the host and the remote actually fit together. That test
+      # loads the real remote over HTTP, so the remote has to be built and
+      # served before Cypress starts.
+      - name: Build the widget remote
         run: npm run build --workspace @bcgov/epic-map
 
-      # `cypress run` exits non-zero when it finds no specs, and there are none
-      # yet - the harness is configured but unused. Adding the first *.cy.tsx
-      # turns this step on with no workflow change.
+      # Backgrounded, and left running for the Cypress step: a process started
+      # here outlives the step that started it.
+      - name: Serve the widget remote
+        run: |
+          npm run preview --workspace @bcgov/epic-map &
+
+          # The federation test fails with a bare "Failed to fetch" if the remote
+          # is not up yet, which reads like a code defect rather than a race.
+          # Wait for it to answer instead.
+          for _ in $(seq 1 30); do
+            curl -sfI http://127.0.0.1:5174/remoteEntry.js >/dev/null && break
+            sleep 1
+          done
+
+          if ! curl -sfI http://127.0.0.1:5174/remoteEntry.js >/dev/null; then
+            echo "::error::The widget remote did not come up on 127.0.0.1:5174"
+            exit 1
+          fi
+          echo "remote is up"
+
+      # `cypress run` exits non-zero when it finds no specs, so CI guards on one
+      # existing rather than failing a repository that has none.
       - name: Test with Cypress
         id: test
         working-directory: ./map-web
@@ -119,8 +148,101 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install dependencies
         run: npm ci
-      - name: Build the widget package
+
+      # Both, independently. map-web no longer compiles the widget - it loads it
+      # over Module Federation at runtime - so a broken widget build no longer
+      # fails the host build, and each has to be checked on its own.
+      - name: Build the widget remote
         run: npm run build --workspace @bcgov/epic-map
+
+      # Host teams in other repositories take their types from the remote's own
+      # output, so the copy the build emits is a deployed artifact, not a
+      # convenience. It must be there and must be identical to the source - a
+      # banner or a rewrite would make their `diff` drift check meaningless.
+      - name: Check the served contract matches the source
+        run: |
+          diff -u packages/epic-map-types/index.d.ts packages/epic-map/dist/epic-map.d.ts \
+            || { echo "::error::dist/epic-map.d.ts is missing or not byte-identical to the contract."; exit 1; }
+
       - name: build to check strictness
         id: build
         run: npm run build --workspace map-web
+
+      # The two sides negotiate `shared` at load time, and a module one declares
+      # and the other does not is loaded twice - which for react or emotion is
+      # not a slow map, it is a broken one. Nothing at build time catches that,
+      # because the builds no longer touch each other.
+      - name: Check the shared module lists agree
+        run: node scripts/check-shared-modules.mjs
+
+  # The widget's image, exercised on a pull request rather than first discovered
+  # in a cluster.
+  #
+  # Nothing else here touches nginx.conf, and two of its rules fail silently when
+  # they regress: without CORS no host can load anything from this origin, and
+  # without the .mjs mime type maplibre's worker is refused by nosniff and the
+  # map draws an empty canvas with working controls and no error. Both look like
+  # widget bugs and neither is. So they are asserted, against the real image.
+  widget-image:
+    needs: setup-job
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # Context is the repository root - the package resolves its dependencies
+      # through the root workspace. `nginx -t` runs inside the build.
+      - name: Build the widget image
+        run: docker build . --file packages/epic-map/Dockerfile --tag map-widget:ci
+
+      - name: Serve it
+        run: |
+          docker run -d --name map-widget-ci -p 8080:8080 map-widget:ci
+          for _ in $(seq 1 30); do
+            curl -sfI http://127.0.0.1:8080/ >/dev/null && break
+            sleep 1
+          done
+          curl -sfI http://127.0.0.1:8080/ >/dev/null || {
+            echo "::error::The widget container did not come up"
+            docker logs map-widget-ci
+            exit 1
+          }
+
+      - name: Check what the remote serves
+        run: |
+          fail() { echo "::error::$1"; docker logs map-widget-ci; exit 1; }
+
+          # The entry point: reachable, revalidated on every request, and
+          # loadable from another origin.
+          headers="$(curl -sI http://127.0.0.1:8080/remoteEntry.js)"
+          grep -qi '^HTTP/1.1 200' <<<"$headers" || fail "remoteEntry.js did not return 200"
+          grep -qi '^access-control-allow-origin: \*' <<<"$headers" \
+            || fail "remoteEntry.js is missing Access-Control-Allow-Origin - no host can load the map"
+          grep -qi '^cache-control: no-cache' <<<"$headers" \
+            || fail "remoteEntry.js is cacheable - hosts would pin themselves to an old map"
+
+          # maplibre's worker. application/octet-stream here is the silent
+          # blank-canvas failure.
+          headers="$(curl -sI http://127.0.0.1:8080/assets/maplibre-gl-worker.mjs)"
+          grep -qi '^HTTP/1.1 200' <<<"$headers" || fail "maplibre-gl-worker.mjs is missing from the image"
+          grep -qi '^content-type: text/javascript' <<<"$headers" \
+            || fail "maplibre-gl-worker.mjs is not served as JavaScript - the map will draw nothing"
+          grep -qi '^access-control-allow-origin: \*' <<<"$headers" \
+            || fail "maplibre-gl-worker.mjs is missing CORS - its cross-origin module import will be blocked"
+
+          # The public contract, which host teams in other repositories vendor
+          # from this path and diff against.
+          curl -sf http://127.0.0.1:8080/epic-map.d.ts -o served.d.ts \
+            || fail "/epic-map.d.ts is not served"
+          diff -u packages/epic-map-types/index.d.ts served.d.ts \
+            || fail "the served contract is not byte-identical to the source"
+
+          # Preflight is answered rather than falling through to try_files.
+          code="$(curl -s -o /dev/null -w '%{http_code}' -X OPTIONS http://127.0.0.1:8080/remoteEntry.js)"
+          [ "$code" = "204" ] || fail "OPTIONS returned $code, expected 204"
+
+          echo "the remote serves what hosts need"
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f map-widget-ci || true

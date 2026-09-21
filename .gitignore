@@ -154,3 +154,14 @@ node_modules/
 
 # Local docker-compose port overrides (per-machine, not shared)
 docker-compose.override.yml
+
+# Module Federation build scratch. The plugin writes diagnostics here on every
+# build of the remote and of any host that consumes it.
+.mf/
+
+# Cypress code coverage output, written by @cypress/code-coverage on a component
+# run. Uploaded to Codecov from CI; never committed.
+coverage/
+cypress/screenshots/
+cypress/videos/
+.nyc_output/

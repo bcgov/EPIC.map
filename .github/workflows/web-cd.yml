@@ -7,8 +7,16 @@ on:
       - develop
     paths:
       - "map-web/**"
-      # Trigger on widget update until we swtich to module federattion
-      - "packages/epic-map/**" 
+      # Not packages/epic-map: the map is a Module Federation remote, fetched at
+      # runtime rather than compiled in, so a change to it ships through
+      # widget-cd.yml and reaches this application without a rebuild.
+      #
+      # packages/epic-map-types is here because it is: it is a devDependency of
+      # this build, and a change to the contract is a change tsc has to check the
+      # map route against.
+      - "packages/epic-map-types/**"
+      - "package.json"
+      - "package-lock.json"
   # No environment input: this workflow only ever builds and tags dev. test and
   # prod are reached by promoting an existing image in deploy.yml.
   workflow_dispatch:
@@ -51,8 +59,8 @@ jobs:
           echo "${{ secrets.OPENSHIFT_SA_TOKEN }}" | 
           docker login ${{ secrets.OPENSHIFT_IMAGE_REGISTRY }} -u ${{ secrets.OPENSHIFT_SA_NAME}} --password-stdin
 
-      # Built from the repository root: map-web depends on the @bcgov/epic-map
-      # workspace, which is not resolvable from map-web/ alone.
+      # Built from the repository root: map-web resolves its dependencies through
+      # the root npm workspace and its single lockfile.
       - name: Build image
         working-directory: ./
         run: |

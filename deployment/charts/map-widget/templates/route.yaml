@@ -1,0 +1,19 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    app: {{ .Values.app.name }}
+  name: {{ .Chart.Name }}
+spec:
+  # app.url carries the scheme, because it is copied verbatim into each host's
+  # VITE_MAP_WIDGET_URL; a Route host must not.
+  host: {{ tpl .Values.app.url . | replace "https://" "" | replace "http://" "" }}
+  tls:
+    # Redirect rather than None: a host page is served over https, and a remote
+    # fetched over http from it is mixed content the browser blocks outright.
+    insecureEdgeTerminationPolicy: Redirect
+    termination: edge
+  to:
+    kind: Service
+    name: {{ .Chart.Name }}
+  wildcardPolicy: None

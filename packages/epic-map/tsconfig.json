@@ -6,14 +6,12 @@
     "module": "ESNext",
     "skipLibCheck": true,
 
-    /* "@/..." means "from the root of this package's src". Three places have to
-       agree for it to work, and all three are load-bearing:
-         - here, so `tsc --noEmit` resolves it;
-         - `vite.config.ts` resolve.alias, so the library build resolves it and
-           vite-plugin-dts rewrites it back to a relative path in the emitted
-           .d.ts (consumers have no such alias);
-         - `map-web/vite.config.ts`, whose own "@" points at the *host's* src —
-           it needs an importer-aware entry for EPIC_MAP_SOURCE=1 mode. */
+    /* "@/..." means "from the root of this package's src". Two places have to
+       agree for it to work: here, so `tsc --noEmit` resolves it, and
+       `vite.config.ts` resolve.alias, so the build does. It used to be three -
+       map-web compiled this source in its own module graph and had to resolve
+       "@/" against whichever tree the importing file came from. It does not
+       compile any of this any more. */
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]

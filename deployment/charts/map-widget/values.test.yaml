@@ -1,0 +1,7 @@
+# c8b80a-test
+#
+# No keycloak block, unlike map-web's: this remote has no session and no client
+# of its own. The host that mounts the map owns the session and hands the map a
+# token through a prop. Resources and rollout come from values.yaml unchanged.
+image:
+  tag: "test"

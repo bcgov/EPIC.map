@@ -1,0 +1,80 @@
+name: MAP WIDGET CD
+
+# Builds the EPIC map's Module Federation remote and rolls it out to dev.
+#
+# This is a deployment, not a package publish. The map is served to host
+# applications over HTTP from its own origin, so shipping it means pushing an
+# image and restarting a Deployment - the same shape as map-web's CD, and
+# deliberately so.
+#
+# Note what is NOT here: nothing rebuilds map-web. That is the point of the
+# move to federation. A host picks up a new map on its users' next page load,
+# with no rebuild, no version bump and no coordination.
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "packages/epic-map/**"
+      - "packages/epic-map-types/**"
+      - "package.json"
+      - "package-lock.json"
+  # No environment input: this workflow only ever builds and tags dev. test and
+  # prod are reached by promoting an existing image in deploy.yml.
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  APP_NAME: "map-widget"
+  # dev runs :latest - there is no separate :dev tag.
+  ENV_NAME: "dev"
+
+jobs:
+  widget-cd:
+    runs-on: ubuntu-24.04
+
+    if: github.repository == 'bcgov/EPIC.map'
+    environment:
+      name: "dev"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install OpenShift CLI
+        run: |
+          curl -sLO "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/openshift-client-linux.tar.gz"
+          tar -xzf openshift-client-linux.tar.gz oc
+          sudo mv oc /usr/local/bin/
+          rm -f openshift-client-linux.tar.gz
+
+      - name: Login Openshift
+        run: |
+          oc login --server=${{secrets.OPENSHIFT_LOGIN_REGISTRY}} --token=${{secrets.OPENSHIFT_SA_TOKEN}}
+
+      - name: Login Docker
+        run: |
+          echo "${{ secrets.OPENSHIFT_SA_TOKEN }}" |
+          docker login ${{ secrets.OPENSHIFT_IMAGE_REGISTRY }} -u ${{ secrets.OPENSHIFT_SA_NAME}} --password-stdin
+
+      # Built from the repository root: the package resolves its dependencies
+      # through the root npm workspace and its single lockfile.
+      - name: Build image
+        run: |
+          docker build . --file packages/epic-map/Dockerfile --tag image
+
+      - name: Push image
+        run: |
+          IMAGE_ID=${{ secrets.OPENSHIFT_IMAGE_REGISTRY }}/"${{ secrets.OPENSHIFT_REPOSITORY}}-tools"/$APP_NAME
+          docker tag image $IMAGE_ID:latest
+          docker push $IMAGE_ID:latest
+
+      # A Deployment has no ImageChange trigger, and the image reference in the
+      # chart does not change when the tag is re-pushed, so the restart is what
+      # actually pulls the new image.
+      - name: Rollout
+        run: |
+          oc rollout restart deployment/${{ env.APP_NAME }} -n ${{ secrets.OPENSHIFT_REPOSITORY }}-${{ env.ENV_NAME }}
+          oc rollout status deployment/${{ env.APP_NAME }} -n ${{ secrets.OPENSHIFT_REPOSITORY }}-${{ env.ENV_NAME }} -w

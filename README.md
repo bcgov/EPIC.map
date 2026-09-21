@@ -1,75 +1,93 @@
 # EPIC.map
 
-EPIC.map is three things in one repository: a standalone API, a React component published to npm,
-and a web app that hosts the component during development.
+EPIC.map is three things in one repository: a standalone API, the EPIC map as a federated front-end
+service, and a web app that hosts it.
 
 ## Repository layout
 
-| Path | What it is | Published? |
+| Path | What it is | How it ships |
 | --- | --- | --- |
-| `map-api/` | Flask API and its database. A standalone service, deployed on its own — unaffected by the split below. | Deployed as a service |
-| `packages/epic-map/` | **The product.** The embeddable React component (`@bcgov/epic-map` on npm) that other EPIC applications install and render. | **Yes — this is the npm package** |
-| `map-web/` | The development harness and reference implementation. Runs the component locally against `map-api`, and shows host teams how to mount, theme and authenticate it. | No (`private: true`) |
+| `map-api/` | Flask API and its database. A standalone service, deployed on its own. | Deployed as `map-api` |
+| `packages/epic-map/` | **The product.** The EPIC map, built as a [Module Federation](https://module-federation.io) remote that other EPIC applications load at runtime. | Deployed as `map-widget` |
+| `packages/epic-map-types/` | The map's public TypeScript contract — `MapWidgetProps` and what it references. Types only, no runtime. | Not published — served by `map-widget` at `/epic-map.d.ts` |
+| `map-web/` | The EPIC.map application, and the reference host. Runs the map locally against `map-api`, and shows host teams how to mount, theme and authenticate it. | Deployed as `map-web` |
 
-`packages/epic-map` and `map-web` are [npm workspaces](https://docs.npmjs.com/cli/using-npm/workspaces)
-declared in the root `package.json`, so `map-web` resolves `@bcgov/epic-map` from the local source
-rather than the registry — changes to the component show up in the harness immediately.
+All three JavaScript directories are [npm workspaces](https://docs.npmjs.com/cli/using-npm/workspaces)
+declared in the root `package.json`, so one `npm install` at the root covers everything.
+
+### Why the map is a remote, not a package
+
+The map is embedded by several applications that release on their own schedules — `map-web` today,
+EPIC.centre and EPIC.submit next. It used to be an npm package, which meant shipping a map change
+required every host to bump a version, rebuild and redeploy, and until they all did there were
+several different maps in production.
+
+As a Module Federation remote, the map is deployed once and every host picks it up on its users'
+next page load. **No host is rebuilt when the map changes.** There is exactly one map per
+environment, and `map-web` has no map code in its bundle at all.
+
+What that costs is build-time certainty: the map is a network dependency now, and the two sides
+agree on React and MUI at load time rather than at compile time. Both have a specific answer —
+an error boundary in the host, and the `shared` contract in `federation.shared.mjs`, which
+`scripts/check-shared-modules.mjs` checks in CI.
+
+[`packages/epic-map/README.md`](packages/epic-map/README.md) is the integration guide host teams
+read.
 
 ### Why map-web still exists
 
-`map-web` is not legacy and is not scheduled for deletion. It is where the widget is developed, and
-it is the reference host that other EPIC teams copy from when embedding `epic.map`. Anything that
-belongs to the *application* rather than the *component* — routing, the auth provider, the query
-client, environment configuration — lives here on purpose.
+`map-web` is not legacy and is not scheduled for deletion. It is the EPIC.map application, and it is
+the reference host that other EPIC teams copy from. Anything that belongs to the *application*
+rather than the *map* — routing, the auth provider, environment configuration — lives here on
+purpose.
 
-### Releasing the widget
+### How each piece ships
 
-`@bcgov/epic-map` is **semver-versioned independently of map-api**. The two ship on
-separate schedules and their version numbers say nothing about each other — a major
-bump of the widget implies nothing about which API version you are running, and vice
-versa. Compatibility with the API is a property of the endpoints the widget calls,
-and breaking that is a breaking change to the widget's own major version.
+| | Trigger | Workflow |
+| --- | --- | --- |
+| `map-widget` | Push to `develop` touching `packages/epic-map/**` | `widget-cd.yml` → dev |
+| `map-web` | Push to `develop` touching `map-web/**` | `web-cd.yml` → dev |
+| `map-api` | Push to `develop` touching `map-api/**` | `api-cd.yml` → dev |
+| test / prod | Manual | `deploy.yml` promotes the dev image — nothing is rebuilt on the way |
 
-Versions are managed with [changesets](https://github.com/changesets/changesets):
+Note that `map-widget` and `map-web` are now genuinely independent: a map change no longer triggers
+a `map-web` build, which is the whole point of the arrangement.
 
-```bash
-npm run changeset          # describe your change; commit the file it writes
-npm run version-packages   # applies pending changesets: bumps version, writes CHANGELOG
-```
+### The contract, and how host teams get it
 
-Publishing happens only from a tag, never from a merge to `main` — host applications
-pin a version and upgrade when they choose:
+The map has **no version** — it is deployed, not released, and a host cannot pin it. Its public
+TypeScript contract lives in [`@bcgov/epic-map-types`](packages/epic-map-types), and **nothing
+publishes it**. There is no registry, no token and no release tag; a merge to `develop` is the
+release.
 
-```bash
-git tag epic-map-v0.1.0 && git push origin epic-map-v0.1.0
-```
+It reaches consumers two ways, neither of which is an install:
 
-That fires `.github/workflows/widget-publish.yml`, which lints, typechecks, builds,
-refuses to continue if the tag disagrees with `package.json`, attests build
-provenance for the tarball, and publishes to GitHub Packages.
+- **In this repository** — an npm workspace. `map-web` and the map both resolve it from
+  `packages/`, and the map re-exports it from `src/types.ts`, so removing a prop fails the map's
+  own typecheck in CI.
+- **In another repository** — the map's build copies `index.d.ts` into its own output, so every
+  deployment serves it next to the `remoteEntry.js` it describes, at
+  `https://map-widget-<namespace>.apps.gold.devops.gov.bc.ca/epic-map.d.ts`. A host team takes a
+  copy with `curl`, commits it, and diffs it against that URL in their CI to know when the props
+  moved. The widget's README has the script.
 
-### Current state
+That is deliberately the same arrangement as [`federation.shared.mjs`](packages/epic-map/federation.shared.mjs),
+which hosts also copy: a small file taken from a known place beats a dependency that drags a
+registry and its credentials along behind it.
 
-The restructure is in progress. The package builds and publishes (Vite library mode, ESM only, type
-declarations via `vite-plugin-dts`), and `map-web` now consumes it: `/map` renders `<MapWidget>` from
-the workspace and supplies the API url and the token.
+Because the map is not versioned, **a change to its props changes every deployed host at once**. So
+props are added rather than repurposed, and nothing is removed until the hosts have stopped passing
+it.
 
-The map UI that existed in `map-web` — the search bar, the filter buttons and the map surface — has
-moved into `packages/epic-map/src`. The map itself is still a placeholder; maplibre is wired as a
-dependency but nothing renders through it yet.
+### Contracts enforced in the map package
 
-Two contracts are already enforced there, and are worth knowing before moving code across:
+- **Configuration is by props only.** The map never reads `import.meta.env` — it runs inside hosts
+  whose environment is not ours. An ESLint rule blocks it.
+- **The map does no authentication.** No `keycloak-js`, no `react-oidc-context`. The host owns the
+  session and hands over a token; `map-web` shows how.
 
-- **Configuration is by props only.** The widget never reads `import.meta.env`; a published artifact
-  would otherwise carry our build-time environment into every host. An ESLint rule blocks it.
-- **The widget does no authentication.** No `keycloak-js`, no `react-oidc-context`. The host owns
-  the session; `map-web` shows how.
-
-[`packages/epic-map/README.md`](packages/epic-map/README.md) is the integration guide host teams
-read. Its "What the widget does not do" section is the short form of the reasoning — why the widget
-is a package rather than an iframe, why it holds no auth, and why entitlement stays server-side — and
-[`packages/epic-map/.eslintrc.cjs`](packages/epic-map/.eslintrc.cjs) is where those rules are
-enforced.
+[`packages/epic-map/.eslintrc.cjs`](packages/epic-map/.eslintrc.cjs) is where those are enforced,
+and the "What the widget does not do" section of the map's README is the reasoning behind them.
 
 ## Setup
 
@@ -173,64 +191,62 @@ Download and install Python 3.12 from the [official Python website](https://www.
 ## Front End Setup
 
 ### 1. Install Dependencies
-From the repository root — this installs `map-web` and `packages/epic-map` together and links them:
+From the repository root — one install covers `map-web`, the map and its types package:
 
     npm install
 
-### 2. Build the Widget Package
-`map-web` resolves `@bcgov/epic-map` to the package's built `dist/`, and `npm install` only links the
-workspace — it does not build it. On a fresh clone `dist/` does not exist yet, so build it once from
-the repository root:
+There is no build step to run first. `map-web` does not compile the map: it loads it over Module
+Federation from a separate dev server, which `npm run dev` starts alongside it.
 
-    npm run build --workspace @bcgov/epic-map
+### 2. Configure Environment Variables
+Copy `map-web/sample.env` to `map-web/.env` and fill in the values. At a minimum set `VITE_API_URL`
+to the map-api url including the `/api` prefix (e.g. `http://localhost:5000/api`), and `VITE_APP_URL`
+to the address the dev server actually serves on — the OIDC redirect URIs are derived from it.
 
-Skipping this fails the dev server with `Failed to resolve entry for package "@bcgov/epic-map"`. The
-same applies after any `git clean -xdf`, since `dist/` is build output and is not committed. See
-[Working on the widget](map-web/README.md#working-on-the-widget) for how to keep it up to date while
-editing widget source.
+`VITE_MAP_WIDGET_URL` is where the map is loaded from. It defaults to `http://127.0.0.1:5174`, the
+map's own dev server, so it only needs setting if you want to develop against a deployed map.
 
-### 3. Navigate to Front End Directory
-Change to the harness directory:
-
-    cd map-web
-
-### 4. Configure Environment Variables
-Copy `sample.env` to `.env` and fill in the values. At a minimum set `VITE_API_URL` to the map-api
-url including the `/api` prefix (e.g. `http://localhost:5000/api`), and `VITE_APP_URL` to the address
-the dev server actually serves on — the OIDC redirect URIs are derived from it.
-
-### 5. Run Development Server
-Launch the development server:
+### 3. Run Development Servers
+From the repository root:
 
     npm run dev
 
-It serves on Vite's default port, http://localhost:5173. The port is not pinned in `vite.config.ts`,
-so if you change it, keep `VITE_APP_URL` in step 4 in step with it and make sure the origin is in the
-api's allowed list — `CORS_ORIGIN`, or the `LOCAL_CORS_ORIGINS` fallback in
+That starts **both**: `map-web` on http://localhost:5173 and the map remote on
+http://127.0.0.1:5174. Both hot-reload, including edits to map source.
+
+Running only `npm run dev:web` starts the app without the map, and `/map` then shows its "could not
+be loaded" state — which is the error boundary doing its job, not a broken checkout.
+
+`map-web`'s port is not pinned in `vite.config.ts`, so if you change it, keep `VITE_APP_URL` in step
+2 in step with it and make sure the origin is in the api's allowed list — `CORS_ORIGIN`, or the
+`LOCAL_CORS_ORIGINS` fallback in
 [`map-api/src/map_api/config.py`](map-api/src/map_api/config.py), which covers 5173, 3000 and 8000.
 
-### 6. Editing the Widget While the Host Runs
-`npm run dev` serves the host against the package's prebuilt `dist/`, so edits under
-`packages/epic-map/src` do not reach the browser on their own. Pick one of the two loops, both run
-from the repository root:
+The map's port *is* pinned, at 5174, because `VITE_MAP_WIDGET_URL` names it. It binds `127.0.0.1`
+rather than `localhost` on purpose: with IPv6 enabled Vite binds `localhost` to `::1` alone, and
+anything resolving the name to `127.0.0.1` gets a connection refused that surfaces as a bare
+"Failed to fetch".
 
-Run the package's watch build in a second terminal, so every widget edit rebuilds `dist/` and the
-host reloads:
+### 4. Running Against the Map's Real Build
+The dev server is not the artifact that deploys. To run the host against the real federated build:
 
-    npm run dev:widget-watch    # packages/epic-map: vite build --watch
-    npm run dev                 # in another terminal
+    npm run build:widget && npm run preview:widget   # one terminal
+    npm run dev:web                                  # another
 
-Or run the host in source mode, which aliases `@bcgov/epic-map` to `packages/epic-map/src` and gives
-HMR with no build step at all:
+### 5. Checking the Host and the Map Still Fit
+Neither side's build can catch a disagreement between them — they are built separately and first
+meet in a browser. Two things check it:
 
-    npm run dev:widget-source
+    node scripts/check-shared-modules.mjs    # the shared-module lists agree
 
-Source mode is the faster loop but compiles the widget with the host's Vite config instead of the
-library build, so verify anything build-shaped — the emitted types, `dist/epic-map.css`, the
-externals — with the watch build before opening a PR.
+and `map-web`'s component test, which loads the real remote over HTTP and asserts that React and MUI
+actually crossed the seam. It needs the map running:
+
+    npm run dev:widget    # in another terminal
+    npx cypress run --component --spec "src/components/Map/MapWidgetRemote.cy.tsx" -w map-web
 
 See `map-web/README.md` for the full front end documentation, and
-[`packages/epic-map/README.md`](packages/epic-map/README.md) for the component package.
+[`packages/epic-map/README.md`](packages/epic-map/README.md) for the map itself.
 
 # Helm
 EPIC.map deploys into the `c8b80a` license plate on the Gold cluster, which it shares with
@@ -280,20 +296,30 @@ replicas. See [`deployment/charts/map-redis`](deployment/charts/map-redis/README
 The chart generates the password on first install and reuses it on upgrades. `map-api` reads
 the resulting `REDIS_URL` from the `map-redis` secret.
 
-## API and web
+## API, web and the map
 
     cd deployment/charts/map-api
     helm upgrade --install map-api . -f values.yaml -f values.dev.yaml -n c8b80a-dev
 
+    cd ../map-widget
+    helm upgrade --install map-widget . -f values.yaml -f values.dev.yaml -n c8b80a-dev
+
     cd ../map-web
     helm upgrade --install map-web . -f values.yaml -f values.dev.yaml -n c8b80a-dev
 
-Both are `Deployment`s. `map-api` runs its migrations in an initContainer, so a new pod only
-serves traffic after `pre-hook-update-db.sh` has finished. Neither has an ImageChange trigger -
+All three are `Deployment`s. `map-api` runs its migrations in an initContainer, so a new pod
+only serves traffic after `pre-hook-update-db.sh` has finished. None has an ImageChange trigger -
 promoting a tag does not roll the pods by itself, which is why CI ends with
 `oc rollout restart deployment/<name>`. Namespaces that still have the old DeploymentConfigs
 need them deleted first; see
 [`deployment/openshift/README.md`](deployment/openshift/README.md).
+
+`map-widget` is the EPIC map, served as static Module Federation assets by nginx. It is the only
+one of the three with no ConfigMap: every value the map uses arrives as a prop from whichever
+host mounted it, so there is nothing to configure per environment. Install it **before**
+`map-web`, whose `app.mapWidgetUrl` has to match its `app.url` - that is the value that reaches
+the browser as `VITE_MAP_WIDGET_URL`, and a host pointed at nothing renders the map's "could
+not be loaded" state.
 
 Each chart has a base `values.yaml` plus `values.dev.yaml` / `values.test.yaml` /
 `values.prod.yaml`; the per-environment file carries only what differs - image tag, Keycloak

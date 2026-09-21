@@ -63,7 +63,7 @@ jobs:
           # nothing to back up.
           if [ "$ENV" = "prod" ]; then
             BACKUP_TAG="prod-backup-$(date -u +%Y%m%d-%H%M%S)"
-            for app in map-api map-web; do
+            for app in map-api map-web map-widget; do
               if oc get istag $app:prod >/dev/null 2>&1; then
                 oc tag $app:prod $app:$BACKUP_TAG
                 echo "backed up $app:prod -> $app:$BACKUP_TAG"
@@ -75,9 +75,16 @@ jobs:
 
           oc tag map-api:$SOURCE_TAG map-api:$ENV
           oc tag map-web:$SOURCE_TAG map-web:$ENV
+          oc tag map-widget:$SOURCE_TAG map-widget:$ENV
 
           # Deployments carry no ImageChange trigger: moving the tag changes what
           # the registry serves, and the restart is what makes the pods pull it.
+          # map-widget first. It is the map itself, fetched at runtime by
+          # map-web, so rolling it out before the host means the host never
+          # serves a page that asks for a remote that is mid-restart.
+          oc rollout restart deployment/map-widget -n $NS
+          oc rollout status deployment/map-widget -n $NS -w
+
           oc rollout restart deployment/map-api -n $NS
           oc rollout restart deployment/map-web -n $NS
 
