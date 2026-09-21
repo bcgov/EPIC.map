@@ -1,0 +1,14 @@
+# c8b80a-prod
+#
+# No keycloak block, unlike map-web's: this remote has no session and no client
+# of its own. The host that mounts the map owns the session and hands the map a
+# token through a prop. Resources come from values.yaml unchanged.
+image:
+  tag: "prod"
+
+# prod has quota for a second pod, so never drop the last one. A host loading
+# the map for the first time during a rollout would otherwise get the
+# "could not be loaded" state.
+rollout:
+  maxSurge: 1
+  maxUnavailable: 0

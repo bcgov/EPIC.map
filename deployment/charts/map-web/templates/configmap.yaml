@@ -16,5 +16,6 @@ data:
       "VITE_ENV": "{{ .Values.app.env }}",
       "VITE_VERSION": "{{ .Values.image.tag }}",
       "VITE_OIDC_AUTHORITY": "{{ .Values.keycloak.url }}/auth/realms/{{ .Values.keycloak.realm }}",
-      "VITE_CLIENT_ID": "{{ .Values.keycloak.client }}"
+      "VITE_CLIENT_ID": "{{ .Values.keycloak.client }}",
+      "VITE_MAP_WIDGET_URL": "{{ tpl .Values.app.mapWidgetUrl . }}"
     };

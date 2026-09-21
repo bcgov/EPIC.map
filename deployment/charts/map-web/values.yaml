@@ -10,6 +10,14 @@ app:
   url: https://map-web-{{ .Release.Namespace }}.apps.gold.devops.gov.bc.ca
   # Includes /api - config.ts derives the ops url by stripping that suffix.
   api: https://map-api-{{ .Release.Namespace }}.apps.gold.devops.gov.bc.ca/api
+  # Origin of the map's Module Federation remote, no trailing path: config.ts
+  # appends /remoteEntry.js. The map is fetched from here when the map route is
+  # opened, rather than being part of this application's bundle, which is why it
+  # is a runtime value - one image runs in all three environments and each points
+  # at the map-widget Route in its own namespace.
+  #
+  # Must match app.url in deployment/charts/map-widget/values.yaml.
+  mapWidgetUrl: https://map-widget-{{ .Release.Namespace }}.apps.gold.devops.gov.bc.ca
   env: dev
 
 image:

@@ -1,0 +1,32 @@
+{
+  "name": "@bcgov/epic-map-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public TypeScript contract for the EPIC map federated remote. Types only - no runtime.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bcgov/EPIC.map.git",
+    "directory": "packages/epic-map-types"
+  },
+  "homepage": "https://github.com/bcgov/EPIC.map/tree/main/packages/epic-map-types",
+  "bugs": {
+    "url": "https://github.com/bcgov/EPIC.map/issues"
+  },
+  "type": "module",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": "./index.d.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/react": "^18.2.47"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.2"
+  }
+}

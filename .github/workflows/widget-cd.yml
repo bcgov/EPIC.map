@@ -1,19 +1,21 @@
-name: MAP WEB CD
+name: MAP WIDGET CD
 
-
+# Builds the EPIC map's Module Federation remote and rolls it out to dev.
+#
+# This is a deployment, not a package publish. The map is served to host
+# applications over HTTP from its own origin, so shipping it means pushing an
+# image and restarting a Deployment - the same shape as map-web's CD, and
+# deliberately so.
+#
+# Note what is NOT here: nothing rebuilds map-web. That is the point of the
+# move to federation. A host picks up a new map on its users' next page load,
+# with no rebuild, no version bump and no coordination.
 on:
   push:
     branches:
       - develop
     paths:
-      - "map-web/**"
-      # Not packages/epic-map: the map is a Module Federation remote, fetched at
-      # runtime rather than compiled in, so a change to it ships through
-      # widget-cd.yml and reaches this application without a rebuild.
-      #
-      # packages/epic-map-types is here because it is: it is a devDependency of
-      # this build, and a change to the contract is a change tsc has to check the
-      # map route against.
+      - "packages/epic-map/**"
       - "packages/epic-map-types/**"
       - "package.json"
       - "package-lock.json"
@@ -24,15 +26,14 @@ on:
 defaults:
   run:
     shell: bash
-    working-directory: ./map-web
 
 env:
-  APP_NAME: "map-web"
+  APP_NAME: "map-widget"
   # dev runs :latest - there is no separate :dev tag.
   ENV_NAME: "dev"
 
 jobs:
-  web-cd:
+  widget-cd:
     runs-on: ubuntu-24.04
 
     if: github.repository == 'bcgov/EPIC.map'
@@ -50,21 +51,19 @@ jobs:
           rm -f openshift-client-linux.tar.gz
 
       - name: Login Openshift
-        shell: bash
         run: |
           oc login --server=${{secrets.OPENSHIFT_LOGIN_REGISTRY}} --token=${{secrets.OPENSHIFT_SA_TOKEN}}
 
       - name: Login Docker
         run: |
-          echo "${{ secrets.OPENSHIFT_SA_TOKEN }}" | 
+          echo "${{ secrets.OPENSHIFT_SA_TOKEN }}" |
           docker login ${{ secrets.OPENSHIFT_IMAGE_REGISTRY }} -u ${{ secrets.OPENSHIFT_SA_NAME}} --password-stdin
 
-      # Built from the repository root: map-web resolves its dependencies through
-      # the root npm workspace and its single lockfile.
+      # Built from the repository root: the package resolves its dependencies
+      # through the root npm workspace and its single lockfile.
       - name: Build image
-        working-directory: ./
         run: |
-          docker build . --file map-web/Dockerfile --tag image
+          docker build . --file packages/epic-map/Dockerfile --tag image
 
       - name: Push image
         run: |
@@ -76,7 +75,6 @@ jobs:
       # chart does not change when the tag is re-pushed, so the restart is what
       # actually pulls the new image.
       - name: Rollout
-        shell: bash
         run: |
           oc rollout restart deployment/${{ env.APP_NAME }} -n ${{ secrets.OPENSHIFT_REPOSITORY }}-${{ env.ENV_NAME }}
           oc rollout status deployment/${{ env.APP_NAME }} -n ${{ secrets.OPENSHIFT_REPOSITORY }}-${{ env.ENV_NAME }} -w

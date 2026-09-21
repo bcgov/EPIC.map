@@ -2,23 +2,25 @@
   "name": "epic-map-monorepo",
   "private": true,
   "version": "0.0.0",
-  "description": "Monorepo for the EPIC.map API, the publishable map component and its development host.",
+  "description": "Monorepo for the EPIC.map API, the federated map remote and the host application that embeds it.",
   "license": "Apache-2.0",
   "workspaces": [
     "packages/*",
     "map-web"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace map-web",
-    "dev:widget-source": "npm run dev:source --workspace map-web",
-    "dev:widget-watch": "npm run dev --workspace @bcgov/epic-map",
-    "build": "npm run build --workspace map-web",
-    "lint": "npm run lint --workspace map-web",
-    "changeset": "changeset",
-    "version-packages": "changeset version",
-    "release-check": "changeset status --since=origin/main"
+    "dev": "run-p dev:widget dev:web",
+    "dev:widget": "npm run dev --workspace @bcgov/epic-map",
+    "dev:web": "npm run dev --workspace map-web",
+    "build": "npm run build:widget && npm run build:web",
+    "build:widget": "npm run build --workspace @bcgov/epic-map",
+    "build:web": "npm run build --workspace map-web",
+    "preview:widget": "npm run preview --workspace @bcgov/epic-map",
+    "lint": "npm run lint --workspace @bcgov/epic-map && npm run lint --workspace map-web",
+    "typecheck": "npm run typecheck --workspace @bcgov/epic-map-types && npm run typecheck --workspace @bcgov/epic-map",
+    "test": "npm test --workspace @bcgov/epic-map"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.1"
+    "npm-run-all2": "^7.0.2"
   }
 }

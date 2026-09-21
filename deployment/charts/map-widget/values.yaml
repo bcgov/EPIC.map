@@ -1,0 +1,46 @@
+# Shared defaults. Per-environment files carry only what differs.
+# Install with:  helm upgrade --install map-widget . -f values.yaml -f values.dev.yaml -n c8b80a-dev
+#
+# map-widget is the EPIC map published as a Module Federation remote: an nginx
+# serving a directory of static JavaScript, with no configuration of its own and
+# no API of its own. Host applications (map-web today; EPIC.centre and
+# EPIC.submit next) are pointed at this Route and load it at runtime.
+#
+# There is deliberately no ConfigMap here. map-web needs one because it reads
+# window._env_ for its API url and OIDC client; this remote reads nothing - every
+# value the map uses arrives as a prop from whichever host mounted it.
+
+app:
+  name: map-widget
+  # Resolves from the release namespace, so it is correct in every environment.
+  # This is the value that goes into each host's VITE_MAP_WIDGET_URL.
+  url: https://map-widget-{{ .Release.Namespace }}.apps.gold.devops.gov.bc.ca
+
+image:
+  # Full registry path. A Deployment resolves the image itself - there is no
+  # ImageStream trigger to rewrite a bare name, so promoting a tag needs an
+  # `oc rollout restart` (see .github/workflows/deploy.yml). dev runs :latest.
+  repository: image-registry.openshift-image-registry.svc:5000/c8b80a-tools/map-widget
+  pullPolicy: Always
+  tag: "latest"
+
+# nginx serving prebuilt static files and nothing else.
+resources:
+  cpu:
+    limit: 200m
+    request: 50m
+  memory:
+    limit: 192Mi
+    request: 64Mi
+
+service:
+  port: 8080
+
+replicas:
+  count: 1
+
+# A rollout surges a second pod before dropping the old one. Environments with
+# quota headroom keep that; see values.dev.yaml for the namespace that doesn't.
+rollout:
+  maxSurge: 25%
+  maxUnavailable: 25%

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>EPIC map remote</title>
+    <style>
+      body {
+        font: 14px/1.6 system-ui, sans-serif;
+        margin: 0;
+        padding: 2rem;
+        max-width: 42rem;
+        color: #1a1a1a;
+      }
+      code {
+        background: #f1f3f5;
+        padding: 0.1em 0.35em;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>EPIC map remote</h1>
+    <p>
+      This origin serves the EPIC map as a Module Federation remote. It is not an
+      application and there is nothing to see here — the entry point is
+      <code>./remoteEntry.js</code>, which host applications load at runtime.
+    </p>
+    <p>
+      Exposed module: <code>epicMap/MapWidget</code>. See
+      <a href="https://github.com/bcgov/EPIC.map/tree/main/packages/epic-map"
+        >packages/epic-map</a
+      >.
+    </p>
+    <!--
+      No script tag on purpose. This page exists so the remote's root is a 200
+      rather than a 404 — which is what the deployment's readiness and liveness
+      probes check — and so that someone who opens the route in a browser finds
+      out what they are looking at.
+    -->
+  </body>
+</html>

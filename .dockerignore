@@ -1,5 +1,6 @@
-# Build context for map-web/Dockerfile, which builds from the repository root
-# because map-web resolves @bcgov/epic-map through the root npm workspace.
+# Build context for map-web/Dockerfile and packages/epic-map/Dockerfile, both of
+# which build from the repository root because both resolve their dependencies
+# through the root npm workspace and its single lockfile.
 #
 # map-api has its own .dockerignore and is built with map-api/ as its context,
 # so nothing here applies to it.
@@ -16,7 +17,7 @@
 **/.env.*
 !**/sample.env
 
-# Nothing the web build needs.
+# Nothing either web build needs.
 map-api
 deployment
 **/venv

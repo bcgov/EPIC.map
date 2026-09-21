@@ -1,7 +1,8 @@
 {
   "name": "@bcgov/epic-map",
+  "private": true,
   "version": "0.1.0",
-  "description": "Embeddable EPIC map React component, backed by the EPIC.map API.",
+  "description": "The EPIC map, built as a Module Federation remote and loaded at runtime by EPIC host applications.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -13,69 +14,40 @@
     "url": "https://github.com/bcgov/EPIC.map/issues"
   },
   "type": "module",
-  "sideEffects": [
-    "*.css"
-  ],
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./styles.css": "./dist/epic-map.css",
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "dist",
-    "CHANGELOG.md"
-  ],
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://npm.pkg.github.com"
-  },
   "scripts": {
     "build": "vite build",
-    "dev": "vite build --watch",
+    "dev": "vite",
     "lint": "eslint src tests --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "start": "vite build --watch",
+    "preview": "vite preview",
+    "start": "vite",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "peerDependencies": {
+  "dependencies": {
+    "@bcgov/epic-map-types": "*",
     "@emotion/react": "^11.11.4",
     "@emotion/styled": "^11.11.5",
     "@mui/icons-material": "^5.15.21",
     "@mui/material": "^5.15.20",
-    "epic.theme": "^1.0.11",
+    "@tanstack/react-query": "^5.45.1",
+    "axios": "^1.7.2",
+    "maplibre-gl": "^6.6.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
-  "dependencies": {
-    "@tanstack/react-query": "^5.45.1",
-    "@types/geojson": "^7946.0.16",
-    "axios": "^1.7.2",
-    "maplibre-gl": "^6.6.0"
-  },
   "devDependencies": {
-    "@emotion/react": "^11.11.4",
-    "@emotion/styled": "^11.11.5",
-    "@mui/icons-material": "^5.15.21",
-    "@mui/material": "^5.15.20",
+    "@module-federation/vite": "^1.22.1",
+    "@types/geojson": "^7946.0.16",
+    "@types/node": "^20.14.9",
     "@types/react": "^18.2.47",
     "@types/react-dom": "^18.2.18",
     "@typescript-eslint/eslint-plugin": "^7.2.0",
     "@typescript-eslint/parser": "^7.2.0",
     "@vitejs/plugin-react-swc": "^3.7.0",
-    "epic.theme": "^1.0.11",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
     "typescript": "^5.2.2",
     "vite": "^5.2.0",
-    "vite-plugin-dts": "^4.5.4",
     "vitest": "^4.1.11"
   }
 }

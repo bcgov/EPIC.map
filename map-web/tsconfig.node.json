@@ -6,8 +6,11 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
+    // vite.config.ts imports federation.shared.mjs, which is plain JavaScript so
+    // that scripts/check-shared-modules.mjs can read it without a transpiler.
+    "allowJs": true,
     "strict": true,
     "noEmit": true
   },
-  "include": ["vite.config.ts", "cypress.config.ts"]
+  "include": ["vite.config.ts", "federation.shared.mjs"]
 }

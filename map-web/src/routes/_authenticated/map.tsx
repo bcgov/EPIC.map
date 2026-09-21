@@ -2,8 +2,7 @@ import { useCallback } from "react";
 import { Box } from "@mui/material";
 import { createFileRoute } from "@tanstack/react-router";
 import { useAuth } from "react-oidc-context";
-import { MapWidget } from "@bcgov/epic-map";
-import "@bcgov/epic-map/styles.css";
+import MapWidgetRemote from "@/components/Map/MapWidgetRemote";
 // Temporarily off while the map surface is being built out — the banner sits
 // under the map and eats vertical space the map wants. Put it back by
 // uncommenting this import and the <ApiStatusBar /> below.
@@ -15,15 +14,16 @@ export const Route = createFileRoute("/_authenticated/map")({
 });
 
 /**
- * Reference host for @bcgov/epic-map.
+ * Reference host for the EPIC map remote.
  *
  * Everything the widget needs is handed to it here: the API url comes from this
  * application's config, and the token comes from this application's session. The
  * widget reads neither for itself - see packages/epic-map/README.md.
  *
- * Only the package's public entry point is imported. If something needed here is
- * not exported from "@bcgov/epic-map", that is a defect in the widget's public
- * API, not a reason to reach into its internals.
+ * The map arrives over Module Federation rather than from this bundle, so it is
+ * reached through MapWidgetRemote, which owns the loading and failure states.
+ * Its props are the widget's own; if something needed here is not in
+ * @bcgov/epic-map-types, that is a defect in the widget's public API.
  *
  * The widget's optional props - projectId, initialExtent, height, onError and
  * onFeatureSelect - are deliberately not passed yet. A dev-only panel that drove
@@ -44,7 +44,7 @@ function MapPage() {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <Box sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-        <MapWidget
+        <MapWidgetRemote
           apiBaseUrl={AppConfig.apiUrl}
           getAccessToken={getAccessToken}
         />

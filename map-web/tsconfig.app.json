@@ -22,11 +22,20 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Component specs live beside the components they test, under src/, so this
+       project is the one that has to know `describe`, `it` and `cy`. Cypress
+       bundles its own globals; listing it here replaces the default of "every
+       @types package", which is why @types/node has to be named alongside it. */
+    "types": ["cypress", "node"],
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  // cypress/support/component.ts is where `cy.mount` is declared, by augmenting
+  // the Cypress namespace. The specs that call it live under src/, so this project
+  // has to see the augmentation or every mount is an error.
+  "include": ["src", "cypress/support"]
 }

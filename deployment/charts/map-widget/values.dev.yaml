@@ -1,0 +1,28 @@
+# c8b80a-dev
+#
+# image.tag is values.yaml's default; it is repeated here only because it is the
+# one thing someone reading this file expects to find.
+image:
+  tag: "latest"
+
+resources:
+  cpu:
+    limit: 100m
+    request: 25m
+  memory:
+    limit: 128Mi
+    # alpine nginx serving static files idles around 10-15Mi; the request only
+    # has to cover that, and c8b80a-dev has no room to spare.
+    request: 48Mi
+
+# c8b80a-dev has no room for a second pod, so replace in place and accept a few
+# seconds of downtime - without this every rollout sits unschedulable at quota.
+#
+# Worth knowing what that downtime costs here, because it is not what it costs
+# for an application: a host that is already running holds the remote's modules
+# in memory and does not re-fetch them, so an open map keeps working. It is a
+# host loading the map for the first time in those seconds that sees the
+# "could not be loaded" state.
+rollout:
+  maxSurge: 0
+  maxUnavailable: 1
