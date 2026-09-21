@@ -8,10 +8,12 @@ import {
   Typography,
 } from "@mui/material";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import CircularProgress from "@mui/material/CircularProgress";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import StarIcon from "@mui/icons-material/Star";
 import StarBorderIcon from "@mui/icons-material/StarBorder";
+import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import { useTheme, type Theme } from "@mui/material/styles";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import HighlightedName from "@/components/Layers/HighlightedName";
@@ -21,6 +23,8 @@ import LayerInfo from "@/components/Layers/LayerInfo";
 import { useLayers } from "@/components/Layers/LayersContext";
 import { MAX_VISIBLE_LAYERS } from "@/utils/config";
 
+const ZOOM_HINT_COLOR = "#8A6A01";
+
 /** Every control in the row shows the same ring, so tabbing is easy to follow. */
 const focusRing = (theme: Theme) => ({
   "&:focus-visible": {
@@ -29,10 +33,6 @@ const focusRing = (theme: Theme) => ({
   },
 });
 
-/**
- * A wide track with a large outlined thumb that overhangs it, per the design.
- * MUI's own switch is smaller and fills its thumb, so every part is restyled.
- */
 const toggleSx = (theme: Theme) => ({
   width: "2.5rem",
   height: "1.25rem",
@@ -99,6 +99,11 @@ export default function LayerRow({
     favouritePendingIds,
     expandedId,
     pendingIds,
+    focusPendingIds,
+    focusErrors,
+    focusLayer,
+    belowFloorIds,
+    beyondReachIds,
     atVisibleLimit,
     toggleVisible,
     toggleFavourite,
@@ -117,6 +122,20 @@ export default function LayerRow({
 
   const saving = pendingIds.has(layer.id);
 
+  const focusing = focusPendingIds.has(layer.id);
+
+  // Only worth offering while the layer genuinely cannot draw: past its own
+  // published scale openmaps returns a blank tile, and each layer's scale is
+  // different, so this is per layer rather than one shared zoom.
+  const belowFloor = belowFloorIds.has(layer.id);
+
+  // A floor past the map's own ceiling is one no amount of zooming reaches, so
+  // the row says so instead of offering a button that cannot keep its word.
+  const beyondReach = beyondReachIds.has(layer.id);
+
+  const focusError = focusErrors[layer.id];
+
+  // Star is pending while the API request is out.
   const starSaving = favouritePendingIds.has(layer.id);
 
   // The API stores an object name, so a dataset with none cannot be starred.
@@ -208,6 +227,83 @@ export default function LayerRow({
       }
     : {};
 
+  const hintSx = {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.25rem",
+    marginTop: "0.25rem",
+    width: "100%",
+    textAlign: "left",
+    fontSize: theme.typography.caption.fontSize,
+    lineHeight: 1.4,
+  } as const;
+
+  // The icon is a flex item like any other, so without this it is the thing
+  // that gives way when the column is narrow: it squashes to a sliver and the
+  // label wraps around where it used to be.
+  const hintIconSx = { flexShrink: 0, fontSize: "0.875rem" } as const;
+
+  const zoomInButton = (
+    <Box
+      component="button"
+      type="button"
+      onClick={() => focusLayer(layer)}
+      disabled={focusing}
+      aria-label={
+        focusError
+          ? `Zoom in to view ${layer.name}. ${focusError}`
+          : `Zoom in to view ${layer.name}`
+      }
+      sx={{
+        ...hintSx,
+        padding: 0,
+        border: "none",
+        background: "none",
+        font: "inherit",
+        fontSize: theme.typography.caption.fontSize,
+        color: focusError ? theme.palette.error.main : ZOOM_HINT_COLOR,
+        cursor: focusing ? "default" : "pointer",
+        "&:hover": { textDecoration: focusing ? "none" : "underline" },
+        ...focusRing(theme),
+      }}
+    >
+      {focusing ? (
+        <CircularProgress size="0.875rem" sx={hintIconSx} aria-hidden />
+      ) : (
+        <ZoomInIcon aria-hidden sx={hintIconSx} />
+      )}
+      <Typography
+        variant="caption"
+        component="span"
+        sx={{ minWidth: 0, color: "inherit" }}
+      >
+        Zoom in to view
+      </Typography>
+    </Box>
+  );
+
+  // The button stays pressable after a failure: the warehouse being slow or
+  // busy is the usual reason, and a second press is what fixes it.
+  const zoomIn = focusError ? (
+    <Tooltip title={focusError}>{zoomInButton}</Tooltip>
+  ) : (
+    zoomInButton
+  );
+
+  const unreachableNote = (
+    <Tooltip title="This layer only draws closer in than this map can zoom">
+      <Typography
+        component="span"
+        sx={{ ...hintSx, color: ZOOM_HINT_COLOR, cursor: "default" }}
+      >
+        <ZoomInIcon aria-hidden sx={hintIconSx} />
+        <Box component="span" sx={{ minWidth: 0 }}>
+          Not visible at any zoom
+        </Box>
+      </Typography>
+    </Tooltip>
+  );
+
   return (
     <Box component="li" sx={{ listStyle: "none" }}>
       <Box
@@ -258,6 +354,8 @@ export default function LayerRow({
 
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           {clamped ? <Tooltip title={layer.name}>{name}</Tooltip> : name}
+
+          {visible && belowFloor && (beyondReach ? unreachableNote : zoomIn)}
         </Box>
 
         <Tooltip title={starNote}>

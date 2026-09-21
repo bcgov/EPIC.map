@@ -24,6 +24,13 @@ from map_api.utils.constant import DEFAULT_LAYER_OPACITY, MAX_LAYER_OPACITY, MIN
 
 from .layer_identity import MAX_DISPLAY_NAME_LENGTH, OBJECT_NAME_PATTERN, PACKAGE_ID_PATTERN
 
+# A CKAN dataset uuid. Not a slug: a slug changes when a dataset is retitled
+# and the uuid does not, and the metadata link is built from what is stored.
+_PACKAGE_ID_PATTERN = (
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}'
+    r'-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+)
+
 
 class UserAppliedLayerSchema(Schema):
     """One layer the user currently has on the map."""
