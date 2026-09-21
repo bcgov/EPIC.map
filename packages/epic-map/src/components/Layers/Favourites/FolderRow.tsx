@@ -3,12 +3,15 @@ import {
   Box,
   Collapse,
   IconButton,
+  ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
   Tooltip,
   Typography,
 } from "@mui/material";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import FolderOffOutlinedIcon from "@mui/icons-material/FolderOffOutlined";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { useTheme, type Theme } from "@mui/material/styles";
@@ -38,8 +41,8 @@ type FolderRowProps = {
   /** Escape: a new folder is discarded, an existing one keeps its name. */
   onCancelEdit: () => void;
   onToggleCollapsed: () => void;
+  /** Removes the folder; its layers move to the top level. */
   onUngroup: () => void;
-  onDelete: () => void;
   onDropLayer: (layerId: string) => void;
 };
 
@@ -59,7 +62,6 @@ export default function FolderRow({
   onCancelEdit,
   onToggleCollapsed,
   onUngroup,
-  onDelete,
   onDropLayer,
 }: FolderRowProps) {
   const theme = useTheme();
@@ -161,29 +163,24 @@ export default function FolderRow({
               onStartRename();
             }}
           >
+            <ListItemIcon>
+              <EditOutlinedIcon fontSize="small" />
+            </ListItemIcon>
             <ListItemText primaryTypographyProps={{ variant: "body2" }}>
-              Rename
+              Rename folder
             </ListItemText>
           </MenuItem>
           <MenuItem
-            disabled={empty}
             onClick={() => {
               setMenuAnchor(null);
               onUngroup();
             }}
           >
+            <ListItemIcon>
+              <FolderOffOutlinedIcon fontSize="small" />
+            </ListItemIcon>
             <ListItemText primaryTypographyProps={{ variant: "body2" }}>
-              Ungroup all
-            </ListItemText>
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              setMenuAnchor(null);
-              onDelete();
-            }}
-          >
-            <ListItemText primaryTypographyProps={{ variant: "body2" }}>
-              Delete folder
+              Ungroup
             </ListItemText>
           </MenuItem>
         </Menu>

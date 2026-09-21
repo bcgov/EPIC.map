@@ -56,18 +56,6 @@ class UserFavouriteFolderService:
         return folder
 
     @classmethod
-    def ungroup_folder(cls, folder_id: int, user_id: int) -> Optional[list]:
-        """Empty a folder, keeping it. None if it is not this user's.
-
-        The layers move to the top level; nothing is un-favourited. Returns the
-        layers that moved, which is empty for a folder that was already empty.
-        """
-        folder = UserFavouriteFolderModel.find_one_for_user(folder_id, user_id)
-        if folder is None:
-            return None
-        return UserFavouriteLayerModel.empty_folder(user_id, folder_id)
-
-    @classmethod
     def delete_folder(cls, folder_id: int, user_id: int) -> Optional[object]:
         """Delete a folder, or return None if it is not this user's. Hard delete.
 

@@ -26,7 +26,6 @@ from map_api.auth import auth
 from map_api.exceptions import ResourceNotFoundError
 from map_api.schemas.user_favourite_folder import (
     UserFavouriteFolderRequestSchema, UserFavouriteFolderSchema, UserFavouriteFolderUpdateSchema)
-from map_api.schemas.user_favourite_layer import UserFavouriteLayerSchema
 from map_api.services.user_favourite_folder_service import UserFavouriteFolderService
 from map_api.services.user_service import UserService
 from map_api.utils.util import cors_preflight
@@ -46,9 +45,6 @@ folder_request_model = ApiHelper.convert_ma_schema_to_restx_model(
 )
 folder_update_model = ApiHelper.convert_ma_schema_to_restx_model(
     API, UserFavouriteFolderUpdateSchema(), 'FavouriteFolderUpdate'
-)
-favourite_model = ApiHelper.convert_ma_schema_to_restx_model(
-    API, UserFavouriteLayerSchema(), 'UngroupedFavourite'
 )
 
 
@@ -117,10 +113,10 @@ class FavouriteFolder(Resource):
 
     @staticmethod
     @auth.require
-    @ApiHelper.swagger_decorators(API, endpoint_description='Delete a folder')
+    @ApiHelper.swagger_decorators(API, endpoint_description='Ungroup a folder')
     @API.response(code=204, description='Removed')
     def delete(folder_id):
-        """Delete a folder. Its layers stay favourited, at the top level.
+        """Ungroup a folder: delete it and move its layers to the top level.
 
         Idempotent: 204 whether or not the folder was there, so a retry or a
         second click is not an error, and a 204 tells the client nothing about
@@ -129,29 +125,3 @@ class FavouriteFolder(Resource):
         user = UserService.current_user()
         UserFavouriteFolderService.delete_folder(folder_id, user.id)
         return '', HTTPStatus.NO_CONTENT
-
-
-@cors_preflight('OPTIONS, POST')
-@API.route('/<int:folder_id>/ungroup', methods=['POST', 'OPTIONS'])
-@API.doc(params={'folder_id': 'The folder identifier'})
-class FavouriteFolderUngroup(Resource):
-    """Every layer in one folder, moved back out to the top level."""
-
-    @staticmethod
-    @auth.require
-    @ApiHelper.swagger_decorators(
-        API, endpoint_description='Move every layer in a folder to the top level'
-    )
-    @API.response(code=200, model=[favourite_model], description='Success')
-    @API.response(404, 'Not Found')
-    def post(folder_id):
-        """Empty a folder without deleting it, and return the layers that moved.
-
-        Nothing is un-favourited: the layers keep their order relative to each
-        other and land below what is already at the top level.
-        """
-        user = UserService.current_user()
-        favourites = UserFavouriteFolderService.ungroup_folder(folder_id, user.id)
-        if favourites is None:
-            raise ResourceNotFoundError(f'Folder {folder_id} not found')
-        return UserFavouriteLayerSchema(many=True).dump(favourites), HTTPStatus.OK

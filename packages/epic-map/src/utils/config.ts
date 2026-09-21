@@ -218,6 +218,9 @@ export const DEFAULT_LAYER_OPACITY = 100;
  */
 export const MAX_VISIBLE_LAYERS = 15;
 
+/** Mirrors map-api's folder cap, so the panel can stop at it. map-api enforces it. */
+export const MAX_FAVOURITE_FOLDERS = 50;
+
 /**
  * Breathing room, in pixels, left around a layer's features when the map is
  * flown to them. Without it a feature lands hard against the panel and the

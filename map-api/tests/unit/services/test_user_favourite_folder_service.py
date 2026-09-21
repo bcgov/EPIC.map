@@ -85,30 +85,6 @@ def test_update_folder_refuses_another_users_folder(app, session):
     assert theirs.name == 'Theirs'
 
 
-def test_ungroup_folder_empties_it_and_keeps_it(app, session):
-    """Ungrouping is not deleting: the folder is still there, and empty."""
-    user = factory_user()
-    folder = factory_favourite_folder(user.id)
-    favourite = factory_favourite_layer(user.id, folder_id=folder.id)
-
-    moved = UserFavouriteFolderService.ungroup_folder(folder.id, user.id)
-
-    assert [row.id for row in moved] == [favourite.id]
-    assert UserFavouriteFolder.find_one_for_user(folder.id, user.id) is not None
-    assert UserFavouriteLayer.find_ids_in_folder(user.id, folder.id) == []
-
-
-def test_ungroup_folder_refuses_another_users_folder(app, session):
-    """Their folder is not emptied, and nothing confirms it exists."""
-    owner = factory_user(auth_guid=SECOND_AUTH_GUID, username=SECOND_IDIR_USERNAME)
-    user = factory_user()
-    theirs = factory_favourite_folder(owner.id)
-    factory_favourite_layer(owner.id, folder_id=theirs.id)
-
-    assert UserFavouriteFolderService.ungroup_folder(theirs.id, user.id) is None
-    assert len(UserFavouriteLayer.find_ids_in_folder(owner.id, theirs.id)) == 1
-
-
 def test_delete_folder_ungroups_before_removing(app, session):
     """The layers come out with positions of their own, not just a null column."""
     user = factory_user()

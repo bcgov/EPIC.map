@@ -195,11 +195,14 @@ export const useFavouriteLayers = () => {
     onMutate: async ({ favourite, folderId }) => {
       await queryClient.cancelQueries({ queryKey: FAVOURITES_KEY });
       const previous = readCache();
-      writeCache(
-        previous.map((entry) =>
-          entry.id === favourite.id ? { ...entry, folderId } : entry,
-        ),
-      );
+      // Moved to the front, so it lands at the top of its new container, where
+      // map-api puts it, rather than jumping there when the refetch lands.
+      const current =
+        previous.find((entry) => entry.id === favourite.id) ?? favourite;
+      writeCache([
+        { ...current, folderId },
+        ...previous.filter((entry) => entry.id !== favourite.id),
+      ]);
       return { previous };
     },
     onError: (_error, _variables, context) => {

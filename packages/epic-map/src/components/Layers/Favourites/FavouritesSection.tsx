@@ -20,6 +20,7 @@ import { useFavouriteDropTarget } from "@/components/Layers/Favourites/useFavour
 import LayerRow from "@/components/Layers/LayerRow";
 import LayersSection from "@/components/Layers/LayersSection";
 import { useLayers } from "@/components/Layers/LayersContext";
+import { MAX_FAVOURITE_FOLDERS } from "@/utils/config";
 
 /** The folder being typed into: a new one not yet saved, or a saved one renamed. */
 type Editing =
@@ -47,11 +48,13 @@ export default function FavouritesSection() {
     renameFolder,
     setFolderCollapsed,
     deleteFolder,
-    ungroupFolder,
+    folderSaveError,
+    clearFolderSaveError,
     moveFavourite,
   } = useLayers();
 
   const [editing, setEditing] = useState<Editing>(null);
+  const atFolderCap = folders.length >= MAX_FAVOURITE_FOLDERS;
 
   const toTopLevel = useCallback(
     (layerId: string) => moveFavourite(layerId, null),
@@ -108,8 +111,7 @@ export default function FavouritesSection() {
           onToggleCollapsed={() =>
             setFolderCollapsed(folder.folderId, !folder.isCollapsed)
           }
-          onUngroup={() => ungroupFolder(folder.folderId)}
-          onDelete={() => deleteFolder(folder.folderId)}
+          onUngroup={() => deleteFolder(folder.folderId)}
           onDropLayer={(layerId) => moveFavourite(layerId, folder.folderId)}
         >
           {rows(inside)}
@@ -131,8 +133,7 @@ export default function FavouritesSection() {
         onCommitName={commitDraft}
         onCancelEdit={() => setEditing(null)}
         onToggleCollapsed={() => undefined}
-        onUngroup={() => undefined}
-        onDelete={() => setEditing(null)}
+        onUngroup={() => setEditing(null)}
         // A folder that does not exist yet cannot be filed into.
         onDropLayer={() => undefined}
       />
@@ -154,14 +155,8 @@ export default function FavouritesSection() {
     </Box>
   );
 
-  /**
-   * The folders call failed.
-   *
-   * A failed refetch keeps the folders already cached, so the grouping is only
-   * stale. With nothing cached it is gone and the layers have fallen back to
-   * the top level, which is worth saying: otherwise it reads as a deletion.
-   */
-  const foldersNotice = () => (
+  // A warning with its action as a link at the end of the sentence.
+  const warningLine = (message: string, action: string, onAction: () => void) => (
     <Box sx={{ padding: "0 1rem 0.5rem" }}>
       <Typography
         sx={{
@@ -180,14 +175,11 @@ export default function FavouritesSection() {
             color: theme.palette.text.secondary,
           }}
         />
-        {folders.length > 0
-          ? "Couldn’t refresh your folders."
-          : "Couldn’t load your folders. Your layers are shown ungrouped."}{" "}
-        {/* In the sentence, not a button under it: the retry is part of it. */}
+        {message}{" "}
         <Link
           component="button"
           type="button"
-          onClick={retryFolders}
+          onClick={onAction}
           sx={{
             // A native button takes the UA font, not the paragraph's.
             font: "inherit",
@@ -197,12 +189,28 @@ export default function FavouritesSection() {
             textDecorationColor: "currentcolor",
           }}
         >
-          Try again
+          {action}
         </Link>
         .
       </Typography>
     </Box>
   );
+
+  /**
+   * The folders call failed.
+   *
+   * A failed refetch keeps the folders already cached, so the grouping is only
+   * stale. With nothing cached it is gone and the layers have fallen back to
+   * the top level, which is worth saying: otherwise it reads as a deletion.
+   */
+  const foldersNotice = () =>
+    warningLine(
+      folders.length > 0
+        ? "Couldn’t refresh your folders."
+        : "Couldn’t load your folders. Your layers are shown ungrouped.",
+      "Try again",
+      retryFolders,
+    );
 
   const content = () => {
     if (favouritesPending) {
@@ -289,6 +297,9 @@ export default function FavouritesSection() {
   const body = () => (
     <>
       {foldersError ? foldersNotice() : null}
+      {folderSaveError
+        ? warningLine(folderSaveError, "Dismiss", clearFolderSaveError)
+        : null}
       {content()}
     </>
   );
@@ -299,12 +310,29 @@ export default function FavouritesSection() {
       title="Favourites"
       count={favourites.length}
       action={
-        <Tooltip title="New folder">
-          <IconButton size="small" aria-label="New folder" onClick={newFolder}>
-            <CreateNewFolderOutlinedIcon
-              sx={{ fontSize: "1.25rem", color: "primary.main" }}
-            />
-          </IconButton>
+        <Tooltip
+          title={
+            atFolderCap
+              ? `Folder limit reached (${MAX_FAVOURITE_FOLDERS})`
+              : "New folder"
+          }
+        >
+          {/* A disabled button fires no events, so the tooltip needs a wrapper. */}
+          <span>
+            <IconButton
+              size="small"
+              aria-label="New folder"
+              onClick={newFolder}
+              disabled={atFolderCap}
+            >
+              <CreateNewFolderOutlinedIcon
+                sx={{
+                  fontSize: "1.25rem",
+                  color: atFolderCap ? "action.disabled" : "primary.main",
+                }}
+              />
+            </IconButton>
+          </span>
         </Tooltip>
       }
     >

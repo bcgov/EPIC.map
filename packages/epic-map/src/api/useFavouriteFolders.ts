@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isPendingId, nextPendingId } from "@/api/pendingIds";
 import { FAVOURITES_KEY } from "@/api/useFavouriteLayers";
@@ -50,6 +50,8 @@ export const toFavouriteFolder = (
 export const useFavouriteFolders = () => {
   const { api } = useMapWidget();
   const queryClient = useQueryClient();
+  // Why the last folder change was rolled back, until the next one succeeds.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const readCache = useCallback(
     () => queryClient.getQueryData<FavouriteFolder[]>(FOLDERS_KEY) ?? [],
@@ -99,6 +101,7 @@ export const useFavouriteFolders = () => {
       return { previous, pendingId };
     },
     onSuccess: (row, _name, context) => {
+      setSaveError(null);
       writeCache(
         readCache().map((folder) =>
           folder.folderId === context.pendingId
@@ -109,6 +112,7 @@ export const useFavouriteFolders = () => {
     },
     onError: (_error, _name, context) => {
       if (context) writeCache(context.previous);
+      setSaveError("Couldn’t create your folder.");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: FOLDERS_KEY });
@@ -145,8 +149,10 @@ export const useFavouriteFolders = () => {
       );
       return { previous };
     },
+    onSuccess: () => setSaveError(null),
     onError: (_error, _variables, context) => {
       if (context) writeCache(context.previous);
+      setSaveError("Couldn’t save your folder change.");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: FOLDERS_KEY });
@@ -163,21 +169,14 @@ export const useFavouriteFolders = () => {
       writeCache(previous.filter((folder) => folder.folderId !== folderId));
       return { previous };
     },
+    onSuccess: () => setSaveError(null),
     onError: (_error, _folderId, context) => {
       if (context) writeCache(context.previous);
+      setSaveError("Couldn’t ungroup your folder.");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: FOLDERS_KEY });
       // The layers inside came back out to the top level.
-      queryClient.invalidateQueries({ queryKey: FAVOURITES_KEY });
-    },
-  });
-
-  const { mutate: ungroupMutate } = useMutation({
-    mutationFn: async (folderId: number) => {
-      await api.post(`${FOLDERS_PATH}/${folderId}/ungroup`);
-    },
-    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: FAVOURITES_KEY });
     },
   });
@@ -212,13 +211,7 @@ export const useFavouriteFolders = () => {
     [deleteMutate],
   );
 
-  const ungroupFolder = useCallback(
-    (folderId: number) => {
-      if (isPendingId(folderId)) return;
-      ungroupMutate(folderId);
-    },
-    [ungroupMutate],
-  );
+  const clearSaveError = useCallback(() => setSaveError(null), []);
 
   return {
     folders: data ?? NO_FOLDERS,
@@ -229,6 +222,7 @@ export const useFavouriteFolders = () => {
     renameFolder,
     setFolderCollapsed,
     deleteFolder,
-    ungroupFolder,
+    saveError,
+    clearSaveError,
   };
 };

@@ -59,7 +59,6 @@ def star(client, headers, **overrides):
         ('post', ENDPOINT),
         ('patch', f'{ENDPOINT}/1'),
         ('delete', f'{ENDPOINT}/1'),
-        ('post', f'{ENDPOINT}/1/ungroup'),
     ],
 )
 def test_folder_endpoints_require_a_token(app, client, session, method, path):
@@ -318,57 +317,6 @@ def test_delete_another_users_folder_leaves_it_alone(app, client, jwt, session):
 
     assert response.status_code == HTTPStatus.NO_CONTENT
     assert UserFavouriteFolder.find_one_for_user(theirs.id, owner.id) is not None
-
-
-def test_ungroup_empties_the_folder_but_keeps_it(app, client, jwt, session):
-    """Ungrouping files the layers back at the top level, folder and all."""
-    headers = factory_auth_header(jwt)
-    folder = new_folder(client, headers, name='Wildfire')
-    first = star(client, headers)
-    second = star(client, headers, object_name=OTHER_OBJECT)
-    for favourite in (first, second):
-        client.patch(
-            f"{FAVOURITES}/{favourite['id']}",
-            json={'folder_id': folder['id']},
-            headers=headers,
-        )
-
-    response = client.post(f"{ENDPOINT}/{folder['id']}/ungroup", headers=headers)
-
-    assert response.status_code == HTTPStatus.OK
-    assert {row['folder_id'] for row in response.json} == {None}
-    assert len(client.get(ENDPOINT, headers=headers).json) == 1
-    favourites = client.get(FAVOURITES, headers=headers).json
-    assert {row['folder_id'] for row in favourites} == {None}
-    assert len(favourites) == 2
-
-
-def test_ungroup_an_empty_folder_is_an_empty_list(app, client, jwt, session):
-    """Nothing to move is not an error."""
-    headers = factory_auth_header(jwt)
-    folder = new_folder(client, headers)
-
-    response = client.post(f"{ENDPOINT}/{folder['id']}/ungroup", headers=headers)
-
-    assert response.status_code == HTTPStatus.OK
-    assert response.json == []
-
-
-def test_ungroup_an_unknown_folder_is_not_found(app, client, jwt, session):
-    """Unlike a delete, this reports on a folder that should have been there."""
-    response = client.post(f'{ENDPOINT}/999999/ungroup', headers=factory_auth_header(jwt))
-
-    assert response.status_code == HTTPStatus.NOT_FOUND
-
-
-def test_ungroup_cannot_reach_another_users_folder(app, client, jwt, session):
-    """Refused like any unknown id."""
-    owner = factory_user(auth_guid=SECOND_AUTH_GUID, username=SECOND_IDIR_USERNAME)
-    theirs = factory_favourite_folder(owner.id)
-
-    response = client.post(f'{ENDPOINT}/{theirs.id}/ungroup', headers=factory_auth_header(jwt))
-
-    assert response.status_code == HTTPStatus.NOT_FOUND
 
 
 def test_a_folder_is_only_visible_to_its_owner(app, client, jwt, session):
