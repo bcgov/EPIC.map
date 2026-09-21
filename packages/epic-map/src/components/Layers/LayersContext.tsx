@@ -10,17 +10,29 @@ import {
 } from "react";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useAppliedLayers, type AppliedLayer } from "@/api/useAppliedLayers";
+import { useLayerFocus } from "@/api/useLayerFocus";
+import { useLayerMinZooms } from "@/api/useLayerMinZooms";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
   useFavouriteLayers,
   type FavouriteLayer,
 } from "@/api/useFavouriteLayers";
 import {
+  hideOutlineLayer,
   hideWmsLayer,
+  layersBelowFloor,
+  setOutlineLayerMaxZoom,
+  setWmsLayerMinZoom,
   setWmsLayerOpacity,
+  showOutlineLayer,
   showWmsLayer,
-} from "@/components/Layers/wmsLayers";
-import { DEFAULT_LAYER_OPACITY, MAX_VISIBLE_LAYERS } from "@/utils/config";
+} from "@/components/Layers/layerUtils";
+import {
+  DEFAULT_LAYER_OPACITY,
+  effectiveMinZoom,
+  isBeyondMapZoom,
+  MAX_VISIBLE_LAYERS,
+} from "@/utils/config";
 
 interface LayersContextValue {
   map: MapLibreMap | null;
@@ -30,8 +42,14 @@ interface LayersContextValue {
   appliedPending: boolean;
   appliedError: unknown;
   retryApplied: () => void;
-  /** Ids with a call in flight, whose switch is held until it lands. */
   pendingIds: ReadonlySet<string>;
+  focusPendingIds: ReadonlySet<string>;
+  /** Why the last press of "Zoom in to view" did not move the map, by layer. */
+  focusErrors: Readonly<Record<string, string>>;
+  focusLayer: (layer: CatalogueLayer) => void;
+  belowFloorIds: ReadonlySet<string>;
+  /** Enabled layers whose floor is past anything the map can zoom to. */
+  beyondReachIds: ReadonlySet<string>;
   /** The layers map-api has starred for this user, newest first. */
   favourites: readonly FavouriteLayer[];
   favouritesPending: boolean;
@@ -67,6 +85,64 @@ export function LayersProvider({
     removeLayer,
     saveOpacity,
   } = useAppliedLayers();
+
+  const {
+    focusLayer: focusLayerAt,
+    focusPendingIds,
+    focusErrors,
+  } = useLayerFocus();
+
+  const appliedObjectNames = useMemo(
+    () =>
+      appliedLayers
+        .map((layer) => layer.objectName)
+        .filter((name): name is string => Boolean(name)),
+    [appliedLayers],
+  );
+
+  const minZooms = useLayerMinZooms(appliedObjectNames);
+
+  const floors = useMemo(
+    () =>
+      appliedLayers.map((layer) => ({
+        id: layer.id,
+        floor: effectiveMinZoom(
+          layer.objectName ? minZooms[layer.objectName] : undefined,
+        ),
+      })),
+    [appliedLayers, minZooms],
+  );
+
+  const [belowFloorIds, setBelowFloorIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  useEffect(() => {
+    if (!map) return undefined;
+
+    const sync = () => {
+      setBelowFloorIds((current) =>
+        layersBelowFloor(floors, map.getZoom(), current),
+      );
+    };
+
+    sync();
+    map.on("zoom", sync);
+    return () => {
+      map.off("zoom", sync);
+    };
+  }, [map, floors]);
+
+  const beyondReachIds = useMemo(
+    () =>
+      new Set(
+        floors
+          .filter(({ floor }) => isBeyondMapZoom(floor))
+          .map(({ id }) => id),
+      ),
+    [floors],
+  );
+
 
   const {
     favourites,
@@ -115,8 +191,12 @@ export function LayersProvider({
       const drawn = painted.get(layer.id);
       painted.set(layer.id, opacity);
 
-      if (drawn === undefined) showWmsLayer(map, layer, opacity);
-      else if (drawn !== opacity) setWmsLayerOpacity(map, layer.id, opacity);
+      if (drawn === undefined) {
+        showWmsLayer(map, layer, opacity);
+        showOutlineLayer(map, layer);
+      } else if (drawn !== opacity) {
+        setWmsLayerOpacity(map, layer.id, opacity);
+      }
     }
 
     const applied = new Set(appliedLayers.map((layer) => layer.id));
@@ -124,8 +204,21 @@ export function LayersProvider({
       if (applied.has(layerId)) continue;
       painted.delete(layerId);
       hideWmsLayer(map, layerId);
+      hideOutlineLayer(map, layerId);
     }
   }, [map, appliedLayers]);
+
+  useEffect(() => {
+    if (!map) return;
+
+    for (const layer of appliedLayers) {
+      if (!layer.objectName) continue;
+      const minZoom = minZooms[layer.objectName];
+      if (minZoom === undefined) continue;
+      setWmsLayerMinZoom(map, layer.id, minZoom);
+      setOutlineLayerMaxZoom(map, layer.id, minZoom);
+    }
+  }, [map, appliedLayers, minZooms]);
 
   const toggleVisible = useCallback(
     (layer: CatalogueLayer) => {
@@ -176,6 +269,14 @@ export function LayersProvider({
     [map, saveOpacity],
   );
 
+  const focusLayer = useCallback(
+    (layer: CatalogueLayer) => {
+      if (!map || !layer.objectName) return;
+      focusLayerAt(layer.id, layer.objectName, map, minZooms[layer.objectName]);
+    },
+    [map, focusLayerAt, minZooms],
+  );
+
   const toggleExpanded = useCallback((layerId: string) => {
     setExpandedId((current) => (current === layerId ? null : layerId));
   }, []);
@@ -199,6 +300,11 @@ export function LayersProvider({
       appliedError,
       retryApplied,
       pendingIds,
+      focusPendingIds,
+      focusErrors,
+      focusLayer,
+      belowFloorIds,
+      beyondReachIds,
       favourites,
       favouritesPending,
       favouritesError,
@@ -220,6 +326,11 @@ export function LayersProvider({
       appliedError,
       retryApplied,
       pendingIds,
+      focusPendingIds,
+      focusErrors,
+      focusLayer,
+      belowFloorIds,
+      beyondReachIds,
       favourites,
       favouritesPending,
       favouritesError,

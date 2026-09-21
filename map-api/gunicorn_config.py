@@ -19,7 +19,13 @@ import os
 
 
 workers = int(os.environ.get('GUNICORN_PROCESSES', '1'))  # pylint: disable=invalid-name
-threads = int(os.environ.get('GUNICORN_THREADS', '1'))  # pylint: disable=invalid-name
+
+# One thread per worker means one request at a time for the whole pod: a call
+# that waits on an upstream - /catalogue/layers/.../nearest-feature waits on the
+# BCGW, and spends ~84% of its time doing so - stalls every other request behind
+# it, sign-in included. Threads cost almost nothing while a worker is blocked on
+# a socket, and 8 stays well inside SQLAlchemy's 15 connection ceiling.
+threads = int(os.environ.get('GUNICORN_THREADS', '8'))  # pylint: disable=invalid-name
 
 forwarded_allow_ips = '*'  # pylint: disable=invalid-name
 secure_scheme_headers = {'X-Forwarded-Proto': 'https'}  # pylint: disable=invalid-name
