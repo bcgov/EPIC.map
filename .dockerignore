@@ -24,5 +24,7 @@ deployment
 **/coverage
 **/.pytest_cache
 **/__pycache__
-**/cypress
+# Test output only: map-web's tsc needs cypress/support, where cy.mount is declared.
+**/cypress/screenshots
+**/cypress/videos
 **/*.log

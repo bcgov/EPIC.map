@@ -40,7 +40,10 @@ COPY packages/epic-map/nginx/nginx.conf /etc/nginx/nginx.conf
 #
 # One warning is expected and is not a failure: `duplicate extension "ts"` is the
 # mime override that makes the served contract readable. See nginx.conf.
-RUN nginx -t
+#
+# The check runs as root and leaves a root-owned pid file and temp dirs in /tmp,
+# which OpenShift's arbitrary uid then cannot write, so clear them.
+RUN nginx -t && rm -rf /tmp/*
 
 EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
