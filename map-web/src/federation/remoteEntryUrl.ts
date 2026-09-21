@@ -23,8 +23,11 @@ const remoteEntryUrl = (): ModuleFederationRuntimePlugin => ({
   name: "epic-map-remote-entry-url",
 
   beforeRequest(args) {
+    // The vite plugin registers the remote under a generated name and keeps
+    // "epicMap" as its alias, so match on either.
     const remote = args.options.remotes.find(
-      (candidate) => candidate.name === "epicMap",
+      (candidate) =>
+        candidate.alias === "epicMap" || candidate.name === "epicMap",
     );
 
     // `entry` is absent on a remote declared by manifest rather than by URL.
