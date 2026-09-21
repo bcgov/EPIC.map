@@ -195,9 +195,10 @@ jobs:
       - name: Build the widget image
         run: docker build . --file packages/epic-map/Dockerfile --tag map-widget:ci
 
+      # Arbitrary non-root uid in the root group, the way OpenShift runs it.
       - name: Serve it
         run: |
-          docker run -d --name map-widget-ci -p 8080:8080 map-widget:ci
+          docker run -d --name map-widget-ci --user 1000680000:0 -p 8080:8080 map-widget:ci
           for _ in $(seq 1 30); do
             curl -sfI http://127.0.0.1:8080/ >/dev/null && break
             sleep 1
