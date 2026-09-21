@@ -25,6 +25,25 @@ export default defineConfig({
     },
     setupNodeEvents(on, config) {
       registerCodeCoverageTasks(on, config);
+
+      // WebGL, on a machine with no GPU.
+      //
+      // The map is drawn with it, so a browser that cannot hand out a WebGL2
+      // context has no map to test. CI runners have no GPU, and Chrome stopped
+      // letting WebGL quietly fall back to its software renderer - it now
+      // refuses the context unless this flag says that is wanted. Without it
+      // maplibre returns a map with no painter and the map surface reports
+      // itself unsupported, which is correct behaviour and an untested seam.
+      //
+      // Ignored by a browser that has a GPU, so this stays a CI concession
+      // rather than something that changes what developers see locally.
+      on("before:browser:launch", (browser, launchOptions) => {
+        if (browser.family === "chromium" && browser.name !== "electron") {
+          launchOptions.args.push("--enable-unsafe-swiftshader");
+        }
+        return launchOptions;
+      });
+
       return config;
     },
   },

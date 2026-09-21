@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Box } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import {
   GeolocateControl,
   Map as MapLibreMap,
@@ -45,11 +45,13 @@ const carryWidgetLayers: TransformStyleFunction = (previous, next) => {
 
 export default function MapSurface() {
   const { config } = useMapWidget();
-  const { initialExtent, basemapStyles } = config;
+  const { initialExtent, basemapStyles, onError } = config;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const [map, setMap] = useState<MapLibreMap | null>(null);
+
+  const [unsupported, setUnsupported] = useState(false);
 
   const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP);
   const activeStyle = resolveBasemap(basemap, basemapStyles).style;
@@ -74,6 +76,16 @@ export default function MapSurface() {
       canvasContextAttributes: { preserveDrawingBuffer: true },
     });
 
+    if (!instance.painter) {
+      setUnsupported(true);
+      onError({
+        kind: "unknown",
+        message:
+          "The map could not be initialised: this browser did not provide a WebGL2 context.",
+      });
+      return;
+    }
+
     instance.addControl(
       new NavigationControl({ showCompass: false }),
       "bottom-right",
@@ -95,7 +107,7 @@ export default function MapSurface() {
       setMap(null);
       instance.remove();
     };
-  }, []);
+  }, [onError]);
 
   useEffect(() => {
     if (!map || !initialExtent) return;
@@ -120,9 +132,34 @@ export default function MapSurface() {
         minHeight: 0,
       }}
     >
-      <Box ref={containerRef} sx={{ width: "100%", height: "100%" }} />
-      <LayersControl map={map} />
-      <BasemapSwitch current={basemap} onSelect={setBasemap} />
+      {unsupported ? (
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 1,
+            width: "100%",
+            height: "100%",
+            p: 3,
+            textAlign: "center",
+          }}
+        >
+          <Typography variant="h6">This browser cannot show the map</Typography>
+          <Typography variant="body2" color="text.secondary">
+            The map is drawn with WebGL, which is unavailable here. Turning on
+            hardware acceleration in the browser&rsquo;s settings usually
+            restores it.
+          </Typography>
+        </Box>
+      ) : (
+        <>
+          <Box ref={containerRef} sx={{ width: "100%", height: "100%" }} />
+          <LayersControl map={map} />
+          <BasemapSwitch current={basemap} onSelect={setBasemap} />
+        </>
+      )}
     </Box>
   );
 }
