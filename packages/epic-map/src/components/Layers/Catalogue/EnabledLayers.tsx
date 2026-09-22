@@ -1,109 +1,26 @@
-import { Box, Button, CircularProgress, Typography } from "@mui/material";
+import { Box, Button, Divider, Link, Typography } from "@mui/material";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { useTheme } from "@mui/material/styles";
-import DashedEmptyState from "@/components/Layers/DashedEmptyState";
 import LayerRow from "@/components/Layers/LayerRow";
 import { useLayers } from "@/components/Layers/LayersContext";
 
-/**
- * The layers the user has switched on, listed under the search that puts them
- * there. Restored from map-api, so a layer left on is still on next session.
- */
+/** Layers the user has switched on, shown above the search results. */
 export default function EnabledLayers() {
   const theme = useTheme();
-  const { appliedLayers, appliedPending, appliedError, retryApplied } =
-    useLayers();
+  const {
+    appliedLayers,
+    appliedPending,
+    appliedError,
+    retryApplied,
+    turnAllOff,
+  } = useLayers();
 
-  const layerList = () => (
-    <Box component="ul" sx={{ margin: 0, padding: 0 }}>
-      {appliedLayers.map((layer) => (
-        <LayerRow key={layer.id} layer={layer} />
-      ))}
-    </Box>
-  );
+  const hasLayers = appliedLayers.length > 0;
 
-  const body = () => {
-    if (appliedPending) {
-      return (
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            padding: "0 1rem 0.5rem",
-          }}
-        >
-          <CircularProgress size={14} />
-          <Typography
-            sx={{
-              fontSize: theme.typography.caption.fontSize,
-              color: theme.palette.text.secondary,
-            }}
-          >
-            Loading your layers…
-          </Typography>
-        </Box>
-      );
-    }
-
-    const stale = appliedLayers.length > 0;
-
-    if (appliedError) {
-      return (
-        <>
-          <Box
-            sx={{
-              padding: "0 1rem 0.5rem",
-              textAlign: stale ? "left" : "center",
-            }}
-          >
-            <Typography
-              sx={{
-                fontSize: theme.typography.caption.fontSize,
-                color: theme.palette.text.primary,
-              }}
-            >
-              <WarningAmberIcon
-                aria-hidden
-                sx={{
-                  verticalAlign: "text-bottom",
-                  marginRight: "0.25rem",
-                  fontSize: "1rem",
-                  color: theme.palette.text.secondary,
-                }}
-              />
-              {stale
-                ? "Couldn’t refresh your enabled layers"
-                : "Couldn’t load your enabled layers"}
-            </Typography>
-            <Button
-              variant="text"
-              color="secondary"
-              onClick={retryApplied}
-              sx={{ fontSize: theme.typography.caption.fontSize }}
-            >
-              Try again
-            </Button>
-          </Box>
-          {stale && layerList()}
-        </>
-      );
-    }
-
-    if (!stale) {
-      return (
-        <DashedEmptyState>
-          No layers are switched on. Turn one on above and it is saved to your
-          account.
-        </DashedEmptyState>
-      );
-    }
-
-    return layerList();
-  };
+  if (appliedPending || (!hasLayers && !appliedError)) return null;
 
   return (
-    <Box sx={{ marginTop: "0.5rem" }}>
+    <Box sx={{ marginBottom: "0.5rem" }}>
       <Box
         sx={{
           display: "flex",
@@ -116,11 +33,10 @@ export default function EnabledLayers() {
           component="h3"
           sx={{
             margin: 0,
-            fontSize: theme.typography.caption.fontSize,
+            fontSize: "0.75rem",
+            lineHeight: "1.125rem",
             fontWeight: theme.typography.fontWeightBold,
-            textTransform: "uppercase",
-            letterSpacing: "0.04em",
-            color: theme.palette.text.secondary,
+            color: theme.palette.text.primary,
           }}
         >
           Enabled layers
@@ -144,9 +60,69 @@ export default function EnabledLayers() {
         >
           {appliedLayers.length}
         </Box>
+        {hasLayers && (
+          <Link
+            component="button"
+            type="button"
+            onClick={turnAllOff}
+            underline="always"
+            sx={{
+              marginLeft: "auto",
+              fontSize: "0.75rem",
+              lineHeight: "1.125rem",
+            }}
+          >
+            Turn All Off
+          </Link>
+        )}
       </Box>
 
-      {body()}
+      {Boolean(appliedError) && (
+        <Box
+          sx={{
+            padding: "0 1rem 0.5rem",
+            textAlign: hasLayers ? "left" : "center",
+          }}
+        >
+          <Typography
+            sx={{
+              fontSize: theme.typography.caption.fontSize,
+              color: theme.palette.text.primary,
+            }}
+          >
+            <WarningAmberIcon
+              aria-hidden
+              sx={{
+                verticalAlign: "text-bottom",
+                marginRight: "0.25rem",
+                fontSize: "1rem",
+                color: theme.palette.text.secondary,
+              }}
+            />
+            {hasLayers
+              ? "Couldn’t refresh your enabled layers"
+              : "Couldn’t load your enabled layers"}
+          </Typography>
+          <Button
+            variant="text"
+            color="secondary"
+            onClick={retryApplied}
+            sx={{ fontSize: theme.typography.caption.fontSize }}
+          >
+            Try again
+          </Button>
+        </Box>
+      )}
+
+      {hasLayers && (
+        <Box component="ul" sx={{ margin: 0, padding: 0 }}>
+          {appliedLayers.map((layer) => (
+            <LayerRow key={layer.id} layer={layer} />
+          ))}
+        </Box>
+      )}
+
+      <Divider sx={{ margin: "0.5rem 1rem 0" }} />
     </Box>
   );
 }
