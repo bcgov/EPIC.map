@@ -233,16 +233,18 @@ export const useFavouriteLayers = () => {
     [readCache, removeMutate],
   );
 
+  /** True when the move was sent, so only a real one is announced. */
   const moveFavourite = useCallback(
-    (layerId: string, folderId: number | null) => {
+    (layerId: string, folderId: number | null): boolean => {
       const favourite = readCache().find((entry) => entry.id === layerId);
       // A star still waiting on its POST has no row id to file yet.
-      if (!favourite || isPendingId(favourite.favouriteId)) return;
+      if (!favourite || isPendingId(favourite.favouriteId)) return false;
       // Nor a folder to file it into until that folder's POST lands.
-      if (isPendingId(folderId)) return;
+      if (isPendingId(folderId)) return false;
       // Dropping a layer back where it already is is not a change.
-      if (favourite.folderId === folderId) return;
+      if (favourite.folderId === folderId) return false;
       moveMutate({ favourite, folderId });
+      return true;
     },
     [readCache, moveMutate],
   );

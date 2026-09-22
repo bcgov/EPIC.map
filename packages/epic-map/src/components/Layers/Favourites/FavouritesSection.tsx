@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Box,
   Button,
@@ -11,22 +11,51 @@ import {
 import CreateNewFolderOutlinedIcon from "@mui/icons-material/CreateNewFolderOutlined";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { useTheme } from "@mui/material/styles";
+import { isPendingId } from "@/api/pendingIds";
 import { DEFAULT_FOLDER_NAME } from "@/api/useFavouriteFolders";
+import type { FavouriteLayer } from "@/api/useFavouriteLayers";
 import DashedEmptyState from "@/components/Layers/DashedEmptyState";
 import DropIndicator from "@/components/Layers/Favourites/DropIndicator";
 import FolderRow from "@/components/Layers/Favourites/FolderRow";
-import { groupByFolder } from "@/components/Layers/Favourites/grouping";
+import {
+  groupByFolder,
+  moveDestinations,
+  TOP_LEVEL_NAME,
+} from "@/components/Layers/Favourites/grouping";
+import MoveToGroupMenu from "@/components/Layers/Favourites/MoveToGroupMenu";
 import { useFavouriteDropTarget } from "@/components/Layers/Favourites/useFavouriteDropTarget";
 import LayerRow from "@/components/Layers/LayerRow";
 import LayersSection from "@/components/Layers/LayersSection";
 import { useLayers } from "@/components/Layers/LayersContext";
 import { MAX_FAVOURITE_FOLDERS } from "@/utils/config";
 
-/** The folder being typed into: a new one not yet saved, or a saved one renamed. */
+/** The folder being typed into, and the layer a draft was opened to file. */
 type Editing =
-  | { kind: "draft" }
+  | { kind: "draft"; layer?: FavouriteLayer }
   | { kind: "rename"; folderId: number }
   | null;
+
+/** A layer held in the folder it is headed for, while that folder saves. */
+type Filing = { layerId: string; folderId: number } | null;
+
+/** Where focus goes after a menu move remounts the row. */
+type FocusAfterMove =
+  | { kind: "layer"; layerId: string }
+  | { kind: "folder"; folderId: number }
+  | null;
+
+/** Read by a screen reader, seen by no one. */
+const visuallyHidden = {
+  position: "absolute",
+  width: "1px",
+  height: "1px",
+  margin: "-1px",
+  padding: 0,
+  overflow: "hidden",
+  clip: "rect(0 0 0 0)",
+  whiteSpace: "nowrap",
+  border: 0,
+} as const;
 
 /**
  * Layers the user has starred, restored from map-api, grouped into folders.
@@ -54,13 +83,42 @@ export default function FavouritesSection() {
   } = useLayers();
 
   const [editing, setEditing] = useState<Editing>(null);
+  const [filing, setFiling] = useState<Filing>(null);
+  const [focusAfterMove, setFocusAfterMove] = useState<FocusAfterMove>(null);
+  // Counted, so the same sentence twice still announces.
+  const [announcement, setAnnouncement] = useState({ text: "", count: 0 });
   const atFolderCap = folders.length >= MAX_FAVOURITE_FOLDERS;
 
+  const clearFocusAfterMove = useCallback(() => setFocusAfterMove(null), []);
+
+  /** Every move, by menu or by drag, is announced here. */
+  const moveTo = useCallback(
+    (layerId: string, folderId: number | null, groupName: string) => {
+      const moved = moveFavourite(layerId, folderId);
+      if (moved) {
+        const layer = favourites.find((entry) => entry.id === layerId);
+        setAnnouncement((current) => ({
+          text: `Moved ${layer?.name ?? "layer"} to ${groupName}`,
+          count: current.count + 1,
+        }));
+      }
+      return moved;
+    },
+    [moveFavourite, favourites],
+  );
+
   const toTopLevel = useCallback(
-    (layerId: string) => moveFavourite(layerId, null),
-    [moveFavourite],
+    (layerId: string) => moveTo(layerId, null, TOP_LEVEL_NAME),
+    [moveTo],
   );
   const { over: overTopLevel, dropProps } = useFavouriteDropTarget(toTopLevel);
+
+  // The move has written the cache, so the layer no longer needs holding.
+  useEffect(() => {
+    setFiling((current) =>
+      current && !isPendingId(current.folderId) ? null : current,
+    );
+  }, [favourites]);
 
   // One draft at a time: a second click would leave two blank folders to name.
   const newFolder = useCallback(() => {
@@ -68,11 +126,23 @@ export default function FavouritesSection() {
   }, []);
 
   const commitDraft = useCallback(
-    (name: string) => {
+    (name: string, layer?: FavouriteLayer) => {
       setEditing(null);
-      createFolder(name);
+      const { pendingId, saved } = createFolder(name);
+      if (!layer) return;
+
+      // Held in the new folder while it saves, rather than jumping out.
+      setFiling({ layerId: layer.id, folderId: pendingId });
+      const groupName = name.trim() || DEFAULT_FOLDER_NAME;
+      saved.then((folderId) => {
+        if (folderId !== null && moveTo(layer.id, folderId, groupName)) {
+          setFiling({ layerId: layer.id, folderId });
+        } else {
+          setFiling(null);
+        }
+      });
     },
-    [createFolder],
+    [createFolder, moveTo],
   );
 
   const commitRename = useCallback(
@@ -83,14 +153,55 @@ export default function FavouritesSection() {
     [renameFolder],
   );
 
-  // A layer whose folder is missing falls back to the top level. See grouping.
-  const { topLevel, inFolder } = useMemo(
-    () => groupByFolder(favourites, folders),
-    [favourites, folders],
-  );
+  const draftLayer = editing?.kind === "draft" ? editing.layer : undefined;
 
-  const rows = (layers: typeof favourites) =>
-    layers.map((layer) => <LayerRow key={layer.id} layer={layer} draggable />);
+  // A layer whose folder is missing falls back to the top level. See grouping.
+  const { topLevel, inFolder } = useMemo(() => {
+    const shown = favourites
+      // Shown inside the draft instead.
+      .filter((layer) => layer.id !== draftLayer?.id)
+      .map((layer) =>
+        layer.id === filing?.layerId
+          ? { ...layer, folderId: filing.folderId }
+          : layer,
+      );
+    return groupByFolder(shown, folders);
+  }, [favourites, folders, draftLayer, filing]);
+
+  const moveFromMenu = (layer: FavouriteLayer, folderId: number | null) => {
+    const destination = folders.find((folder) => folder.folderId === folderId);
+    const groupName = destination?.name ?? TOP_LEVEL_NAME;
+    if (!moveTo(layer.id, folderId, groupName)) return;
+    // A closed folder hides the row, so its header takes focus instead.
+    setFocusAfterMove(
+      destination?.isCollapsed
+        ? { kind: "folder", folderId: destination.folderId }
+        : { kind: "layer", layerId: layer.id },
+    );
+  };
+
+  const rows = (layers: readonly FavouriteLayer[]) =>
+    layers.map((layer) => (
+      <LayerRow
+        key={layer.id}
+        layer={layer}
+        draggable
+        menu={(controls) => (
+          <MoveToGroupMenu
+            {...controls}
+            layerName={layer.name}
+            destinations={moveDestinations(layer.folderId, folders)}
+            onMove={(destination) => moveFromMenu(layer, destination.folderId)}
+            onNewFolder={() => setEditing({ kind: "draft", layer })}
+            atFolderCap={atFolderCap}
+          />
+        )}
+        focusMenuButton={
+          focusAfterMove?.kind === "layer" && focusAfterMove.layerId === layer.id
+        }
+        onMenuButtonFocused={clearFocusAfterMove}
+      />
+    ));
 
   const folderList = () =>
     folders.map((folder) => {
@@ -112,7 +223,14 @@ export default function FavouritesSection() {
             setFolderCollapsed(folder.folderId, !folder.isCollapsed)
           }
           onUngroup={() => deleteFolder(folder.folderId)}
-          onDropLayer={(layerId) => moveFavourite(layerId, folder.folderId)}
+          onDropLayer={(layerId) =>
+            moveTo(layerId, folder.folderId, folder.name)
+          }
+          focusHeader={
+            focusAfterMove?.kind === "folder" &&
+            focusAfterMove.folderId === folder.folderId
+          }
+          onHeaderFocused={clearFocusAfterMove}
         >
           {rows(inside)}
         </FolderRow>
@@ -128,15 +246,18 @@ export default function FavouritesSection() {
           isCollapsed: false,
         }}
         editing
-        empty
+        empty={!draftLayer}
         onStartRename={() => undefined}
-        onCommitName={commitDraft}
+        onCommitName={(name) => commitDraft(name, draftLayer)}
         onCancelEdit={() => setEditing(null)}
         onToggleCollapsed={() => undefined}
         onUngroup={() => setEditing(null)}
         // A folder that does not exist yet cannot be filed into.
         onDropLayer={() => undefined}
-      />
+      >
+        {/* No menu or drag: the folder it is in does not exist yet. */}
+        {draftLayer && <LayerRow layer={draftLayer} />}
+      </FolderRow>
     ) : null;
 
   /**
@@ -296,6 +417,10 @@ export default function FavouritesSection() {
   // Above the favourites' own message: separate calls, so both can fail.
   const body = () => (
     <>
+      {/* Always mounted: a live region only speaks when its text changes. */}
+      <Box role="status" aria-live="polite" sx={visuallyHidden}>
+        <span key={announcement.count}>{announcement.text}</span>
+      </Box>
       {foldersError ? foldersNotice() : null}
       {folderSaveError
         ? warningLine(folderSaveError, "Dismiss", clearFolderSaveError)

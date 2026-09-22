@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Box,
   Collapse,
@@ -44,6 +44,9 @@ type FolderRowProps = {
   /** Removes the folder; its layers move to the top level. */
   onUngroup: () => void;
   onDropLayer: (layerId: string) => void;
+  /** Focus the chevron: a layer moved in while the folder was closed. */
+  focusHeader?: boolean;
+  onHeaderFocused?: () => void;
 };
 
 /**
@@ -63,10 +66,19 @@ export default function FolderRow({
   onToggleCollapsed,
   onUngroup,
   onDropLayer,
+  focusHeader = false,
+  onHeaderFocused,
 }: FolderRowProps) {
   const theme = useTheme();
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const { over, dropProps } = useFavouriteDropTarget(onDropLayer);
+  const chevronRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!focusHeader) return;
+    chevronRef.current?.focus();
+    onHeaderFocused?.();
+  }, [focusHeader, onHeaderFocused]);
 
   const bodyId = `epic-map-folder-${folder.folderId}-body`;
 
@@ -112,6 +124,7 @@ export default function FolderRow({
         }}
       >
         <IconButton
+          ref={chevronRef}
           size="small"
           onClick={onToggleCollapsed}
           aria-expanded={!folder.isCollapsed}

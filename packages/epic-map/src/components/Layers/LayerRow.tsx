@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactNode,
+} from "react";
 import {
   Box,
   Collapse,
@@ -78,6 +84,15 @@ type LayerRowProps = {
   query?: string;
   /** Favourites only: a catalogue result is filed nowhere, so it has no grip. */
   draggable?: boolean;
+  /** The kebab's menu. Without one the kebab opens nothing yet. */
+  menu?: (controls: {
+    id: string;
+    anchorEl: HTMLElement | null;
+    onClose: () => void;
+  }) => ReactNode;
+  /** Focus the kebab on mount: the row was just moved from its menu. */
+  focusMenuButton?: boolean;
+  onMenuButtonFocused?: () => void;
 };
 
 /**
@@ -91,6 +106,9 @@ export default function LayerRow({
   layer,
   query = "",
   draggable = false,
+  menu,
+  focusMenuButton = false,
+  onMenuButtonFocused,
 }: LayerRowProps) {
   const theme = useTheme();
   const {
@@ -166,6 +184,16 @@ export default function LayerRow({
   const nameRef = useRef<HTMLSpanElement | null>(null);
   const [clamped, setClamped] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const menuId = `${layer.id}-menu`;
+
+  // A move remounts the row in its new list, dropping focus on the body.
+  useEffect(() => {
+    if (!focusMenuButton) return;
+    menuButtonRef.current?.focus();
+    onMenuButtonFocused?.();
+  }, [focusMenuButton, onMenuButtonFocused]);
   useEffect(() => {
     const element = nameRef.current;
     if (element) setClamped(element.scrollHeight > element.clientHeight + 1);
@@ -324,6 +352,9 @@ export default function LayerRow({
           "&:hover .epic-map-grip, &:focus-within .epic-map-grip": {
             opacity: 1,
           },
+          "&:hover .epic-map-row-menu, &:focus-within .epic-map-row-menu": {
+            opacity: 1,
+          },
         }}
       >
         {draggable && (
@@ -387,17 +418,41 @@ export default function LayerRow({
         </Tooltip>
 
         <IconButton
+          ref={menuButtonRef}
           size="small"
           aria-label={`Actions for ${layer.name}`}
+          className={menu ? "epic-map-row-menu" : undefined}
+          onClick={
+            menu
+              ? (event) => {
+                  const button = event.currentTarget;
+                  setMenuAnchor((current) => (current ? null : button));
+                }
+              : undefined
+          }
+          aria-haspopup={menu ? "menu" : undefined}
+          aria-expanded={menu ? Boolean(menuAnchor) : undefined}
+          aria-controls={menuAnchor ? menuId : undefined}
           sx={{
             flexShrink: 0,
             padding: "0.125rem",
             color: theme.palette.text.primary,
+            // Subtle until the row is hovered or focused, but still tabbable.
+            ...(menu && {
+              opacity: menuAnchor ? 1 : 0.6,
+              transition: theme.transitions.create("opacity"),
+            }),
             ...focusRing(theme),
           }}
         >
           <MoreVertIcon sx={{ fontSize: "1.25rem" }} />
         </IconButton>
+
+        {menu?.({
+          id: menuId,
+          anchorEl: menuAnchor,
+          onClose: () => setMenuAnchor(null),
+        })}
 
         <IconButton
           size="small"
