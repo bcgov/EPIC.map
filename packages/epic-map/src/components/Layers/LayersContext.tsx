@@ -80,6 +80,8 @@ interface LayersContextValue {
   opacities: Readonly<Record<string, number>>;
   atVisibleLimit: boolean;
   toggleVisible: (layer: CatalogueLayer) => void;
+  /** Switches off every enabled layer. */
+  turnAllOff: () => void;
   toggleFavourite: (layer: CatalogueLayer) => void;
   toggleExpanded: (layerId: string) => void;
   setOpacity: (layerId: string, percent: number) => void;
@@ -270,6 +272,10 @@ export function LayersProvider({
     [pendingIds, visibleIds, applyLayer, removeLayer],
   );
 
+  const turnAllOff = useCallback(() => {
+    for (const layer of appliedLayers) removeLayer(layer.id);
+  }, [appliedLayers, removeLayer]);
+
   const favouriteIds = useMemo(
     () => new Set(favourites.map((favourite) => favourite.id)),
     [favourites],
@@ -362,6 +368,7 @@ export function LayersProvider({
       opacities,
       atVisibleLimit,
       toggleVisible,
+      turnAllOff,
       toggleFavourite,
       toggleExpanded,
       setOpacity,
@@ -399,6 +406,7 @@ export function LayersProvider({
       opacities,
       atVisibleLimit,
       toggleVisible,
+      turnAllOff,
       toggleFavourite,
       toggleExpanded,
       setOpacity,
