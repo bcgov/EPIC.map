@@ -9,6 +9,7 @@ import CatalogueSearchField from "@/components/Layers/Catalogue/CatalogueSearchF
 import EnabledLayers from "@/components/Layers/Catalogue/EnabledLayers";
 import LayerRow from "@/components/Layers/LayerRow";
 import LayersSection from "@/components/Layers/LayersSection";
+import { useLayers } from "@/components/Layers/LayersContext";
 import {
   CATALOGUE_SEARCH_DEBOUNCE_MS,
   MIN_CATALOGUE_QUERY_LENGTH,
@@ -33,6 +34,10 @@ export default function CatalogueSection() {
 
   const { layers, isLoading, error, retry } =
     useCatalogueSearch(debouncedQuery);
+  const { visibleIds } = useLayers();
+
+  // Enabled layers are listed above, so leave them out of the results.
+  const foundLayers = layers.filter((layer) => !visibleIds.has(layer.id));
 
   const trimmedQuery = query.trim();
   const searching = trimmedQuery.length >= MIN_CATALOGUE_QUERY_LENGTH;
@@ -48,6 +53,8 @@ export default function CatalogueSection() {
       onToggle={() => setExpanded((isExpanded) => !isExpanded)}
     >
       <CatalogueSearchField value={query} onChange={setQuery} />
+
+      <EnabledLayers />
 
       {!searching && (
         <Box
@@ -154,7 +161,20 @@ export default function CatalogueSection() {
         </Box>
       )}
 
-      {hasResults && (
+      {hasResults && foundLayers.length === 0 && (
+        <Typography
+          aria-live="polite"
+          sx={{
+            padding: "0 1rem 0.5rem",
+            fontSize: theme.typography.caption.fontSize,
+            color: theme.palette.text.secondary,
+          }}
+        >
+          Every layer matching &ldquo;{trimmedQuery}&rdquo; is already enabled
+        </Typography>
+      )}
+
+      {hasResults && foundLayers.length > 0 && (
         <>
           <Typography
             aria-live="polite"
@@ -164,10 +184,11 @@ export default function CatalogueSection() {
               color: theme.palette.text.secondary,
             }}
           >
-            {layers.length} layer(s) found
+            {foundLayers.length}{" "}
+            {foundLayers.length === 1 ? "layer" : "layers"} found
           </Typography>
           <Box component="ul" sx={{ margin: 0, padding: 0 }}>
-            {layers.map((layer) => (
+            {foundLayers.map((layer) => (
               <LayerRow
                 key={layer.id}
                 layer={layer}
@@ -177,8 +198,6 @@ export default function CatalogueSection() {
           </Box>
         </>
       )}
-
-      <EnabledLayers />
     </LayersSection>
   );
 }
