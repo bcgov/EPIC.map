@@ -160,3 +160,83 @@ def test_min_zoom_polices_the_object_name_too(
 
     assert response.status_code in (HTTPStatus.BAD_REQUEST, HTTPStatus.NOT_FOUND)
     service.assert_not_called()
+
+
+METADATA_ENDPOINT = f'/api/catalogue/layers/{OBJECT_NAME}/metadata'
+METADATA_SERVICE = 'map_api.resources.catalogue_layer.BcgwService.metadata'
+AROUND_A_CLICK = {'west': -123.101, 'south': 49.299, 'east': -123.099, 'north': 49.301}
+
+
+def test_metadata_requires_a_token(app, client, session):
+    """The warehouse proxy is not open to anonymous callers."""
+    response = client.get(METADATA_ENDPOINT, query_string=AROUND_A_CLICK)
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_metadata_returns_the_feature_under_the_click(app, client, jwt, session):
+    """Attributes stay in the warehouse's order, as a list."""
+    feature = {
+        'id': 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES.1',
+        'properties': [
+            {'name': 'ZETA', 'value': 'first'},
+            {'name': 'ALPHA', 'value': None},
+        ],
+        'geometry': {'type': 'Point', 'coordinates': [-123.1, 49.3]},
+        'bounds': [-123.1, 49.3, -123.1, 49.3],
+    }
+
+    with patch(METADATA_SERVICE, return_value=feature) as service:
+        response = client.get(
+            METADATA_ENDPOINT, query_string=AROUND_A_CLICK, headers=factory_auth_header(jwt)
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json == {'feature': feature}
+    service.assert_called_once_with(OBJECT_NAME, (-123.101, 49.299, -123.099, 49.301))
+
+
+def test_metadata_nothing_there_is_a_200_with_null(app, client, jwt, session):
+    """Empty at the point is an answer; the client tells it apart from a failure."""
+    with patch(METADATA_SERVICE, return_value=None):
+        response = client.get(
+            METADATA_ENDPOINT, query_string=AROUND_A_CLICK, headers=factory_auth_header(jwt)
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json == {'feature': None}
+
+
+@pytest.mark.parametrize(
+    'query',
+    [
+        {},
+        {**AROUND_A_CLICK, 'north': 'up'},
+        {**AROUND_A_CLICK, 'west': -123.0, 'east': -123.1},   # back to front
+        {**AROUND_A_CLICK, 'south': 49.4, 'north': 49.3},     # upside down
+        {'west': -130.0, 'south': 49.0, 'east': -120.0, 'north': 49.1},  # not a click
+        {**AROUND_A_CLICK, 'west': -200},
+    ],
+)
+def test_metadata_rejects_a_bad_box(app, client, jwt, session, query):
+    """Only a small box, the right way round, reaches the warehouse."""
+    with patch(METADATA_SERVICE) as service:
+        response = client.get(
+            METADATA_ENDPOINT, query_string=query, headers=factory_auth_header(jwt)
+        )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    service.assert_not_called()
+
+
+def test_metadata_polices_the_object_name_too(app, client, jwt, session):
+    """The name is interpolated into an outbound URL here as well."""
+    with patch(METADATA_SERVICE) as service:
+        response = client.get(
+            '/api/catalogue/layers/WHSE_ADMIN,WHSE_OTHER/metadata',
+            query_string=AROUND_A_CLICK,
+            headers=factory_auth_header(jwt),
+        )
+
+    assert response.status_code in (HTTPStatus.BAD_REQUEST, HTTPStatus.NOT_FOUND)
+    service.assert_not_called()

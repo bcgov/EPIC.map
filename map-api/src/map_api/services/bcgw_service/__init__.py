@@ -40,10 +40,10 @@ from map_api.exceptions import ServiceUnavailableError
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
     BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_CONNECTION_POOL_SIZE, BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES,
-    BCGW_SEARCH_BUDGET_SECONDS, BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_WFS_TIMEOUT_SECONDS,
-    LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS,
-    NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES, WMS_MAX_LAYER_MIN_ZOOM,
-    WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO)
+    BCGW_SCHEMA_BYTE_LIMIT, BCGW_SEARCH_BUDGET_SECONDS, BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_WFS_TIMEOUT_SECONDS,
+    GEOMETRY_COLUMN_PATTERN, LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, LAYER_SCHEMA_CACHE_TTL_SECONDS,
+    NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS, NEAREST_GEOMETRY_BYTE_LIMIT,
+    NEAREST_SEARCH_WINDOWS_DEGREES, WMS_MAX_LAYER_MIN_ZOOM, WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO)
 
 
 # A [west, south, east, north] box, which is what the client fits the map to.
@@ -72,6 +72,9 @@ OWS_EXCEPTION_REPORT = re.compile(r'<(?:\w+:)?ExceptionReport\b')
 # Logged when one is met, because a typeName the warehouse does not publish and
 # anything else that can go wrong here are worth telling apart afterwards.
 OWS_EXCEPTION_CODE = re.compile(r'exceptionCode="([^"]+)"')
+
+# How GeoServer spells a feature id it made up for a table with no primary key.
+GENERATED_FID = '.fid-'
 
 # How "this layer declares no scale limit" is remembered: a cached None is
 # indistinguishable from a cache miss, and 0 is a legitimate minzoom.
@@ -219,6 +222,138 @@ class BcgwService:
                 timeout=LAYER_MIN_ZOOM_CACHE_TTL_SECONDS,
             )
             return zoom
+
+    @classmethod
+    def metadata(cls, object_name: str, bbox: tuple) -> Optional[dict]:
+        """Return the feature of this layer under a click, or None when there is none.
+
+        `bbox` is (west, south, east, north) in degrees: the few pixels around
+        the click, so a point or a line can be hit without landing on it
+        exactly. Matched with INTERSECTS on the geometry itself rather than
+        WFS's `bbox`, which a warehouse may answer from envelopes alone - and
+        a click in the crook of an L-shaped polygon is inside its envelope.
+
+        The geometry comes back for the client to outline and zoom to. One too
+        heavy to carry is asked for again without it, so a province-sized
+        polygon still has its attributes to show; the client highlights that
+        one by its id instead, through the warehouse's own tiles.
+        """
+        schema = cls._layer_schema(object_name)
+        if not schema:
+            return None
+        geometry, attributes = schema
+
+        params = cls._feature_params(object_name, count=1, bbox=None)
+        params['cql_filter'] = cls._intersects(geometry, bbox)
+
+        features = cls._features_for(object_name, params)
+        measured = features is not None
+        if not measured:
+            if not attributes:
+                return None
+            params['propertyName'] = ','.join(attributes)
+            features = cls._features_for(object_name, params) or []
+
+        if not features:
+            return None
+        feature = features[0]
+
+        # A view with no primary key gets a fresh fid per request, which no
+        # later tile request can find again.
+        feature_id = feature.get('id')
+        if not isinstance(feature_id, str) or GENERATED_FID in feature_id:
+            feature_id = None
+
+        properties = feature.get('properties') or {}
+        return {
+            'id': feature_id,
+            'properties': [
+                {'name': name, 'value': value}
+                for name, value in properties.items()
+                if name != geometry
+            ],
+            'geometry': feature.get('geometry') if measured else None,
+            'bounds': cls._bounds_of(feature) if measured else None,
+        }
+
+    @staticmethod
+    def _intersects(geometry: str, bbox: tuple) -> str:
+        """CQL for features touching `bbox`, a (west, south, east, north) box in degrees.
+
+        The SRID is what makes the ring degrees, longitude first, rather than
+        the layer's own BC Albers metres.
+        """
+        west, south, east, north = bbox
+        ring = (
+            f'{west} {south}, {east} {south}, {east} {north}, '
+            f'{west} {north}, {west} {south}'
+        )
+        return f'INTERSECTS({geometry}, SRID=4326;POLYGON(({ring})))'
+
+    @classmethod
+    def _layer_schema(cls, object_name: str) -> Optional[tuple]:
+        """Return (geometry column, attribute names), or None for a layer with no WFS.
+
+        The geometry column is needed to filter on, and the attribute names to
+        ask for everything but it. Neither depends on where the user clicked.
+        """
+        key = f'bcgw:schema:{object_name}'
+        remembered = cache.get(key)
+        if remembered is not None:
+            # An empty list is how "publishes no feature type" is remembered.
+            return tuple(remembered) if remembered else None
+
+        schema = cls._describe(object_name)
+        cache.set(key, list(schema) if schema else [], timeout=LAYER_SCHEMA_CACHE_TTL_SECONDS)
+        return schema
+
+    @classmethod
+    def _describe(cls, object_name: str) -> Optional[tuple]:
+        """Read the layer's columns off DescribeFeatureType."""
+        body = cls._read(
+            object_name,
+            {
+                'service': 'WFS',
+                'version': '2.0.0',
+                'request': 'DescribeFeatureType',
+                'typeNames': f'pub:{object_name}',
+                'outputFormat': 'application/json',
+            },
+            BCGW_SCHEMA_BYTE_LIMIT,
+        )
+        if body is None:
+            current_app.logger.warning(
+                'BCGW schema for %s passed %d bytes.', object_name, BCGW_SCHEMA_BYTE_LIMIT
+            )
+            raise ServiceUnavailableError(UNAVAILABLE_MESSAGE)
+
+        if OWS_EXCEPTION_REPORT.search(body):
+            return None
+
+        try:
+            feature_types = json.loads(body).get('featureTypes') or []
+        except (ValueError, AttributeError) as exc:
+            current_app.logger.warning(
+                'BCGW returned an unreadable schema for %s: %s', object_name, exc
+            )
+            raise ServiceUnavailableError(UNAVAILABLE_MESSAGE) from exc
+
+        columns = feature_types[0].get('properties', []) if feature_types else []
+        geometry = next(
+            (
+                column.get('name') for column in columns
+                if str(column.get('type', '')).startswith('gml:')
+            ),
+            None,
+        )
+        if not geometry or not re.match(GEOMETRY_COLUMN_PATTERN, geometry):
+            return None
+
+        attributes = [
+            column['name'] for column in columns
+            if column.get('name') and column['name'] != geometry
+        ]
+        return geometry, attributes
 
     @staticmethod
     def _min_zoom_key(object_name: str) -> str:
@@ -421,11 +556,14 @@ class BcgwService:
         cls, object_name: str, count: int, bbox: Optional[tuple] = None
     ) -> Optional[list]:
         """Features as GeoJSON, or None when the answer was too big to carry."""
-        body = cls._read(
-            object_name,
-            cls._feature_params(object_name, count, bbox),
-            NEAREST_GEOMETRY_BYTE_LIMIT,
+        return cls._features_for(
+            object_name, cls._feature_params(object_name, count, bbox)
         )
+
+    @classmethod
+    def _features_for(cls, object_name: str, params: dict) -> Optional[list]:
+        """Run GetFeature with `params`; None when the answer was too big to carry."""
+        body = cls._read(object_name, params, NEAREST_GEOMETRY_BYTE_LIMIT)
         if body is None:
             return None
 

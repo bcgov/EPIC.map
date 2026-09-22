@@ -786,3 +786,121 @@ def test_a_thread_that_gives_up_on_a_scale_lookup_says_so(app):
                 BcgwService.layer_min_zoom(OBJECT_NAME)
     finally:
         _release(key, lock)
+
+
+CLICK = (-123.101, 49.299, -123.099, 49.301)
+
+
+def _schema(geometry='SHAPE', attributes=('NAME', 'AREA')):
+    """Return a DescribeFeatureType answer, as openmaps sends it in JSON."""
+    columns = [{'name': name, 'type': 'xsd:string'} for name in attributes]
+    columns.insert(1, {'name': geometry, 'type': 'gml:Geometry'})
+    return {'featureTypes': [{'typeName': OBJECT_NAME, 'properties': columns}]}
+
+
+def _with_feature(fid='WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES.7', geometry=True):
+    """Return a GetFeature answer holding one feature."""
+    feature = {
+        'id': fid,
+        'properties': {'NAME': 'Musqueam 2', 'AREA': 190.5},
+        'geometry': {'type': 'Point', 'coordinates': [-123.1, 49.3]} if geometry else None,
+    }
+    return {'features': [feature]}
+
+
+def test_metadata_filters_on_the_geometry_itself_in_degrees(app):
+    """INTERSECTS on the named column, with an SRID, rather than a WFS bbox."""
+    get, calls = _answers(_schema(), _with_feature())
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        feature = BcgwService.metadata(OBJECT_NAME, CLICK)
+
+    assert calls[0]['request'] == 'DescribeFeatureType'
+    cql = calls[1]['cql_filter']
+    assert cql.startswith('INTERSECTS(SHAPE, SRID=4326;POLYGON((-123.101 49.299, ')
+    assert 'bbox' not in calls[1]
+    assert calls[1]['count'] == 1
+    assert feature == {
+        'id': 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES.7',
+        'properties': [
+            {'name': 'NAME', 'value': 'Musqueam 2'},
+            {'name': 'AREA', 'value': 190.5},
+        ],
+        'geometry': {'type': 'Point', 'coordinates': [-123.1, 49.3]},
+        'bounds': [-123.1, 49.3, -123.1, 49.3],
+    }
+
+
+def test_metadata_asks_for_the_schema_once_per_layer(app):
+    """Columns do not move with the click, so the second click costs one hop."""
+    get, calls = _answers(_schema(), _with_feature(), _with_feature())
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        BcgwService.metadata(OBJECT_NAME, CLICK)
+        BcgwService.metadata(OBJECT_NAME, CLICK)
+
+    assert [call['request'] for call in calls] == [
+        'DescribeFeatureType', 'GetFeature', 'GetFeature'
+    ]
+
+
+def test_metadata_nothing_at_the_point_is_none(app):
+    """An empty click is no feature, not an error."""
+    get, _calls = _answers(_schema(), {'features': []})
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK) is None
+
+
+def test_metadata_a_heavy_feature_still_has_its_attributes(app):
+    """Past the byte cap the feature is asked for again, without its geometry."""
+    too_heavy = 'x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1)
+    get, calls = _answers(_schema(), too_heavy, _with_feature(geometry=False))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        feature = BcgwService.metadata(OBJECT_NAME, CLICK)
+
+    assert calls[2]['propertyName'] == 'NAME,AREA'
+    assert feature['id'] == 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES.7'
+    assert feature['geometry'] is None
+    assert feature['bounds'] is None
+    assert [p['name'] for p in feature['properties']] == ['NAME', 'AREA']
+
+
+def test_metadata_drops_an_id_the_warehouse_made_up(app):
+    """A view without a key gets a fresh fid per request, which no tile can find."""
+    fid = f'{OBJECT_NAME}.fid--3ca745fa_1a0c74abbe2_-7e3'
+    get, _calls = _answers(_schema(), _with_feature(fid=fid))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['id'] is None
+
+
+def test_metadata_a_layer_with_no_wfs_is_nothing_rather_than_an_outage(app):
+    """And it is remembered, so the next click asks the warehouse nothing."""
+    get, calls = _answers(_exception_report())
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK) is None
+        assert BcgwService.metadata(OBJECT_NAME, CLICK) is None
+
+    assert len(calls) == 1
+
+
+def test_metadata_will_not_splice_a_strange_geometry_column_into_cql(app):
+    """The column comes from upstream, but it is still checked before use."""
+    get, calls = _answers(_schema(geometry='SHAPE) OR (1=1'))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK) is None
+
+    assert len(calls) == 1
+
+
+def test_metadata_an_unreadable_schema_is_unavailable(app):
+    """A schema that cannot be read is the warehouse failing, worth a retry."""
+    get, _calls = _answers('not json')
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        with pytest.raises(ServiceUnavailableError):
+            BcgwService.metadata(OBJECT_NAME, CLICK)

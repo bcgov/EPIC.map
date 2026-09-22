@@ -172,6 +172,23 @@ WMS_MAX_LAYER_MIN_ZOOM = 24
 # it is the difference between one GetCapabilities per layer and one per press.
 LAYER_MIN_ZOOM_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 
+# How long a layer's attribute schema is worth remembering. It changes when the
+# warehouse table does, which is rarer still than its style.
+LAYER_SCHEMA_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+
+# Bytes of a DescribeFeatureType answer this pod will carry. Measured ones run
+# 2-5KB; past this something upstream has gone wrong.
+BCGW_SCHEMA_BYTE_LIMIT = 64 * 1024
+
+# Widest box, in degrees a side, a metadata click may ask about. The client
+# sends a few pixels around the click, which is under half a degree even at the
+# map's furthest-out zoom - so this only ever stops a box nobody clicked.
+METADATA_MAX_SPAN_DEGREES = 2.0
+
+# A geometry column name, as it goes into a CQL filter. Read off the warehouse,
+# not the caller, but checked all the same before it is spliced into one.
+GEOMETRY_COLUMN_PATTERN = r'^[A-Za-z_][A-Za-z0-9_]*$'
+
 # Favourites are a bookmark list, not layers drawn on the map
 MAX_FAVOURITE_LAYERS = 200
 

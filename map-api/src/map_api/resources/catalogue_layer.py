@@ -22,7 +22,8 @@ from marshmallow import ValidationError
 from map_api.auth import auth
 from map_api.exceptions import BadRequestError, ResourceNotFoundError
 from map_api.schemas.catalogue_layer import (
-    LayerMinZoomSchema, NearestFeatureQuerySchema, NearestFeatureSchema, ObjectNameSchema)
+    LayerMinZoomSchema, MetaDataQuerySchema, MetaDataSchema, NearestFeatureQuerySchema, NearestFeatureSchema,
+    ObjectNameSchema)
 from map_api.services.bcgw_service import BcgwService
 from map_api.utils.util import cors_preflight
 
@@ -35,6 +36,10 @@ API = Namespace(
 
 nearest_feature_model = ApiHelper.convert_ma_schema_to_restx_model(
     API, NearestFeatureSchema(), 'NearestFeature'
+)
+
+metadata_model = ApiHelper.convert_ma_schema_to_restx_model(
+    API, MetaDataSchema(), 'MetaData'
 )
 
 layer_min_zoom_model = ApiHelper.convert_ma_schema_to_restx_model(
@@ -118,3 +123,40 @@ class LayerMinZoom(Resource):
             LayerMinZoomSchema().dump({'min_zoom': min_zoom}),
             HTTPStatus.OK,
         )
+
+
+@cors_preflight('GET, OPTIONS')
+@API.route('/<string:object_name>/metadata', methods=['GET', 'OPTIONS'])
+class MetaData(Resource):
+    """What a layer has under a click on the map."""
+
+    @staticmethod
+    @auth.require
+    @ApiHelper.swagger_decorators(
+        API,
+        endpoint_description=(
+            'The feature of this layer intersecting a small box around a '
+            'click, with its attributes'
+        ),
+    )
+    @API.response(code=200, model=metadata_model, description='Success')
+    @API.response(400, 'Bad Request')
+    @API.response(503, 'The warehouse did not answer')
+    def get(object_name: str):
+        """Return the feature under the click, or null when there is none.
+
+        Nothing here is an answer rather than a missing resource, so it is a
+        200: the client lists layers that failed apart from ones that are
+        simply empty at the point.
+        """
+        try:
+            ObjectNameSchema().load({'object_name': object_name})
+            box = MetaDataQuerySchema().load(request.args)
+        except ValidationError as exc:
+            raise BadRequestError(str(exc.messages)) from exc
+
+        feature = BcgwService.metadata(
+            object_name, (box['west'], box['south'], box['east'], box['north'])
+        )
+
+        return MetaDataSchema().dump({'feature': feature}), HTTPStatus.OK

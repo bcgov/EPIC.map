@@ -1,6 +1,14 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
+import type { Geometry } from "geojson";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
+  HIGHLIGHT_CASING_COLOR,
+  HIGHLIGHT_CASING_WIDTH_PX,
+  HIGHLIGHT_COLOR,
+  HIGHLIGHT_FILL_OPACITY,
+  HIGHLIGHT_POINT_SIZE_PX,
+  HIGHLIGHT_WIDTH_PX,
+  highlightTileUrl,
   MIN_ZOOM,
   outlineTileUrl,
   WIDGET_ID_PREFIX,
@@ -223,6 +231,115 @@ export const hideOutlineLayer = (map: MapLibreMap, layerId: string) => {
       map.setLayoutProperty(raster, "visibility", "none");
     }
   });
+};
+
+// The feature a metadata click selected
+
+const HIGHLIGHT_SOURCE = `${WIDGET_ID_PREFIX}highlight-src`;
+const HIGHLIGHT_LAYERS = ["fill", "casing", "line", "point", "raster"].map(
+  (part) => `${WIDGET_ID_PREFIX}highlight-${part}`,
+);
+const [
+  HIGHLIGHT_FILL,
+  HIGHLIGHT_CASING,
+  HIGHLIGHT_LINE,
+  HIGHLIGHT_POINT,
+  HIGHLIGHT_RASTER,
+] = HIGHLIGHT_LAYERS;
+
+export interface FeatureHighlight {
+  objectName: string;
+  /** The warehouse's id for it, or null when that id is not stable. */
+  featureId: string | null;
+  /** Its shape, or null when it was too heavy for map-api to carry. */
+  geometry: Geometry | null;
+}
+
+const removeHighlight = (map: MapLibreMap) => {
+  for (const id of HIGHLIGHT_LAYERS) {
+    if (map.getLayer(id)) map.removeLayer(id);
+  }
+  if (map.getSource(HIGHLIGHT_SOURCE)) map.removeSource(HIGHLIGHT_SOURCE);
+};
+
+/**
+ * Outline one feature above everything else on the map, replacing any other.
+ *
+ * Drawn from its geometry where map-api sent it, and otherwise by id through
+ * the warehouse's own tiles. A feature with neither is left undrawn rather than
+ * guessed at.
+ */
+export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => {
+  whenStyleReady(map, () => {
+    removeHighlight(map);
+    const { geometry, featureId, objectName } = highlight;
+
+    if (geometry) {
+      map.addSource(HIGHLIGHT_SOURCE, {
+        type: "geojson",
+        data: { type: "Feature", geometry, properties: {} },
+      });
+      map.addLayer({
+        id: HIGHLIGHT_FILL,
+        type: "fill",
+        source: HIGHLIGHT_SOURCE,
+        paint: {
+          "fill-color": HIGHLIGHT_COLOR,
+          "fill-opacity": HIGHLIGHT_FILL_OPACITY,
+        },
+      });
+      map.addLayer({
+        id: HIGHLIGHT_CASING,
+        type: "line",
+        source: HIGHLIGHT_SOURCE,
+        paint: {
+          "line-color": HIGHLIGHT_CASING_COLOR,
+          "line-width": HIGHLIGHT_CASING_WIDTH_PX,
+        },
+      });
+      map.addLayer({
+        id: HIGHLIGHT_LINE,
+        type: "line",
+        source: HIGHLIGHT_SOURCE,
+        paint: {
+          "line-color": HIGHLIGHT_COLOR,
+          "line-width": HIGHLIGHT_WIDTH_PX,
+        },
+      });
+      // A circle layer would otherwise put a dot on every vertex of a line.
+      map.addLayer({
+        id: HIGHLIGHT_POINT,
+        type: "circle",
+        source: HIGHLIGHT_SOURCE,
+        filter: ["match", ["geometry-type"], ["Point", "MultiPoint"], true, false],
+        paint: {
+          "circle-radius": HIGHLIGHT_POINT_SIZE_PX / 2,
+          "circle-color": HIGHLIGHT_COLOR,
+          "circle-opacity": HIGHLIGHT_FILL_OPACITY,
+          "circle-stroke-color": HIGHLIGHT_COLOR,
+          "circle-stroke-width": HIGHLIGHT_WIDTH_PX,
+        },
+      });
+      return;
+    }
+
+    if (featureId) {
+      map.addSource(HIGHLIGHT_SOURCE, {
+        type: "raster",
+        tiles: [highlightTileUrl(objectName, featureId)],
+        tileSize: WMS_TILE_SIZE_PX,
+      });
+      map.addLayer({
+        id: HIGHLIGHT_RASTER,
+        type: "raster",
+        source: HIGHLIGHT_SOURCE,
+      });
+    }
+  });
+};
+
+export const hideHighlight = (map: MapLibreMap) => {
+  whenStyleReady(map, () => removeHighlight(map));
 };
 
 // Which layers the current zoom cannot draw
