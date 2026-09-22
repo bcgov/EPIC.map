@@ -1,10 +1,13 @@
+import { useEffect, useState } from "react";
+import type { Map as MapLibreMap } from "maplibre-gl";
 import type { AppliedLayer } from "@/api/useAppliedLayers";
 import type { MetaDataFeature, MetaDataResult } from "@/api/useMetaData";
 import type { MapExtent } from "@/types";
+import { MIN_FEATURE_PIXELS } from "@/utils/config";
 
 /**
- * What the metadata popup shows, worked out apart from React and the map so it
- * can be tested as plain data.
+ * What the metadata popup shows: which layers are listed, which one is
+ * selected, how a feature reads and where the popup sits.
  */
 
 interface ScreenPoint {
@@ -123,6 +126,98 @@ export const steppedIndex = (
     default:
       return null;
   }
+};
+
+/**
+ * The one heading the detail shows: what the layer's own map labels this
+ * feature, and the layer's name when its style labels nothing.
+ */
+export const featureHeading = (row: MetaDataRow): string =>
+  row.feature?.name || row.layer.name;
+
+// Whether a feature can actually be seen where the map is now
+
+export interface PixelBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Whether a feature is out of sight at the current camera: off the screen
+ * entirely, or too small to make out.
+ *
+ * Both are the same thing to the user - they clicked something the map is not
+ * showing them - and both are answered from where the map is now, so the
+ * offer to zoom comes and goes with the zoom itself.
+ */
+export const isOutOfView = (
+  box: PixelBox,
+  viewport: { width: number; height: number },
+  minPixels: number,
+): boolean => {
+  const offScreen =
+    box.right < 0 ||
+    box.bottom < 0 ||
+    box.left > viewport.width ||
+    box.top > viewport.height;
+
+  const tooSmall =
+    Math.max(box.right - box.left, box.bottom - box.top) < minPixels;
+
+  return offScreen || tooSmall;
+};
+
+/**
+ * Whether the feature at `bounds` is out of sight where the map is now.
+ *
+ * Answered from the live camera rather than once when the popup opened: the
+ * user zooms and pans with the popup open, and the offer to zoom to a feature
+ * has to come and go with what they can actually see.
+ */
+export const useFeatureOutOfView = (
+  map: MapLibreMap | null,
+  bounds: MapExtent | null,
+): boolean => {
+  const [outOfView, setOutOfView] = useState(false);
+
+  useEffect(() => {
+    if (!map || !bounds) {
+      setOutOfView(false);
+      return undefined;
+    }
+
+    const sync = () => {
+      const [west, south, east, north] = bounds;
+      const southWest = map.project([west, south]);
+      const northEast = map.project([east, north]);
+      const container = map.getContainer();
+
+      // Set to the same boolean, React re-renders nothing - which is what makes
+      // this safe on `move`, an event that fires every frame of a gesture.
+      setOutOfView(
+        isOutOfView(
+          {
+            left: Math.min(southWest.x, northEast.x),
+            top: Math.min(southWest.y, northEast.y),
+            right: Math.max(southWest.x, northEast.x),
+            bottom: Math.max(southWest.y, northEast.y),
+          },
+          { width: container.clientWidth, height: container.clientHeight },
+          MIN_FEATURE_PIXELS,
+        ),
+      );
+    };
+
+    sync();
+    map.on("move", sync);
+    return () => {
+      map.off("move", sync);
+    };
+  }, [map, bounds]);
+
+  return outOfView;
 };
 
 // Attributes

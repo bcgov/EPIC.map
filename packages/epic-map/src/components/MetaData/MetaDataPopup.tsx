@@ -21,10 +21,11 @@ import {
   attributeLabel,
   attributeValue,
   clampToContainer,
+  featureHeading,
   steppedIndex,
   type MetaDataRow,
   type PopupPlacement,
-} from "@/components/MetaData/metaData";
+} from "@/components/MetaData/metaDataUtils";
 
 const ZOOM_HINT_COLOR = "#8A6A01";
 
@@ -44,6 +45,8 @@ type MetaDataPopupProps = {
   loading: boolean;
   rows: readonly MetaDataRow[];
   selected: MetaDataRow | null;
+  /** Whether the selected feature is worth offering to zoom to from here. */
+  canZoom: boolean;
   onSelect: (row: MetaDataRow) => void;
   onRetry: (row: MetaDataRow) => void;
   onZoom: (row: MetaDataRow) => void;
@@ -62,6 +65,7 @@ export default function MetaDataPopup({
   loading,
   rows,
   selected,
+  canZoom,
   onSelect,
   onRetry,
   onZoom,
@@ -216,7 +220,12 @@ export default function MetaDataPopup({
               <LayerList rows={rows} selected={selected} onSelect={onSelect} />
             )}
             {selected && (
-              <Detail row={selected} onRetry={onRetry} onZoom={onZoom} />
+              <Detail
+                row={selected}
+                canZoom={canZoom}
+                onRetry={onRetry}
+                onZoom={onZoom}
+              />
             )}
           </>
         )}
@@ -366,10 +375,12 @@ function LayerList({
 
 function Detail({
   row,
+  canZoom,
   onRetry,
   onZoom,
 }: {
   row: MetaDataRow;
+  canZoom: boolean;
   onRetry: (row: MetaDataRow) => void;
   onZoom: (row: MetaDataRow) => void;
 }) {
@@ -414,6 +425,8 @@ function Detail({
   const { feature } = row;
   if (!feature) return null;
 
+  const heading = featureHeading(row);
+
   const labelSx = {
     fontSize: theme.typography.body2.fontSize,
     lineHeight: 1.4,
@@ -423,44 +436,57 @@ function Detail({
 
   return (
     <Box sx={{ padding: "0.75rem 1rem 1rem" }}>
-      {feature.bounds && (
-        <Box
-          component="button"
-          type="button"
-          onClick={() => onZoom(row)}
-          sx={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.25rem",
-            padding: 0,
-            border: "none",
-            background: "none",
-            font: "inherit",
-            fontSize: theme.typography.caption.fontSize,
-            color: ZOOM_HINT_COLOR,
-            cursor: "pointer",
-            "&:hover": { textDecoration: "underline" },
-            ...focusRing(theme),
-          }}
-        >
-          <ZoomInIcon aria-hidden sx={{ fontSize: "0.875rem" }} />
-          Zoom in to view
-        </Box>
-      )}
-
-      <Typography
-        component="h3"
+      <Box
         sx={{
-          marginTop: feature.bounds ? "0.25rem" : 0,
-          fontSize: "1rem",
-          lineHeight: 1.4,
-          fontWeight: theme.typography.fontWeightBold,
-          color: theme.palette.primary.main,
-          overflowWrap: "anywhere",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: "0.5rem",
         }}
       >
-        {row.layer.name}
-      </Typography>
+        <Typography
+          component="h3"
+          sx={{
+            fontSize: "1rem",
+            lineHeight: 1.4,
+            fontWeight: theme.typography.fontWeightBold,
+            color: theme.palette.primary.main,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {heading}
+        </Typography>
+
+        {canZoom && (
+          <Box
+            component="button"
+            type="button"
+            onClick={() => onZoom(row)}
+            aria-label={`Zoom in to view ${heading}`}
+            sx={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.25rem",
+              flexShrink: 0,
+              // Sits on the heading's first line rather than its middle.
+              marginTop: "0.125rem",
+              padding: 0,
+              border: "none",
+              background: "none",
+              font: "inherit",
+              fontSize: theme.typography.caption.fontSize,
+              whiteSpace: "nowrap",
+              color: ZOOM_HINT_COLOR,
+              cursor: "pointer",
+              "&:hover": { textDecoration: "underline" },
+              ...focusRing(theme),
+            }}
+          >
+            <ZoomInIcon aria-hidden sx={{ fontSize: "0.875rem" }} />
+            Zoom in to view
+          </Box>
+        )}
+      </Box>
 
       <Box
         component="dl"

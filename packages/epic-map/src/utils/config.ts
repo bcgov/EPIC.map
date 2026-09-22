@@ -362,6 +362,15 @@ export const OPACITY_SAVE_DEBOUNCE_MS = 400;
  */
 export const METADATA_TOLERANCE_PX = 5;
 
+/**
+ * How small a feature may be drawn before "Zoom in to view" is worth offering.
+ *
+ * A sub-hectare tenure at province scale is a feature the map is technically
+ * showing and the user cannot see. Measured on the longer side, so a long thin
+ * line is not treated as invisible for being narrow.
+ */
+export const MIN_FEATURE_PIXELS = 24;
+
 /** A clicked point's answer is worth keeping this long, should it be clicked again. */
 export const METADATA_STALE_MS = 60_000;
 

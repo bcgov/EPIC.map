@@ -16,6 +16,8 @@ export interface FeatureAttribute {
 export interface MetaDataFeature {
   /** The warehouse's id, or null when it is not stable enough to draw by. */
   id: string | null;
+  /** What the layer's own map labels call it, or null when it labels nothing. */
+  name: string | null;
   /** In the warehouse's column order. */
   properties: FeatureAttribute[];
   /** Null when too heavy for map-api to carry. */

@@ -180,6 +180,16 @@ LAYER_SCHEMA_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 # 2-5KB; past this something upstream has gone wrong.
 BCGW_SCHEMA_BYTE_LIMIT = 64 * 1024
 
+# Bytes of a published style this pod will carry. Measured ones run 3-250KB -
+# they carry every rule for every scale - so this has headroom over the largest
+# seen. Past it the feature simply has no name to show, which is a fallback the
+# popup already has, so it is not worth treating as an outage.
+BCGW_STYLE_BYTE_LIMIT = 512 * 1024
+
+# How long a layer's label field is worth remembering. It comes out of the same
+# published style as the drawing scale, and changes as rarely.
+LAYER_LABEL_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+
 # Widest box, in degrees a side, a metadata click may ask about. The client
 # sends a few pixels around the click, which is under half a degree even at the
 # map's furthest-out zoom - so this only ever stops a box nobody clicked.

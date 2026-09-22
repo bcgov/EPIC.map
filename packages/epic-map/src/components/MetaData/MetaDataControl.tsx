@@ -10,10 +10,11 @@ import {
   popupTitle,
   selectedRow,
   toRows,
+  useFeatureOutOfView,
   visibleRows,
   type MetaDataRow,
   type PopupPlacement,
-} from "@/components/MetaData/metaData";
+} from "@/components/MetaData/metaDataUtils";
 import { useLayers } from "@/components/Layers/LayersContext";
 import { hideHighlight, showHighlight } from "@/components/Layers/layerUtils";
 import type { MapExtent } from "@/types";
@@ -39,7 +40,14 @@ interface MetaDataClick {
  * Click the map, see what the enabled catalogue layers have there.
  */
 export default function MetaDataControl() {
-  const { map, appliedLayers, visibleIds } = useLayers();
+  const {
+    map,
+    appliedLayers,
+    visibleIds,
+    belowFloorIds,
+    beyondReachIds,
+    layerFloors,
+  } = useLayers();
 
   const [click, setClick] = useState<MetaDataClick | null>(null);
   const [chosenLayerId, setChosenLayerId] = useState<string | null>(null);
@@ -121,9 +129,19 @@ export default function MetaDataControl() {
         padding: FOCUS_PADDING_PX,
         maxZoom: FOCUS_MAX_ZOOM,
       });
-      if (camera) map.easeTo({ ...camera, duration: FOCUS_FLY_MS });
+      if (!camera) return;
+
+      // Far enough in for the layer's own raster to draw, not just the feature
+      // to fill the screen: a big feature frames at a zoom its layer is still
+      // blank at, which would land the user on an outline and nothing else.
+      const floor = layerFloors[row.layer.id] ?? 0;
+      map.easeTo({
+        ...camera,
+        zoom: Math.max(camera.zoom ?? floor, floor),
+        duration: FOCUS_FLY_MS,
+      });
     },
-    [map],
+    [map, layerFloors],
   );
 
   const select = useCallback(
@@ -144,6 +162,19 @@ export default function MetaDataControl() {
 
   const close = useCallback(() => setClick(null), []);
 
+  const outOfView = useFeatureOutOfView(map, selected?.feature?.bounds ?? null);
+
+  /*
+  Worth offering when the feature cannot be seen from here: either its layer
+  draws nothing at this zoom, or the feature itself is off screen or too small
+  to make out. A layer whose floor is past anything this map can reach is left
+  out - zooming there would not show it either.
+  */
+  const canZoom =
+    Boolean(selected?.feature?.bounds) &&
+    !beyondReachIds.has(selected?.layer.id ?? "") &&
+    (belowFloorIds.has(selected?.layer.id ?? "") || outOfView);
+
   if (!click || !open) return null;
 
   return (
@@ -154,6 +185,7 @@ export default function MetaDataControl() {
       loading={loading}
       rows={rows}
       selected={selected}
+      canZoom={canZoom}
       onSelect={select}
       onRetry={retry}
       onZoom={zoomTo}

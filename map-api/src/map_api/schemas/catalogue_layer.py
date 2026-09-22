@@ -96,6 +96,15 @@ class MetaDataFeatureSchema(Schema):
         allow_none=True,
         metadata={'description': 'Warehouse feature id; null when it is not stable'},
     )
+    name = fields.Str(
+        allow_none=True,
+        metadata={
+            'description': (
+                "What the layer's published style labels this feature; null "
+                'when the style labels nothing'
+            )
+        },
+    )
     # A list rather than an object: the column order is the warehouse's, and a
     # JSON object's is not something to rely on across the wire.
     properties = fields.List(fields.Nested(FeatureAttributeSchema))

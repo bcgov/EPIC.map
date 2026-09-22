@@ -6,6 +6,8 @@ import {
   attributeLabel,
   attributeValue,
   clickBox,
+  featureHeading,
+  isOutOfView,
   EMPTY_VALUE,
   isLoading,
   POPUP_MARGIN_PX,
@@ -15,7 +17,7 @@ import {
   steppedIndex,
   toRows,
   visibleRows,
-} from "@/components/MetaData/metaData";
+} from "@/components/MetaData/metaDataUtils";
 import { hideHighlight, showHighlight } from "@/components/Layers/layerUtils";
 import { highlightTileUrl, wmsTileUrl } from "@/utils/config";
 
@@ -33,6 +35,7 @@ const layer = (name: string): AppliedLayer => ({
 
 const feature: MetaDataFeature = {
   id: "WHSE_TEST.A.1",
+  name: "Musqueam 2",
   properties: [{ name: "NAME", value: "A" }],
   geometry: { type: "Point", coordinates: [-123, 49] },
   bounds: [-123, 49, -123, 49],
@@ -117,6 +120,58 @@ describe("rows", () => {
 
   it("has nothing to select when no layer has anything here", () => {
     expect(selectedRow(visibleRows(toRows([a], [empty])), null)).toBeNull();
+  });
+});
+
+describe("featureHeading", () => {
+  const row = (name: string | null) => ({
+    layer: layer("Indian Reserves"),
+    status: "found" as const,
+    feature: { ...feature, name },
+    retrying: false,
+  });
+
+  it("is what the layer's own map labels the feature", () => {
+    expect(featureHeading(row("Musqueam 2"))).toBe("Musqueam 2");
+  });
+
+  it("stands the layer's name in when the style labels nothing", () => {
+    expect(featureHeading(row(null))).toBe("Indian Reserves");
+    expect(featureHeading(row(""))).toBe("Indian Reserves");
+  });
+});
+
+describe("isOutOfView", () => {
+  const viewport = { width: 800, height: 600 };
+  const box = (left: number, top: number, size: number) => ({
+    left,
+    top,
+    right: left + size,
+    bottom: top + size,
+  });
+
+  it("is in view when it is on screen and big enough to make out", () => {
+    expect(isOutOfView(box(100, 100, 200), viewport, 24)).toBe(false);
+  });
+
+  it("is out of view when the feature is a speck at this zoom", () => {
+    expect(isOutOfView(box(400, 300, 3), viewport, 24)).toBe(true);
+  });
+
+  it("keeps a long thin feature, which is small only across", () => {
+    const thin = { left: 100, top: 300, right: 700, bottom: 302 };
+    expect(isOutOfView(thin, viewport, 24)).toBe(false);
+  });
+
+  it("is out of view when the feature is off screen", () => {
+    expect(isOutOfView(box(-500, 100, 200), viewport, 24)).toBe(true);
+    expect(isOutOfView(box(900, 100, 200), viewport, 24)).toBe(true);
+    expect(isOutOfView(box(100, 700, 200), viewport, 24)).toBe(true);
+  });
+
+  it("keeps a feature larger than the screen, which is all around the user", () => {
+    const huge = { left: -900, top: -900, right: 1700, bottom: 1500 };
+    expect(isOutOfView(huge, viewport, 24)).toBe(false);
   });
 });
 

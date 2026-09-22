@@ -178,6 +178,7 @@ def test_metadata_returns_the_feature_under_the_click(app, client, jwt, session)
     """Attributes stay in the warehouse's order, as a list."""
     feature = {
         'id': 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES.1',
+        'name': 'Musqueam 2',
         'properties': [
             {'name': 'ZETA', 'value': 'first'},
             {'name': 'ALPHA', 'value': None},

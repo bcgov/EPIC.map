@@ -40,10 +40,11 @@ from map_api.exceptions import ServiceUnavailableError
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
     BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_CONNECTION_POOL_SIZE, BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES,
-    BCGW_SCHEMA_BYTE_LIMIT, BCGW_SEARCH_BUDGET_SECONDS, BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_WFS_TIMEOUT_SECONDS,
-    GEOMETRY_COLUMN_PATTERN, LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, LAYER_SCHEMA_CACHE_TTL_SECONDS,
-    NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS, NEAREST_GEOMETRY_BYTE_LIMIT,
-    NEAREST_SEARCH_WINDOWS_DEGREES, WMS_MAX_LAYER_MIN_ZOOM, WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO)
+    BCGW_SCHEMA_BYTE_LIMIT, BCGW_SEARCH_BUDGET_SECONDS, BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_STYLE_BYTE_LIMIT,
+    BCGW_WFS_TIMEOUT_SECONDS, GEOMETRY_COLUMN_PATTERN, LAYER_LABEL_CACHE_TTL_SECONDS, LAYER_MIN_ZOOM_CACHE_TTL_SECONDS,
+    LAYER_SCHEMA_CACHE_TTL_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS,
+    NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES, WMS_MAX_LAYER_MIN_ZOOM,
+    WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO)
 
 
 # A [west, south, east, north] box, which is what the client fits the map to.
@@ -72,6 +73,19 @@ OWS_EXCEPTION_REPORT = re.compile(r'<(?:\w+:)?ExceptionReport\b')
 # Logged when one is met, because a typeName the warehouse does not publish and
 # anything else that can go wrong here are worth telling apart afterwards.
 OWS_EXCEPTION_CODE = re.compile(r'exceptionCode="([^"]+)"')
+
+# What a published style writes across its features on the map, and the columns
+# that label is built from. Read rather than parsed for the same reason as the
+# scale above: the wanted value is one element of a document that runs to a
+# quarter of a megabyte of rules this has nothing to say about.
+STYLE_LABEL = re.compile(r'<(?:\w+:)?Label>(.*?)</(?:\w+:)?Label>', re.S)
+STYLE_LABEL_PROPERTY = re.compile(
+    r'<(?:\w+:)?PropertyName>\s*([A-Za-z0-9_]+)\s*</(?:\w+:)?PropertyName>'
+)
+
+# Columns one label may be built from. A label composed of more than a few is
+# not a name, and joining it would fill the heading rather than title it.
+MAX_LABEL_COLUMNS = 3
 
 # How GeoServer spells a feature id it made up for a table with no primary key.
 GENERATED_FID = '.fid-'
@@ -267,6 +281,7 @@ class BcgwService:
         properties = feature.get('properties') or {}
         return {
             'id': feature_id,
+            'name': cls._feature_name(object_name, properties),
             'properties': [
                 {'name': name, 'value': value}
                 for name, value in properties.items()
@@ -289,6 +304,71 @@ class BcgwService:
             f'{west} {north}, {west} {south}'
         )
         return f'INTERSECTS({geometry}, SRID=4326;POLYGON(({ring})))'
+
+    @classmethod
+    def _feature_name(cls, object_name: str, properties: dict) -> Optional[str]:
+        """Return what this feature is called, as the layer's own map labels call it.
+
+        Taken from the columns the published style writes across the feature on
+        the map, rather than from a guess at which column sounds like a name.
+        A layer whose style labels nothing has no name to give, and the client
+        shows the layer's name in its place.
+        """
+        values = [
+            str(properties[column]).strip()
+            for column in cls._label_columns(object_name)
+            if properties.get(column) not in (None, '')
+        ]
+        return ' '.join(value for value in values if value) or None
+
+    @classmethod
+    def _label_columns(cls, object_name: str) -> list:
+        """Return the columns this layer's published style labels features with."""
+        key = f'bcgw:label:{object_name}'
+        remembered = cache.get(key)
+        if remembered is not None:
+            return remembered
+
+        columns = cls._style_label_columns(object_name)
+        cache.set(key, columns, timeout=LAYER_LABEL_CACHE_TTL_SECONDS)
+        return columns
+
+    @classmethod
+    def _style_label_columns(cls, object_name: str) -> list:
+        """Return the label columns read off the layer's published SLD.
+
+        A style that cannot be read leaves the feature unnamed rather than
+        raising: the heading falls back to the layer's own name, which is a
+        worse answer than a name but a better one than an error.
+        """
+        try:
+            body = cls._read(
+                object_name,
+                {
+                    'service': 'WMS',
+                    'version': '1.1.1',
+                    'request': 'GetStyles',
+                    'layers': f'pub:{object_name}',
+                },
+                BCGW_STYLE_BYTE_LIMIT,
+            )
+        except ServiceUnavailableError:
+            return []
+
+        if body is None or OWS_EXCEPTION_REPORT.search(body):
+            return []
+
+        columns = []
+        for label in STYLE_LABEL.findall(body):
+            for column in STYLE_LABEL_PROPERTY.findall(label):
+                if column not in columns:
+                    columns.append(column)
+            # The first label wins: later rules are the same layer drawn at
+            # another scale, and a heading takes one name.
+            if columns:
+                break
+
+        return columns[:MAX_LABEL_COLUMNS]
 
     @classmethod
     def _layer_schema(cls, object_name: str) -> Optional[tuple]:

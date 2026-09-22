@@ -30,7 +30,7 @@ from map_api.exceptions import ServiceUnavailableError
 from map_api.services.bcgw_service import IN_FLIGHT, BcgwService
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
-    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_READ_CHUNK_BYTES, BCGW_WFS_TIMEOUT_SECONDS,
+    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_READ_CHUNK_BYTES, BCGW_STYLE_BYTE_LIMIT, BCGW_WFS_TIMEOUT_SECONDS,
     NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES)
 
 
@@ -798,6 +798,24 @@ def _schema(geometry='SHAPE', attributes=('NAME', 'AREA')):
     return {'featureTypes': [{'typeName': OBJECT_NAME, 'properties': columns}]}
 
 
+def _style(*label_columns):
+    """Return a published style whose TextSymbolizer labels with those columns."""
+    labels = ''.join(
+        f'<ogc:PropertyName>{column}</ogc:PropertyName>' for column in label_columns
+    )
+    text = (
+        f'<sld:TextSymbolizer><sld:Label>{labels}</sld:Label></sld:TextSymbolizer>'
+        if labels else ''
+    )
+    return (
+        '<sld:StyledLayerDescriptor xmlns:sld="http://www.opengis.net/sld" '
+        'xmlns:ogc="http://www.opengis.net/ogc" version="1.0.0"><sld:NamedLayer>'
+        f'<sld:UserStyle><sld:FeatureTypeStyle><sld:Rule>{text}</sld:Rule>'
+        '</sld:FeatureTypeStyle></sld:UserStyle>'
+        '</sld:NamedLayer></sld:StyledLayerDescriptor>'
+    )
+
+
 def _with_feature(fid='WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES.7', geometry=True):
     """Return a GetFeature answer holding one feature."""
     feature = {
@@ -810,7 +828,7 @@ def _with_feature(fid='WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES.7', geometry=T
 
 def test_metadata_filters_on_the_geometry_itself_in_degrees(app):
     """INTERSECTS on the named column, with an SRID, rather than a WFS bbox."""
-    get, calls = _answers(_schema(), _with_feature())
+    get, calls = _answers(_schema(), _with_feature(), _style('NAME'))
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         feature = BcgwService.metadata(OBJECT_NAME, CLICK)
@@ -822,6 +840,7 @@ def test_metadata_filters_on_the_geometry_itself_in_degrees(app):
     assert calls[1]['count'] == 1
     assert feature == {
         'id': 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES.7',
+        'name': 'Musqueam 2',
         'properties': [
             {'name': 'NAME', 'value': 'Musqueam 2'},
             {'name': 'AREA', 'value': 190.5},
@@ -833,14 +852,14 @@ def test_metadata_filters_on_the_geometry_itself_in_degrees(app):
 
 def test_metadata_asks_for_the_schema_once_per_layer(app):
     """Columns do not move with the click, so the second click costs one hop."""
-    get, calls = _answers(_schema(), _with_feature(), _with_feature())
+    get, calls = _answers(_schema(), _with_feature(), _style('NAME'), _with_feature())
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         BcgwService.metadata(OBJECT_NAME, CLICK)
         BcgwService.metadata(OBJECT_NAME, CLICK)
 
     assert [call['request'] for call in calls] == [
-        'DescribeFeatureType', 'GetFeature', 'GetFeature'
+        'DescribeFeatureType', 'GetFeature', 'GetStyles', 'GetFeature'
     ]
 
 
@@ -855,7 +874,7 @@ def test_metadata_nothing_at_the_point_is_none(app):
 def test_metadata_a_heavy_feature_still_has_its_attributes(app):
     """Past the byte cap the feature is asked for again, without its geometry."""
     too_heavy = 'x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1)
-    get, calls = _answers(_schema(), too_heavy, _with_feature(geometry=False))
+    get, calls = _answers(_schema(), too_heavy, _with_feature(geometry=False), _style('NAME'))
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         feature = BcgwService.metadata(OBJECT_NAME, CLICK)
@@ -870,7 +889,7 @@ def test_metadata_a_heavy_feature_still_has_its_attributes(app):
 def test_metadata_drops_an_id_the_warehouse_made_up(app):
     """A view without a key gets a fresh fid per request, which no tile can find."""
     fid = f'{OBJECT_NAME}.fid--3ca745fa_1a0c74abbe2_-7e3'
-    get, _calls = _answers(_schema(), _with_feature(fid=fid))
+    get, _calls = _answers(_schema(), _with_feature(fid=fid), _style('NAME'))
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         assert BcgwService.metadata(OBJECT_NAME, CLICK)['id'] is None
@@ -904,3 +923,56 @@ def test_metadata_an_unreadable_schema_is_unavailable(app):
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         with pytest.raises(ServiceUnavailableError):
             BcgwService.metadata(OBJECT_NAME, CLICK)
+
+
+def test_metadata_names_a_feature_the_way_the_layer_labels_it(app):
+    """The heading comes from the style's own label, not a guess at a column."""
+    get, _calls = _answers(_schema(), _with_feature(), _style('NAME'))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['name'] == 'Musqueam 2'
+
+
+def test_metadata_joins_a_label_built_from_several_columns(app):
+    """A composed label reads as the map draws it, in the style's own order."""
+    get, _calls = _answers(_schema(), _with_feature(), _style('NAME', 'AREA'))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['name'] == 'Musqueam 2 190.5'
+
+
+def test_metadata_leaves_a_feature_unnamed_when_the_style_labels_nothing(app):
+    """The client puts the layer's own name in the heading instead."""
+    get, _calls = _answers(_schema(), _with_feature(), _style())
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['name'] is None
+
+
+def test_metadata_reads_the_style_once_per_layer(app):
+    """A label does not move with the click, so it is read like the schema."""
+    get, calls = _answers(_schema(), _with_feature(), _style('NAME'), _with_feature())
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        BcgwService.metadata(OBJECT_NAME, CLICK)
+        BcgwService.metadata(OBJECT_NAME, CLICK)
+
+    assert [call['request'] for call in calls].count('GetStyles') == 1
+
+
+def test_metadata_survives_a_style_it_cannot_read(app):
+    """An unnamed feature is a worse heading than a name, a better one than an error."""
+    get, _calls = _answers(_schema(), _with_feature(), _exception_report())
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['name'] is None
+
+
+def test_metadata_survives_a_style_too_big_to_carry(app):
+    """Styles run to a quarter of a megabyte; one past the cap is not an outage."""
+    get, _calls = _answers(
+        _schema(), _with_feature(), 'x' * (BCGW_STYLE_BYTE_LIMIT + 1)
+    )
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['name'] is None
