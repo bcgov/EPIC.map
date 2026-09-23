@@ -180,7 +180,7 @@ describe("isOutOfView", () => {
 });
 
 describe("popupTitle", () => {
-  it("reads MetaDataing while any layer is still out", () => {
+  it("reads 'Identifying…' while any layer is still out", () => {
     expect(popupTitle(true, 0)).toBe("Identifying…");
   });
 

@@ -37,9 +37,6 @@ const focusRing = (theme: Theme) => ({
   },
 });
 
-const LIST_ID = "epic-map-metadata-layers";
-const optionId = (layerId: string) => `${LIST_ID}-${layerId}`;
-
 type MetaDataPopupProps = {
   placement: PopupPlacement;
   title: string;
@@ -85,6 +82,9 @@ export default function MetaDataPopup({
   );
 
   const startDrag = (event: PointerEvent<HTMLDivElement>) => {
+    // Primary button only: a right-click opens a menu, and capturing the
+    // pointer for it would leave the popup following a button nobody is holding.
+    if (event.button !== 0) return;
     // The close button is the one thing in the header that is not a handle.
     if ((event.target as HTMLElement).closest("[data-no-drag]")) return;
     drag.current = {
@@ -331,7 +331,6 @@ function LayerList({
   return (
     <Box
       component="ul"
-      id={LIST_ID}
       role="listbox"
       aria-label="Layers at this point"
       onKeyDown={onKeyDown}
@@ -355,7 +354,6 @@ function LayerList({
           <Box
             component="li"
             key={row.layer.id}
-            id={optionId(row.layer.id)}
             ref={(element: HTMLLIElement | null) => {
               if (element) optionRefs.current.set(row.layer.id, element);
               else optionRefs.current.delete(row.layer.id);

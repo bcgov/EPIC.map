@@ -102,8 +102,6 @@ export default function MetaDataControl() {
   const rows = loading ? [] : visibleRows(allRows);
   const selected = selectedRow(rows, chosenLayerId);
 
-  const open = click !== null && layers.length > 0;
-
   useEffect(() => {
     if (click && layers.length === 0) setClick(null);
   }, [click, layers.length]);
@@ -112,14 +110,14 @@ export default function MetaDataControl() {
   const highlightFeature = selected?.feature ?? null;
 
   useEffect(() => {
-    if (!map || !open || !highlightLayer || !highlightFeature) return undefined;
+    if (!map || !highlightLayer || !highlightFeature) return undefined;
     showHighlight(map, {
       objectName: highlightLayer,
       featureId: highlightFeature.id,
       geometry: highlightFeature.geometry,
     });
     return () => hideHighlight(map);
-  }, [map, open, highlightLayer, highlightFeature]);
+  }, [map, highlightLayer, highlightFeature]);
 
   const zoomTo = useCallback(
     (row: MetaDataRow) => {
@@ -175,7 +173,7 @@ export default function MetaDataControl() {
     !beyondReachIds.has(selected?.layer.id ?? "") &&
     (belowFloorIds.has(selected?.layer.id ?? "") || outOfView);
 
-  if (!click || !open) return null;
+  if (!click || layers.length === 0) return null;
 
   return (
     <MetaDataPopup
