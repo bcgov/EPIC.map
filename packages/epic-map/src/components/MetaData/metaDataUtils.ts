@@ -102,8 +102,12 @@ export const selectedRow = (
   rows[0] ??
   null;
 
+/** What the popup says when no enabled layer has anything at the point. */
+export const NOTHING_HERE_TITLE = "No features here";
+
 export const popupTitle = (loading: boolean, rowCount: number): string => {
   if (loading) return "Identifying…";
+  if (rowCount === 0) return NOTHING_HERE_TITLE;
   return `${rowCount} ${rowCount === 1 ? "layer" : "layers"} at this point`;
 };
 
@@ -218,6 +222,38 @@ export const useFeatureOutOfView = (
   }, [map, bounds]);
 
   return outOfView;
+};
+
+// Moving the popup from the keyboard
+
+/** A step of the popup, in pixels, per press of an arrow key. */
+export const POPUP_STEP_PX = 8;
+
+/** Shift covers ground faster, for moving it clear of something large. */
+export const POPUP_LARGE_STEP_PX = 32;
+
+/**
+ * How far an arrow key moves the popup, or null for a key that does not.
+ *
+ * The grip is draggable with a mouse, so it has to be movable without one.
+ */
+export const stepFor = (
+  key: string,
+  shiftKey: boolean,
+): { dx: number; dy: number } | null => {
+  const step = shiftKey ? POPUP_LARGE_STEP_PX : POPUP_STEP_PX;
+  switch (key) {
+    case "ArrowLeft":
+      return { dx: -step, dy: 0 };
+    case "ArrowRight":
+      return { dx: step, dy: 0 };
+    case "ArrowUp":
+      return { dx: 0, dy: -step };
+    case "ArrowDown":
+      return { dx: 0, dy: step };
+    default:
+      return null;
+  }
 };
 
 // Attributes

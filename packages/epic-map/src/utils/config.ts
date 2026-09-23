@@ -375,15 +375,19 @@ export const MIN_FEATURE_PIXELS = 24;
 export const METADATA_STALE_MS = 60_000;
 
 /**
- * The selected feature: navy on a white casing, so it reads against the
- * satellite imagery and the pale basemap alike, and apart from the light blue
- * a layer's own outline is drawn in.
+ * The selected feature: BC gold on a navy casing.
+ *
+ * Gold is the province's own accent and is nothing like the light blue a
+ * layer's outline is drawn in, so the one selected feature cannot be mistaken
+ * for the layer around it. The navy casing is what carries it over the pale
+ * basemap, where gold alone would wash out; over satellite imagery the gold
+ * carries itself.
  */
-export const HIGHLIGHT_COLOR = "#013366";
-export const HIGHLIGHT_CASING_COLOR = "#FFFFFF";
+export const HIGHLIGHT_COLOR = "#FCBA19";
+export const HIGHLIGHT_CASING_COLOR = "#013366";
 export const HIGHLIGHT_WIDTH_PX = 3;
 export const HIGHLIGHT_CASING_WIDTH_PX = 6;
-export const HIGHLIGHT_FILL_OPACITY = 0.15;
+export const HIGHLIGHT_FILL_OPACITY = 0.2;
 export const HIGHLIGHT_POINT_SIZE_PX = 12;
 
 /**

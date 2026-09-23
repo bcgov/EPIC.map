@@ -12,8 +12,12 @@ import {
   isLoading,
   POPUP_MARGIN_PX,
   popupPlacement,
+  NOTHING_HERE_TITLE,
+  POPUP_LARGE_STEP_PX,
+  POPUP_STEP_PX,
   popupTitle,
   selectedRow,
+  stepFor,
   steppedIndex,
   toRows,
   visibleRows,
@@ -183,6 +187,33 @@ describe("popupTitle", () => {
   it("counts the rows shown", () => {
     expect(popupTitle(false, 1)).toBe("1 layer at this point");
     expect(popupTitle(false, 3)).toBe("3 layers at this point");
+  });
+
+  it("says so when no layer had anything, rather than counting nothing", () => {
+    expect(popupTitle(false, 0)).toBe(NOTHING_HERE_TITLE);
+  });
+
+  it("counts a layer that failed, which is a row like any other", () => {
+    const rows = visibleRows(toRows([layer("a"), layer("b")], [found, failed]));
+    expect(popupTitle(false, rows.length)).toBe("2 layers at this point");
+  });
+});
+
+describe("stepFor", () => {
+  it("moves the popup the way the arrow points", () => {
+    expect(stepFor("ArrowLeft", false)).toEqual({ dx: -POPUP_STEP_PX, dy: 0 });
+    expect(stepFor("ArrowRight", false)).toEqual({ dx: POPUP_STEP_PX, dy: 0 });
+    expect(stepFor("ArrowUp", false)).toEqual({ dx: 0, dy: -POPUP_STEP_PX });
+    expect(stepFor("ArrowDown", false)).toEqual({ dx: 0, dy: POPUP_STEP_PX });
+  });
+
+  it("covers more ground with shift held", () => {
+    expect(stepFor("ArrowRight", true)).toEqual({ dx: POPUP_LARGE_STEP_PX, dy: 0 });
+  });
+
+  it("leaves every other key alone", () => {
+    expect(stepFor("Enter", false)).toBeNull();
+    expect(stepFor("Home", true)).toBeNull();
   });
 });
 

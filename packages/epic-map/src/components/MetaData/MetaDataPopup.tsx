@@ -22,6 +22,7 @@ import {
   attributeValue,
   clampToContainer,
   featureHeading,
+  stepFor,
   steppedIndex,
   type MetaDataRow,
   type PopupPlacement,
@@ -73,6 +74,7 @@ export default function MetaDataPopup({
 }: MetaDataPopupProps) {
   const theme = useTheme();
   const popupRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
 
   const [position, setPosition] = useState({
     left: placement.left,
@@ -83,7 +85,8 @@ export default function MetaDataPopup({
   );
 
   const startDrag = (event: PointerEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest("button")) return;
+    // The close button is the one thing in the header that is not a handle.
+    if ((event.target as HTMLElement).closest("[data-no-drag]")) return;
     drag.current = {
       x: event.clientX,
       y: event.clientY,
@@ -116,6 +119,35 @@ export default function MetaDataPopup({
 
   const endDrag = () => {
     drag.current = null;
+  };
+
+  /** Keeps a move inside the map, whichever way it came from. */
+  const moveBy = (dx: number, dy: number) => {
+    const popup = popupRef.current;
+    const container = popup?.offsetParent as HTMLElement | null;
+    const header = headerRef.current;
+    if (!popup || !container || !header) return;
+
+    setPosition((current) => ({
+      left: clampToContainer(
+        current.left + dx,
+        popup.offsetWidth,
+        container.clientWidth,
+      ),
+      top: clampToContainer(
+        current.top + dy,
+        header.offsetHeight,
+        container.clientHeight,
+      ),
+    }));
+  };
+
+  const onGripKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const step = stepFor(event.key, event.shiftKey);
+    if (!step) return;
+    // Otherwise the arrows scroll the popup body instead of moving it.
+    event.preventDefault();
+    moveBy(step.dx, step.dy);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -151,6 +183,7 @@ export default function MetaDataPopup({
       }}
     >
       <Box
+        ref={headerRef}
         onPointerDown={startDrag}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
@@ -169,10 +202,23 @@ export default function MetaDataPopup({
           userSelect: "none",
         }}
       >
-        <DragIndicatorIcon
-          aria-hidden
-          sx={{ fontSize: "1.125rem", color: theme.palette.text.secondary }}
-        />
+        <Box
+          component="button"
+          type="button"
+          onKeyDown={onGripKeyDown}
+          aria-label="Move this panel. Use the arrow keys, or hold shift to move further."
+          sx={{
+            display: "inline-flex",
+            padding: 0,
+            border: "none",
+            background: "none",
+            color: theme.palette.text.secondary,
+            cursor: "move",
+            ...focusRing(theme),
+          }}
+        >
+          <DragIndicatorIcon aria-hidden sx={{ fontSize: "1.125rem" }} />
+        </Box>
         <Typography
           id="epic-map-metadata-title"
           component="h2"
@@ -190,6 +236,7 @@ export default function MetaDataPopup({
         <IconButton
           size="small"
           onClick={onClose}
+          data-no-drag
           aria-label="Close"
           sx={{
             padding: "0.25rem",
@@ -209,10 +256,12 @@ export default function MetaDataPopup({
             sx={{
               padding: "1rem",
               fontSize: theme.typography.body2.fontSize,
+              lineHeight: 1.5,
               color: theme.palette.text.secondary,
             }}
           >
-            No features here
+            No feature at this point in the enabled layers. Click inside a
+            coloured area, or zoom in for finer detail.
           </Typography>
         ) : (
           <>
@@ -287,8 +336,15 @@ function LayerList({
       aria-label="Layers at this point"
       onKeyDown={onKeyDown}
       sx={{
+        // Pinned to the top of the scrolling body, so a long attribute list
+        // scrolls under the layers rather than taking them off screen: the
+        // user can switch layers without first scrolling back up.
+        position: "sticky",
+        top: 0,
+        zIndex: 1,
         margin: 0,
         padding: "0.25rem 0",
+        backgroundColor: theme.palette.background.paper,
         borderBottom: `1px solid ${theme.palette.divider}`,
       }}
     >
@@ -362,7 +418,7 @@ function LayerList({
                   ) : (
                     <ErrorOutlineIcon aria-hidden sx={{ fontSize: "0.875rem" }} />
                   )}
-                  {row.retrying ? "Retrying…" : "Could not load"}
+                  {row.retrying ? "Retrying…" : "Did not respond"}
                 </Typography>
               )}
             </Box>
@@ -388,12 +444,25 @@ function Detail({
 
   if (row.status === "error") {
     return (
-      <Box sx={{ padding: "1rem" }} role="alert">
+      <Box sx={{ padding: "0.75rem 1rem 1rem" }} role="alert">
+        <Typography
+          component="h3"
+          sx={{
+            fontSize: "1rem",
+            lineHeight: 1.4,
+            fontWeight: theme.typography.fontWeightBold,
+            color: theme.palette.primary.main,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {row.layer.name}
+        </Typography>
         <Typography
           sx={{
             display: "flex",
-            alignItems: "flex-start",
+            alignItems: "center",
             gap: "0.5rem",
+            marginTop: "0.5rem",
             fontSize: theme.typography.body2.fontSize,
             color: theme.palette.text.primary,
           }}
@@ -402,9 +471,7 @@ function Detail({
             aria-hidden
             sx={{ fontSize: "1.25rem", color: theme.palette.error.main }}
           />
-          <span>
-            Could not load what <strong>{row.layer.name}</strong> has here.
-          </span>
+          This layer did not respond.
         </Typography>
         <Button
           variant="outlined"
