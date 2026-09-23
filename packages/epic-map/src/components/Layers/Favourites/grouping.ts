@@ -1,3 +1,4 @@
+import { isPendingId } from "@/api/pendingIds";
 import type { FavouriteFolder } from "@/api/useFavouriteFolders";
 import type { FavouriteLayer } from "@/api/useFavouriteLayers";
 
@@ -35,4 +36,45 @@ export const groupByFolder = (
   }
 
   return { topLevel, inFolder };
+};
+
+export type MoveDestination = {
+  /** The folder, or null for the top level of Favourites. */
+  folderId: number | null;
+  name: string;
+  current: boolean;
+  /** Still waiting on its POST, so it cannot be filed into yet. */
+  pending: boolean;
+};
+
+/** What the top level is called in the move menu. */
+export const TOP_LEVEL_NAME = "Favourites";
+
+/**
+ * Everywhere a favourite can be moved to: the top level, then each folder.
+ *
+ * Current is where the layer is shown, so one filed in a folder we do not know
+ * about is current at the top level. See groupByFolder.
+ */
+export const moveDestinations = (
+  layerFolderId: number | null,
+  folders: readonly FavouriteFolder[],
+): MoveDestination[] => {
+  const shownIn = folders.some((folder) => folder.folderId === layerFolderId)
+    ? layerFolderId
+    : null;
+  return [
+    {
+      folderId: null,
+      name: TOP_LEVEL_NAME,
+      current: shownIn === null,
+      pending: false,
+    },
+    ...folders.map((folder) => ({
+      folderId: folder.folderId,
+      name: folder.name,
+      current: folder.folderId === shownIn,
+      pending: isPendingId(folder.folderId),
+    })),
+  ];
 };
