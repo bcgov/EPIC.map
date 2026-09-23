@@ -77,18 +77,16 @@ export const useFavouriteFolders = () => {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { mutate: createMutate } = useMutation({
-    mutationFn: async (name: string) => {
+  const { mutateAsync: createMutate } = useMutation({
+    mutationFn: async ({ name }: { name: string; pendingId: number }) => {
       const response = await api.post<FavouriteFolderResponse>(FOLDERS_PATH, {
         name,
       });
       return response.data;
     },
-    onMutate: async (name) => {
+    onMutate: async ({ name, pendingId }) => {
       await queryClient.cancelQueries({ queryKey: FOLDERS_KEY });
       const previous = readCache();
-      // Its own id, so a second folder in flight is not overwritten by this.
-      const pendingId = nextPendingId();
       // Prepended, matching where map-api puts it.
       writeCache([
         {
@@ -98,13 +96,13 @@ export const useFavouriteFolders = () => {
         },
         ...previous,
       ]);
-      return { previous, pendingId };
+      return { previous };
     },
-    onSuccess: (row, _name, context) => {
+    onSuccess: (row, { pendingId }) => {
       setSaveError(null);
       writeCache(
         readCache().map((folder) =>
-          folder.folderId === context.pendingId
+          folder.folderId === pendingId
             ? toFavouriteFolder(row)
             : folder,
         ),
@@ -181,8 +179,18 @@ export const useFavouriteFolders = () => {
     },
   });
 
+  /** The pending id at once; `saved` the real id, or null if refused. */
   const createFolder = useCallback(
-    (name: string) => createMutate(name),
+    (name: string) => {
+      // Its own id, so a second folder in flight is not overwritten by this.
+      const pendingId = nextPendingId();
+      // A refusal is already rolled back and reported by onError.
+      const saved = createMutate({ name, pendingId }).then(
+        (row) => row.id,
+        () => null,
+      );
+      return { pendingId, saved };
+    },
     [createMutate],
   );
 

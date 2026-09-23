@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { isPendingId, nextPendingId } from "@/api/pendingIds";
 import type { FavouriteFolder } from "@/api/useFavouriteFolders";
 import type { FavouriteLayer } from "@/api/useFavouriteLayers";
-import { groupByFolder } from "@/components/Layers/Favourites/grouping";
+import {
+  groupByFolder,
+  moveDestinations,
+  TOP_LEVEL_NAME,
+} from "@/components/Layers/Favourites/grouping";
 
 const layer = (id: string, folderId: number | null): FavouriteLayer =>
   ({ id, folderId, favouriteId: Number(id.slice(1)) }) as FavouriteLayer;
@@ -85,5 +89,53 @@ describe("pending ids", () => {
   it("does not treat the top level as a pending folder", () => {
     // null is "no folder", which is a real place, not a row still in flight.
     expect(isPendingId(null)).toBe(false);
+  });
+});
+
+describe("moveDestinations", () => {
+  const summary = (layerFolderId: number | null, folders: FavouriteFolder[]) =>
+    moveDestinations(layerFolderId, folders).map(
+      ({ folderId, current }) => [folderId, current] as const,
+    );
+
+  it("offers only the top level, as current, when there are no folders", () => {
+    expect(summary(null, [])).toEqual([[null, true]]);
+  });
+
+  it("marks the top level current for a loose layer and lists every folder", () => {
+    expect(summary(null, [folder(7), folder(8)])).toEqual([
+      [null, true],
+      [7, false],
+      [8, false],
+    ]);
+  });
+
+  it("marks the folder a layer is in current, keeping the top level to go back to", () => {
+    expect(summary(8, [folder(7), folder(8)])).toEqual([
+      [null, false],
+      [7, false],
+      [8, true],
+    ]);
+  });
+
+  it("names the top level Favourites and each folder by its own name", () => {
+    expect(
+      moveDestinations(null, [folder(7)]).map((entry) => entry.name),
+    ).toEqual([TOP_LEVEL_NAME, "Folder 7"]);
+  });
+
+  it("treats a layer in a folder we do not know about as at the top level", () => {
+    // Matches groupByFolder, which shows it there.
+    expect(summary(99, [folder(7)])).toEqual([
+      [null, true],
+      [7, false],
+    ]);
+  });
+
+  it("flags a folder still waiting on its POST, which cannot be filed into", () => {
+    const pending = nextPendingId();
+    const [, entry] = moveDestinations(null, [folder(pending)]);
+    expect(entry.pending).toBe(true);
+    expect(moveDestinations(null, [folder(7)])[1].pending).toBe(false);
   });
 });

@@ -66,7 +66,11 @@ interface LayersContextValue {
   foldersPending: boolean;
   foldersError: unknown;
   retryFolders: () => void;
-  createFolder: (name: string) => void;
+  /** The folder's pending id now, its real id (or null) once saved. */
+  createFolder: (name: string) => {
+    pendingId: number;
+    saved: Promise<number | null>;
+  };
   renameFolder: (folderId: number, name: string) => void;
   setFolderCollapsed: (folderId: number, isCollapsed: boolean) => void;
   /** Ungroup: removes the folder and moves its layers to the top level. */
@@ -74,8 +78,8 @@ interface LayersContextValue {
   /** Why the last folder change was rolled back, or null. */
   folderSaveError: string | null;
   clearFolderSaveError: () => void;
-  /** File a favourite into a folder, or back out to the top level with null. */
-  moveFavourite: (layerId: string, folderId: number | null) => void;
+  /** File a favourite into a folder, or with null back out to the top level. */
+  moveFavourite: (layerId: string, folderId: number | null) => boolean;
   expandedId: string | null;
   opacities: Readonly<Record<string, number>>;
   atVisibleLimit: boolean;
