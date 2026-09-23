@@ -5,6 +5,7 @@ import {
   ListSubheader,
   Menu,
   MenuItem,
+  Typography,
 } from "@mui/material";
 import CheckOutlinedIcon from "@mui/icons-material/CheckOutlined";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
@@ -27,6 +28,8 @@ type MoveToGroupMenuProps = {
   onMove: (destination: MoveDestination) => void;
   onNewFolder: () => void;
   atFolderCap: boolean;
+  /** The layer's own star is still saving, so it has no row id to file yet. */
+  saving: boolean;
 };
 
 /**
@@ -45,6 +48,7 @@ export default function MoveToGroupMenu({
   onMove,
   onNewFolder,
   atFolderCap,
+  saving,
 }: MoveToGroupMenuProps) {
   const theme = useTheme();
 
@@ -72,7 +76,7 @@ export default function MoveToGroupMenu({
         key={destination.folderId ?? "top-level"}
         role="menuitemradio"
         aria-checked={current}
-        disabled={destination.pending}
+        disabled={saving || destination.pending}
         onClick={() => {
           onClose();
           if (!current) onMove(destination);
@@ -156,12 +160,27 @@ export default function MoveToGroupMenu({
         Move to group
       </ListSubheader>
 
+      {/* Says why every destination is dimmed. Not a menu item: nothing to do. */}
+      {saving && (
+        <Typography
+          role="note"
+          sx={{
+            padding: "0 1rem 0.5rem",
+            fontSize: theme.typography.caption.fontSize,
+            lineHeight: 1.4,
+            color: theme.palette.text.secondary,
+          }}
+        >
+          Still saving this layer. Try again in a moment.
+        </Typography>
+      )}
+
       {destinations.map(destinationItem)}
 
       <Divider sx={{ marginY: 0 }} />
 
       <MenuItem
-        disabled={atFolderCap}
+        disabled={saving || atFolderCap}
         onClick={() => {
           onClose();
           onNewFolder();

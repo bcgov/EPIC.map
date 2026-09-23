@@ -67,6 +67,7 @@ export default function FavouritesSection() {
   const theme = useTheme();
   const {
     favourites,
+    favouritePendingIds,
     favouritesPending,
     favouritesError,
     retryFavourites,
@@ -89,7 +90,21 @@ export default function FavouritesSection() {
   const [announcement, setAnnouncement] = useState({ text: "", count: 0 });
   const atFolderCap = folders.length >= MAX_FAVOURITE_FOLDERS;
 
+  const [moveError, setMoveError] = useState<string | null>(null);
+
   const clearFocusAfterMove = useCallback(() => setFocusAfterMove(null), []);
+
+  const announce = useCallback((text: string) => {
+    setAnnouncement((current) => ({ text, count: current.count + 1 }));
+  }, []);
+
+  const reportProblem = useCallback(
+    (text: string) => {
+      setMoveError(text);
+      announce(text);
+    },
+    [announce],
+  );
 
   /** Every move, by menu or by drag, is announced here. */
   const moveTo = useCallback(
@@ -97,14 +112,11 @@ export default function FavouritesSection() {
       const moved = moveFavourite(layerId, folderId);
       if (moved) {
         const layer = favourites.find((entry) => entry.id === layerId);
-        setAnnouncement((current) => ({
-          text: `Moved ${layer?.name ?? "layer"} to ${groupName}`,
-          count: current.count + 1,
-        }));
+        announce(`Moved ${layer?.name ?? "layer"} to ${groupName}`);
       }
       return moved;
     },
-    [moveFavourite, favourites],
+    [moveFavourite, favourites, announce],
   );
 
   const toTopLevel = useCallback(
@@ -137,12 +149,19 @@ export default function FavouritesSection() {
       saved.then((folderId) => {
         if (folderId !== null && moveTo(layer.id, folderId, groupName)) {
           setFiling({ layerId: layer.id, folderId });
+          return;
+        }
+        // It has just left the folder it was shown in, which needs saying.
+        setFiling(null);
+        if (folderId === null) {
+          // The folder's own failure is reported by folderSaveError as well.
+          announce(`Couldn’t create ${groupName}. ${layer.name} did not move.`);
         } else {
-          setFiling(null);
+          reportProblem(`Couldn’t move ${layer.name} into ${groupName} folder.`);
         }
       });
     },
-    [createFolder, moveTo],
+    [createFolder, moveTo, announce, reportProblem],
   );
 
   const commitRename = useCallback(
@@ -194,6 +213,7 @@ export default function FavouritesSection() {
             onMove={(destination) => moveFromMenu(layer, destination.folderId)}
             onNewFolder={() => setEditing({ kind: "draft", layer })}
             atFolderCap={atFolderCap}
+            saving={favouritePendingIds.has(layer.id)}
           />
         )}
         focusMenuButton={
@@ -424,6 +444,9 @@ export default function FavouritesSection() {
       {foldersError ? foldersNotice() : null}
       {folderSaveError
         ? warningLine(folderSaveError, "Dismiss", clearFolderSaveError)
+        : null}
+      {moveError
+        ? warningLine(moveError, "Dismiss", () => setMoveError(null))
         : null}
       {content()}
     </>
