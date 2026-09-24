@@ -100,7 +100,7 @@ class MetaDataBatchSchema(MetaDataQuerySchema):
     )
 
     # Which click this is, so one the user has already replaced can be dropped
-    # before it reaches the warehouse. 
+    # before it reaches the warehouse.
     client_id = fields.Str(
         load_default=None,
         allow_none=True,
