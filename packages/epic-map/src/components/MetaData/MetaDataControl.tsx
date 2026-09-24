@@ -96,8 +96,12 @@ export default function MetaDataControl() {
     [click, visibleIds],
   );
 
-  const results = useMetaData(layers, click?.box ?? null);
-  const allRows = toRows(layers, results);
+  const { byLayer, isError, retrying, retry } = useMetaData(
+    layers,
+    click?.box ?? null,
+    click?.key ?? 0,
+  );
+  const allRows = toRows(layers, byLayer, { failed: isError, retrying });
   const loading = isLoading(allRows);
   const rows = loading ? [] : visibleRows(allRows);
   const selected = selectedRow(rows, chosenLayerId);
@@ -150,12 +154,11 @@ export default function MetaDataControl() {
     [zoomTo],
   );
 
-  const retry = useCallback(
+  const retryRow = useCallback(
     (row: MetaDataRow) => {
-      const index = layers.findIndex((layer) => layer.id === row.layer.id);
-      void results[index]?.refetch();
+      if (row.layer.objectName) retry(row.layer.objectName);
     },
-    [layers, results],
+    [retry],
   );
 
   const close = useCallback(() => setClick(null), []);
@@ -185,7 +188,7 @@ export default function MetaDataControl() {
       selected={selected}
       canZoom={canZoom}
       onSelect={select}
-      onRetry={retry}
+      onRetry={retryRow}
       onZoom={zoomTo}
       onClose={close}
     />

@@ -52,6 +52,11 @@ MAX_APPLIED_LAYERS_PER_MAP = 50
 # the path segment of an outbound URL).
 OBJECT_NAME_PATTERN = r'^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$'
 
+# An opaque id the client picks for itself, used only to tell one map's clicks
+# from another's. It reaches a cache key, so it is held to characters that
+# cannot mean anything there - and capped, because nothing about it is trusted.
+CLIENT_ID_PATTERN = r'^[A-Za-z0-9_-]{1,64}$'
+
 # BCGW's public OWS endpoint for one warehouse object. Only ever formatted with
 # an object name the schema has already validated - the path segment is what
 # stops a crafted name addressing another host.
@@ -194,6 +199,29 @@ LAYER_LABEL_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 # sends a few pixels around the click, which is under half a degree even at the
 # map's furthest-out zoom - so this only ever stops a box nobody clicked.
 METADATA_MAX_SPAN_DEGREES = 2.0
+
+# Layers one click may ask about. A click identifies against every applied
+# layer at once, and the catalogue is large enough that a user can apply more
+# than anyone would read - so this is the point past which the answer is not
+# worth the warehouse traffic, not a guess at what is reasonable.
+METADATA_MAX_LAYERS = 60
+
+# Wall clock a whole click gets, across every layer it asks about. The fan-out
+# is bounded by the connection pool, so a click over many layers runs in waves;
+# this is what stops the last wave being answered long after the user has moved
+# on. A layer still queued when it passes is reported as a failure the user can
+# retry, which is a truer answer than a row that never resolves.
+#
+# Under gunicorn's 30 second default with room for the hop that crosses it: past
+# that gunicorn kills the worker rather than the request, taking every other
+# request on the pod with it.
+METADATA_BUDGET_SECONDS = 20
+
+# How long a client's latest click number is worth remembering. Long enough to
+# outlive the click it belongs to by a wide margin, short enough that a client
+# that has gone away is forgotten. Nothing depends on it surviving: a missing
+# entry means no click has been superseded, which is the safe reading.
+METADATA_CLICK_TTL_SECONDS = 5 * 60
 
 # A geometry column name, as it goes into a CQL filter. Read off the warehouse,
 # not the caller, but checked all the same before it is spliced into one.

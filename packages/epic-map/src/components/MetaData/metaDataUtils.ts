@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { AppliedLayer } from "@/api/useAppliedLayers";
-import type { MetaDataFeature, MetaDataResult } from "@/api/useMetaData";
+import type { MetaDataByLayer, MetaDataFeature } from "@/api/useMetaData";
 import type { MapExtent } from "@/types";
 import { MIN_FEATURE_PIXELS } from "@/utils/config";
 
@@ -56,24 +56,29 @@ export interface MetaDataRow {
   retrying: boolean;
 }
 
-const statusOf = (result: MetaDataResult): MetaDataRowStatus => {
-  if (result.isError) return "error";
-  if (result.isPending) return "pending";
-  return result.data ? "found" : "empty";
-};
-
-/** Pairs each queried layer with its answer, in the order they were asked. */
+/**
+ * Pairs each queried layer with its answer, in the order they were asked.
+ *
+ * A layer with no answer yet is pending, which covers both the click's one
+ * request still being in flight and the request having failed outright - in
+ * the second case every row is an error, which is the truthful reading.
+ */
 export const toRows = (
   layers: readonly AppliedLayer[],
-  results: readonly MetaDataResult[],
+  byLayer: MetaDataByLayer,
+  { failed = false, retrying = new Set<string>() }: {
+    failed?: boolean;
+    retrying?: ReadonlySet<string>;
+  } = {},
 ): MetaDataRow[] =>
-  layers.map((layer, index) => {
-    const result = results[index];
+  layers.map((layer) => {
+    const { objectName } = layer;
+    const answer = objectName ? byLayer[objectName] : undefined;
     return {
       layer,
-      status: result ? statusOf(result) : "pending",
-      feature: result?.data ?? null,
-      retrying: Boolean(result?.isError && result.isFetching),
+      status: answer?.status ?? (failed ? "error" : "pending"),
+      feature: answer?.feature ?? null,
+      retrying: Boolean(objectName && retrying.has(objectName)),
     };
   });
 

@@ -976,3 +976,107 @@ def test_metadata_survives_a_style_too_big_to_carry(app):
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         assert BcgwService.metadata(OBJECT_NAME, CLICK)['name'] is None
+
+
+# Fanning one click out over many layers
+
+
+OTHER_OBJECT_NAME = 'WHSE_FOREST_VEGETATION.VEG_COMP_LYR_R1_POLY'
+
+
+def test_metadata_batch_answers_every_layer_in_the_order_asked(app):
+    """Each layer carries its own outcome, and the order is the caller's."""
+    with app.app_context(), patch.object(
+        BcgwService, 'metadata', side_effect=[{'id': 'a'}, None]
+    ):
+        results = BcgwService.metadata_batch([OBJECT_NAME, OTHER_OBJECT_NAME], CLICK)
+
+    assert [row['object_name'] for row in results] == [OBJECT_NAME, OTHER_OBJECT_NAME]
+    assert [row['status'] for row in results] == ['found', 'empty']
+    assert results[0]['feature'] == {'id': 'a'}
+
+
+def test_metadata_batch_one_layer_failing_leaves_the_others_alone(app):
+    """An unpublished table costs the user that row, not the whole click."""
+    def answer(object_name, _bbox):
+        if object_name == OTHER_OBJECT_NAME:
+            raise ServiceUnavailableError('The warehouse did not answer.')
+        return {'id': 'a'}
+
+    with app.app_context(), patch.object(BcgwService, 'metadata', side_effect=answer):
+        results = BcgwService.metadata_batch([OBJECT_NAME, OTHER_OBJECT_NAME], CLICK)
+
+    assert [row['status'] for row in results] == ['found', 'error']
+    assert results[1]['error'] == 'The warehouse did not answer.'
+    assert results[1]['feature'] is None
+
+
+def test_metadata_batch_asks_the_warehouse_nothing_once_abandoned(app):
+    """A click the user has replaced stops before it reaches openmaps."""
+    with app.app_context(), patch.object(BcgwService, 'metadata') as metadata:
+        results = BcgwService.metadata_batch(
+            [OBJECT_NAME, OTHER_OBJECT_NAME], CLICK, abandoned=lambda: True
+        )
+
+    metadata.assert_not_called()
+    assert [row['status'] for row in results] == ['error', 'error']
+
+
+def test_metadata_batch_abandons_only_what_has_not_started(app):
+    """Layers already in flight finish; the queue behind them is what is dropped.
+
+    The check is per layer, so a click abandoned partway through still reports
+    the layers that had already run - it is the warehouse traffic being saved,
+    not the answers.
+    """
+    started = []
+
+    def abandoned():
+        # Abandoned from the second layer on, as a newer click landing would.
+        return len(started) >= 1
+
+    def answer(object_name, _bbox):
+        started.append(object_name)
+        return {'id': object_name}
+
+    with app.app_context(), patch.object(BcgwService, 'metadata', side_effect=answer):
+        results = BcgwService.metadata_batch(
+            [OBJECT_NAME, OTHER_OBJECT_NAME], CLICK, abandoned=abandoned
+        )
+
+    assert started == [OBJECT_NAME]
+    assert [row['status'] for row in results] == ['found', 'error']
+
+
+def test_metadata_batch_runs_its_layers_at_once(app):
+    """Fifty layers is fifty waits; serially that is a click nobody waits out."""
+    running = threading.Barrier(3, timeout=5)
+
+    def answer(object_name, _bbox):
+        # Every layer has to be in flight for this to get past the barrier, so
+        # it times out rather than passing if the fan-out ever goes serial.
+        running.wait()
+        return {'id': object_name}
+
+    names = [OBJECT_NAME, OTHER_OBJECT_NAME, 'WHSE_BASEMAPPING.THIRD_LAYER']
+    with app.app_context(), patch.object(BcgwService, 'metadata', side_effect=answer):
+        results = BcgwService.metadata_batch(names, CLICK)
+
+    assert [row['status'] for row in results] == ['found'] * 3
+
+
+def test_metadata_batch_gives_up_on_a_layer_that_runs_past_the_budget(app):
+    """A row the user can retry beats one that never resolves."""
+    def answer(object_name, _bbox):
+        if object_name == OTHER_OBJECT_NAME:
+            time.sleep(1)
+        return {'id': object_name}
+
+    with app.app_context(), \
+            patch('map_api.services.bcgw_service.METADATA_BUDGET_SECONDS', 0.05), \
+            patch.object(BcgwService, 'metadata', side_effect=answer):
+        results = BcgwService.metadata_batch([OBJECT_NAME, OTHER_OBJECT_NAME], CLICK)
+
+    assert [row['object_name'] for row in results] == [OBJECT_NAME, OTHER_OBJECT_NAME]
+    assert results[1]['status'] == 'error'
+    assert 'too long' in results[1]['error']

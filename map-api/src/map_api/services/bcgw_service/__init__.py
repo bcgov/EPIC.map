@@ -28,9 +28,10 @@ import math
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from http.cookiejar import DefaultCookiePolicy
-from typing import Optional
+from typing import Callable, Optional
 
 import requests
 from flask import current_app
@@ -42,7 +43,7 @@ from map_api.utils.constant import (
     BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_CONNECTION_POOL_SIZE, BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES,
     BCGW_SCHEMA_BYTE_LIMIT, BCGW_SEARCH_BUDGET_SECONDS, BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_STYLE_BYTE_LIMIT,
     BCGW_WFS_TIMEOUT_SECONDS, GEOMETRY_COLUMN_PATTERN, LAYER_LABEL_CACHE_TTL_SECONDS, LAYER_MIN_ZOOM_CACHE_TTL_SECONDS,
-    LAYER_SCHEMA_CACHE_TTL_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS,
+    LAYER_SCHEMA_CACHE_TTL_SECONDS, METADATA_BUDGET_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS,
     NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES, WMS_MAX_LAYER_MIN_ZOOM,
     WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO)
 
@@ -101,6 +102,13 @@ UNAVAILABLE_MESSAGE = 'The BC Geographic Warehouse did not answer. Please try ag
 # patience waiting. A retry is the right move: by then the answer is usually
 # cached, and saying so beats holding a thread until the first search finishes.
 BUSY_MESSAGE = 'Still asking the BC Geographic Warehouse. Please try again.'
+
+# One layer of a click that ran past the click's budget, and one belonging to a
+# click the user has already replaced. Both are rows with a Retry rather than
+# failures of the click as a whole, and the second is normally never read: the
+# client that superseded the click stopped listening for its answer.
+TOOK_TOO_LONG_MESSAGE = 'This layer took too long to answer. Please try again.'
+ABANDONED_MESSAGE = 'Not asked: a newer click replaced this one.'
 
 
 def _pooled_session() -> requests.Session:
@@ -164,6 +172,22 @@ def _single_flight(key: str):
         # the size of the work in flight rather than of the day's traffic.
         with IN_FLIGHT_GUARD:
             IN_FLIGHT.pop(key, None)
+
+
+# The threads a click's layers are identified on, shared by every request on the
+# pod rather than made per click. What is being rationed is the warehouse, not
+# the CPU: sized to the connection pool so a fan-out reuses the open connections
+# instead of opening more, and so twenty clients clicking at once still put the
+# same number of requests to openmaps as one does.
+#
+# Gunicorn's own threads are not these. A worker thread serving a click submits
+# its layers here and waits, so the pod holds at most its thread count of clicks
+# and this pool answers them all - which is the point: the alternative is a pool
+# per request, where the tenth simultaneous click opens the eightieth connection
+# to openmaps.
+METADATA_POOL = ThreadPoolExecutor(
+    max_workers=BCGW_CONNECTION_POOL_SIZE, thread_name_prefix='bcgw-metadata'
+)
 
 
 class BcgwService:
@@ -236,6 +260,87 @@ class BcgwService:
                 timeout=LAYER_MIN_ZOOM_CACHE_TTL_SECONDS,
             )
             return zoom
+
+    @classmethod
+    def metadata_batch(
+        cls,
+        object_names: list,
+        bbox: tuple,
+        abandoned: Optional[Callable[[], bool]] = None,
+    ) -> list:
+        """Identify `bbox` against every layer in `object_names`, in their order.
+
+        One answer per layer, each carrying its own outcome, because a click
+        over fifty layers is fifty independent questions and one warehouse table
+        being slow or unpublished says nothing about the other forty-nine. The
+        caller gets every answer that came back rather than the first failure.
+
+        `abandoned` is asked before each layer is started and is how a click the
+        user has already replaced stops costing anything. It is checked at the
+        layer boundary rather than inside a layer's own hops: with the fan-out
+        bounded by the pool, most of a large click's layers are still queued
+        when the next click lands, and those are the ones worth not running. The
+        few already in flight finish - each is bounded by BCGW_WFS_TIMEOUT_SECONDS
+        - and their answers are simply not sent.
+        """
+        app = current_app._get_current_object()  # pylint: disable=protected-access
+        deadline = time.monotonic() + METADATA_BUDGET_SECONDS
+
+        def identify(object_name: str) -> dict:
+            # The pool's threads are not the request's, so anything reading
+            # config, the cache or the logger needs the context pushed here.
+            with app.app_context():
+                if abandoned and abandoned():
+                    return cls._metadata_error(object_name, ABANDONED_MESSAGE)
+                if time.monotonic() > deadline:
+                    return cls._metadata_error(object_name, TOOK_TOO_LONG_MESSAGE)
+
+                try:
+                    feature = cls.metadata(object_name, bbox)
+                except ServiceUnavailableError as exc:
+                    return cls._metadata_error(object_name, exc.description)
+
+                return {
+                    'object_name': object_name,
+                    'status': 'found' if feature else 'empty',
+                    'feature': feature,
+                    'error': None,
+                }
+
+        futures = {
+            object_name: METADATA_POOL.submit(identify, object_name)
+            for object_name in object_names
+        }
+
+        # The budget is the click's, not each layer's. A layer still queued when
+        # it runs out is cancelled outright
+        wait(futures.values(), timeout=max(0.0, deadline - time.monotonic()))
+
+        results = []
+        for object_name, future in futures.items():
+            future.cancel()
+            if future.done() and not future.cancelled():
+                results.append(future.result())
+            else:
+                current_app.logger.info(
+                    "Gave up on %s after the click's %ds budget.",
+                    object_name, METADATA_BUDGET_SECONDS
+                )
+                results.append(
+                    cls._metadata_error(object_name, TOOK_TOO_LONG_MESSAGE)
+                )
+
+        return results
+
+    @staticmethod
+    def _metadata_error(object_name: str, message: str) -> dict:
+        """One layer's row when it has no feature to report and no answer either."""
+        return {
+            'object_name': object_name,
+            'status': 'error',
+            'feature': None,
+            'error': message,
+        }
 
     @classmethod
     def metadata(cls, object_name: str, bbox: tuple) -> Optional[dict]:

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { AppliedLayer } from "@/api/useAppliedLayers";
-import type { MetaDataFeature, MetaDataResult } from "@/api/useMetaData";
+import type {
+  MetaDataByLayer,
+  MetaDataFeature,
+  MetaDataLayerResult,
+} from "@/api/useMetaData";
 import {
   attributeLabel,
   attributeValue,
@@ -45,22 +49,26 @@ const feature: MetaDataFeature = {
   bounds: [-123, 49, -123, 49],
 };
 
-/** Only the fields the helpers read off a query result. */
-const result = (
-  state: Partial<Pick<MetaDataResult, "isError" | "isPending" | "isFetching" | "data">>,
-): MetaDataResult =>
-  ({
-    isError: false,
-    isPending: false,
-    isFetching: false,
-    data: undefined,
-    ...state,
-  }) as MetaDataResult;
+/** One layer's row of a batch answer, as map-api sends it. */
+const answer = (
+  target: AppliedLayer,
+  state: Pick<MetaDataLayerResult, "status" | "feature">,
+): MetaDataLayerResult => ({
+  objectName: target.objectName as string,
+  error: state.status === "error" ? "The warehouse did not answer." : null,
+  ...state,
+});
 
-const found = result({ data: feature });
-const empty = result({ data: null });
-const failed = result({ isError: true });
-const pending = result({ isPending: true, isFetching: true });
+/** The click's answers, keyed the way the hook hands them over. */
+const answers = (...rows: MetaDataLayerResult[]): MetaDataByLayer =>
+  Object.fromEntries(rows.map((row) => [row.objectName, row]));
+
+const found = (target: AppliedLayer) =>
+  answer(target, { status: "found", feature });
+const empty = (target: AppliedLayer) =>
+  answer(target, { status: "empty", feature: null });
+const failed = (target: AppliedLayer) =>
+  answer(target, { status: "error", feature: null });
 
 describe("clickBox", () => {
   // A flat projection: a pixel is a hundredth of a degree, y grows southwards.
@@ -87,13 +95,27 @@ describe("clickBox", () => {
 describe("rows", () => {
   const [a, b, c] = [layer("a"), layer("b"), layer("c")];
 
-  it("is loading until every layer has answered once", () => {
-    expect(isLoading(toRows([a, b], [found, pending]))).toBe(true);
-    expect(isLoading(toRows([a, b], [found, failed]))).toBe(false);
+  it("is loading while a layer of the click has no answer yet", () => {
+    expect(isLoading(toRows([a, b], answers(found(a))))).toBe(true);
+    expect(isLoading(toRows([a, b], answers(found(a), failed(b))))).toBe(false);
+  });
+
+  it("answers each layer by name, whatever order they came back in", () => {
+    const rows = toRows([a, b], answers(failed(b), found(a)));
+    expect(rows.map((row) => [row.layer.name, row.status])).toEqual([
+      ["a", "found"],
+      ["b", "error"],
+    ]);
+  });
+
+  it("reads the whole click failing as every layer failing", () => {
+    const rows = toRows([a, b], {}, { failed: true });
+    expect(rows.map((row) => row.status)).toEqual(["error", "error"]);
+    expect(isLoading(rows)).toBe(false);
   });
 
   it("lists layers with a feature and layers that failed, not layers with nothing", () => {
-    const rows = visibleRows(toRows([a, b, c], [found, empty, failed]));
+    const rows = visibleRows(toRows([a, b, c], answers(found(a), empty(b), failed(c))));
     expect(rows.map((row) => [row.layer.name, row.status])).toEqual([
       ["a", "found"],
       ["c", "error"],
@@ -101,29 +123,31 @@ describe("rows", () => {
   });
 
   it("marks a failed row that is being retried", () => {
-    const [row] = toRows([a], [result({ isError: true, isFetching: true })]);
+    const [row] = toRows([a], answers(failed(a)), {
+      retrying: new Set([a.objectName as string]),
+    });
     expect(row.status).toBe("error");
     expect(row.retrying).toBe(true);
   });
 
   it("selects the first layer that answered, skipping a failure above it", () => {
-    const rows = visibleRows(toRows([a, b], [failed, found]));
+    const rows = visibleRows(toRows([a, b], answers(failed(a), found(b))));
     expect(selectedRow(rows, null)?.layer.name).toBe("b");
   });
 
   it("keeps the user's choice while it is listed, and falls back when it is not", () => {
-    const rows = visibleRows(toRows([a, b], [found, found]));
+    const rows = visibleRows(toRows([a, b], answers(found(a), found(b))));
     expect(selectedRow(rows, b.id)?.layer.name).toBe("b");
     expect(selectedRow(rows, "cat-gone")?.layer.name).toBe("a");
   });
 
   it("selects a failure when nothing else is listed, so its Retry shows", () => {
-    const rows = visibleRows(toRows([a], [failed]));
+    const rows = visibleRows(toRows([a], answers(failed(a))));
     expect(selectedRow(rows, null)?.status).toBe("error");
   });
 
   it("has nothing to select when no layer has anything here", () => {
-    expect(selectedRow(visibleRows(toRows([a], [empty])), null)).toBeNull();
+    expect(selectedRow(visibleRows(toRows([a], answers(empty(a)))), null)).toBeNull();
   });
 });
 
@@ -194,7 +218,8 @@ describe("popupTitle", () => {
   });
 
   it("counts a layer that failed, which is a row like any other", () => {
-    const rows = visibleRows(toRows([layer("a"), layer("b")], [found, failed]));
+    const [one, two] = [layer("a"), layer("b")];
+    const rows = visibleRows(toRows([one, two], answers(found(one), failed(two))));
     expect(popupTitle(false, rows.length)).toBe("2 layers at this point");
   });
 });

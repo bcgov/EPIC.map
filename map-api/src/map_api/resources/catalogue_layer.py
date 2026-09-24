@@ -22,9 +22,10 @@ from marshmallow import ValidationError
 from map_api.auth import auth
 from map_api.exceptions import BadRequestError, ResourceNotFoundError
 from map_api.schemas.catalogue_layer import (
-    LayerMinZoomSchema, MetaDataQuerySchema, MetaDataSchema, NearestFeatureQuerySchema, NearestFeatureSchema,
+    LayerMinZoomSchema, MetaDataBatchResultSchema, MetaDataBatchSchema, NearestFeatureQuerySchema, NearestFeatureSchema,
     ObjectNameSchema)
 from map_api.services.bcgw_service import BcgwService
+from map_api.utils.click_epoch import is_superseded, note_click
 from map_api.utils.util import cors_preflight
 
 from .apihelper import Api as ApiHelper
@@ -38,8 +39,12 @@ nearest_feature_model = ApiHelper.convert_ma_schema_to_restx_model(
     API, NearestFeatureSchema(), 'NearestFeature'
 )
 
-metadata_model = ApiHelper.convert_ma_schema_to_restx_model(
-    API, MetaDataSchema(), 'MetaData'
+metadata_batch_request_model = ApiHelper.convert_ma_schema_to_restx_model(
+    API, MetaDataBatchSchema(), 'MetaDataBatchRequest'
+)
+
+metadata_batch_model = ApiHelper.convert_ma_schema_to_restx_model(
+    API, MetaDataBatchResultSchema(), 'MetaDataBatch'
 )
 
 layer_min_zoom_model = ApiHelper.convert_ma_schema_to_restx_model(
@@ -125,38 +130,50 @@ class LayerMinZoom(Resource):
         )
 
 
-@cors_preflight('GET, OPTIONS')
-@API.route('/<string:object_name>/metadata', methods=['GET', 'OPTIONS'])
-class MetaData(Resource):
-    """What a layer has under a click on the map."""
+@cors_preflight('POST, OPTIONS')
+@API.route('/metadata', methods=['POST', 'OPTIONS'])
+class MetaDataBatch(Resource):
+    """What every layer of one click has under it."""
 
     @staticmethod
     @auth.require
     @ApiHelper.swagger_decorators(
         API,
         endpoint_description=(
-            'The feature of this layer intersecting a small box around a '
-            'click, with its attributes'
+            'Identify a click against many layers at once, one answer per layer'
         ),
     )
-    @API.response(code=200, model=metadata_model, description='Success')
+    @API.expect(metadata_batch_request_model)
+    @API.response(code=200, model=metadata_batch_model, description='Success')
     @API.response(400, 'Bad Request')
-    @API.response(503, 'The warehouse did not answer')
-    def get(object_name: str):
-        """Return the feature under the click, or null when there is none.
+    def post():
+        """Return what each named layer has at the click, in the order asked.
 
-        Nothing here is an answer rather than a missing resource, so it is a
-        200: the client lists layers that failed apart from ones that are
-        simply empty at the point.
+        One request for the whole click rather than one per layer. A user may
+        have fifty layers applied, and fifty requests is fifty sockets, fifty
+        trips through auth, and a fan-out this pod cannot see the shape of -
+        where one request can be given a budget and a bounded pool.
+
+        Never a failure as a whole: a layer that could not be asked carries its
+        own error, so one unpublished table does not cost the user the other
+        forty-nine answers.
         """
         try:
-            ObjectNameSchema().load({'object_name': object_name})
-            box = MetaDataQuerySchema().load(request.args)
+            payload = MetaDataBatchSchema().load(request.get_json(silent=True) or {})
         except ValidationError as exc:
             raise BadRequestError(str(exc.messages)) from exc
 
-        feature = BcgwService.metadata(
-            object_name, (box['west'], box['south'], box['east'], box['north'])
+        client_id, click_id = payload['client_id'], payload['click_id']
+        note_click(client_id, click_id)
+
+        box = (payload['west'], payload['south'], payload['east'], payload['north'])
+        results = BcgwService.metadata_batch(
+            payload['object_names'],
+            box,
+            abandoned=lambda: is_superseded(client_id, click_id),
         )
 
-        return MetaDataSchema().dump({'feature': feature}), HTTPStatus.OK
+        return (
+            MetaDataBatchResultSchema().dump({'results': results}),
+            HTTPStatus.OK,
+        )
