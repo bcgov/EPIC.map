@@ -26,6 +26,12 @@ export interface ResolvedMapWidgetConfig {
 export interface MapWidgetContextValue {
   /** Base URL of the EPIC.map API, as given by the host. */
   apiBaseUrl: string;
+  /**
+   * This widget instance, for the life of the mount. Nothing identifying — it
+   * only tells one map's requests from another's, so map-api can drop work for
+   * a click this map has already replaced.
+   */
+  clientId: string;
   /** The widget's axios instance: token attachment and 401 retry are already on it. */
   api: AxiosInstance;
   publicApi: AxiosInstance;

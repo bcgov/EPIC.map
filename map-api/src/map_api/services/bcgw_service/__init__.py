@@ -28,9 +28,10 @@ import math
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from http.cookiejar import DefaultCookiePolicy
-from typing import Optional
+from typing import Callable, Optional
 
 import requests
 from flask import current_app
@@ -39,11 +40,12 @@ from requests.adapters import HTTPAdapter
 from map_api.exceptions import ServiceUnavailableError
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
-    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_CONNECTION_POOL_SIZE, BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES,
-    BCGW_SEARCH_BUDGET_SECONDS, BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_WFS_TIMEOUT_SECONDS,
-    LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS,
-    NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES, WMS_MAX_LAYER_MIN_ZOOM,
-    WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO)
+    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_CONNECTION_POOL_SIZE, BCGW_GEOMETRY_BYTE_LIMIT, BCGW_METADATA_FANOUT,
+    BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES, BCGW_SCHEMA_BYTE_LIMIT, BCGW_SEARCH_BUDGET_SECONDS,
+    BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_STYLE_BYTE_LIMIT, BCGW_WFS_TIMEOUT_SECONDS, GEOMETRY_COLUMN_PATTERN,
+    LAYER_LABEL_CACHE_TTL_SECONDS, LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, LAYER_SCHEMA_CACHE_TTL_SECONDS,
+    METADATA_BUDGET_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS, NEAREST_SEARCH_WINDOWS_DEGREES,
+    WMS_MAX_LAYER_MIN_ZOOM, WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO)
 
 
 # A [west, south, east, north] box, which is what the client fits the map to.
@@ -73,6 +75,22 @@ OWS_EXCEPTION_REPORT = re.compile(r'<(?:\w+:)?ExceptionReport\b')
 # anything else that can go wrong here are worth telling apart afterwards.
 OWS_EXCEPTION_CODE = re.compile(r'exceptionCode="([^"]+)"')
 
+# What a published style writes across its features on the map, and the columns
+# that label is built from. Read rather than parsed for the same reason as the
+# scale above: the wanted value is one element of a document that runs to a
+# quarter of a megabyte of rules this has nothing to say about.
+STYLE_LABEL = re.compile(r'<(?:\w+:)?Label>(.*?)</(?:\w+:)?Label>', re.S)
+STYLE_LABEL_PROPERTY = re.compile(
+    r'<(?:\w+:)?PropertyName>\s*([A-Za-z0-9_]+)\s*</(?:\w+:)?PropertyName>'
+)
+
+# Columns one label may be built from. A label composed of more than a few is
+# not a name, and joining it would fill the heading rather than title it.
+MAX_LABEL_COLUMNS = 3
+
+# How GeoServer spells a feature id it made up for a table with no primary key.
+GENERATED_FID = '.fid-'
+
 # How "this layer declares no scale limit" is remembered: a cached None is
 # indistinguishable from a cache miss, and 0 is a legitimate minzoom.
 NO_SCALE_LIMIT = -1
@@ -84,6 +102,13 @@ UNAVAILABLE_MESSAGE = 'The BC Geographic Warehouse did not answer. Please try ag
 # patience waiting. A retry is the right move: by then the answer is usually
 # cached, and saying so beats holding a thread until the first search finishes.
 BUSY_MESSAGE = 'Still asking the BC Geographic Warehouse. Please try again.'
+
+# One layer of a click that ran past the click's budget, and one belonging to a
+# click the user has already replaced. Both are rows with a Retry rather than
+# failures of the click as a whole, and the second is normally never read: the
+# client that superseded the click stopped listening for its answer.
+TOOK_TOO_LONG_MESSAGE = 'This layer took too long to answer. Please try again.'
+ABANDONED_MESSAGE = 'Not asked: a newer click replaced this one.'
 
 
 def _pooled_session() -> requests.Session:
@@ -147,6 +172,18 @@ def _single_flight(key: str):
         # the size of the work in flight rather than of the day's traffic.
         with IN_FLIGHT_GUARD:
             IN_FLIGHT.pop(key, None)
+
+
+# The threads a click's layers are identified on, shared by every request on the
+# pod rather than made per click. What is being rationed is the warehouse, not
+# the CPU: twenty clients clicking at once put no more work to openmaps than one
+# does. Gunicorn's own threads are not these - a worker thread serving a click
+# submits its layers here and waits - which is the point: the alternative is a
+# pool per request, where the tenth simultaneous click opens the eightieth
+# connection to openmaps.
+METADATA_POOL = ThreadPoolExecutor(
+    max_workers=BCGW_METADATA_FANOUT, thread_name_prefix='bcgw-metadata'
+)
 
 
 class BcgwService:
@@ -219,6 +256,290 @@ class BcgwService:
                 timeout=LAYER_MIN_ZOOM_CACHE_TTL_SECONDS,
             )
             return zoom
+
+    @classmethod
+    def metadata_batch(
+        cls,
+        object_names: list,
+        bbox: tuple,
+        abandoned: Optional[Callable[[], bool]] = None,
+    ) -> list:
+        """Identify `bbox` against every layer in `object_names`, in their order.
+
+        One answer per layer, each carrying its own outcome, because a click
+        over fifty layers is fifty independent questions and one warehouse table
+        being slow or unpublished says nothing about the other forty-nine. The
+        caller gets every answer that came back rather than the first failure.
+
+        `abandoned` is asked before each layer is started and is how a click the
+        user has already replaced stops costing anything. It is checked at the
+        layer boundary rather than inside a layer's own hops: with the fan-out
+        bounded by the pool, most of a large click's layers are still queued
+        when the next click lands, and those are the ones worth not running. The
+        few already in flight finish - each is bounded by BCGW_WFS_TIMEOUT_SECONDS
+        - and their answers are simply not sent.
+        """
+        app = current_app._get_current_object()  # pylint: disable=protected-access
+        deadline = time.monotonic() + METADATA_BUDGET_SECONDS
+
+        def identify(object_name: str) -> dict:
+            # The pool's threads are not the request's, so anything reading
+            # config, the cache or the logger needs the context pushed here.
+            with app.app_context():
+                if abandoned and abandoned():
+                    return cls._metadata_error(object_name, ABANDONED_MESSAGE)
+                if time.monotonic() > deadline:
+                    return cls._metadata_error(object_name, TOOK_TOO_LONG_MESSAGE)
+
+                try:
+                    feature = cls.metadata(object_name, bbox)
+                except ServiceUnavailableError as exc:
+                    return cls._metadata_error(object_name, exc.description)
+                except Exception:  # noqa: B902 # pylint: disable=broad-except
+                    current_app.logger.exception(
+                        'Identifying %s failed unexpectedly.', object_name
+                    )
+                    return cls._metadata_error(object_name, UNAVAILABLE_MESSAGE)
+
+                return {
+                    'object_name': object_name,
+                    'status': 'found' if feature else 'empty',
+                    'feature': feature,
+                    'error': None,
+                }
+
+        futures = {
+            object_name: METADATA_POOL.submit(identify, object_name)
+            for object_name in object_names
+        }
+
+        # The budget is the click's, not each layer's. A layer still queued when
+        # it runs out is cancelled outright
+        wait(futures.values(), timeout=max(0.0, deadline - time.monotonic()))
+
+        results = []
+        for object_name, future in futures.items():
+            future.cancel()
+            if future.done() and not future.cancelled():
+                results.append(future.result())
+            else:
+                current_app.logger.info(
+                    "Gave up on %s after the click's %ds budget.",
+                    object_name, METADATA_BUDGET_SECONDS
+                )
+                results.append(
+                    cls._metadata_error(object_name, TOOK_TOO_LONG_MESSAGE)
+                )
+
+        return results
+
+    @staticmethod
+    def _metadata_error(object_name: str, message: str) -> dict:
+        """One layer's row when it has no feature to report and no answer either."""
+        return {
+            'object_name': object_name,
+            'status': 'error',
+            'feature': None,
+            'error': message,
+        }
+
+    @classmethod
+    def metadata(cls, object_name: str, bbox: tuple) -> Optional[dict]:
+        """Return the feature of this layer under a click, or None when there is none.
+
+        `bbox` is (west, south, east, north) in degrees: the few pixels around
+        the click, so a point or a line can be hit without landing on it
+        exactly. Matched with INTERSECTS on the geometry itself rather than
+        WFS's `bbox`, which a warehouse may answer from envelopes alone - and
+        a click in the crook of an L-shaped polygon is inside its envelope.
+
+        The geometry comes back for the client to outline and zoom to. One too
+        heavy to carry is asked for again without it, so a province-sized
+        polygon still has its attributes to show; the client highlights that
+        one by its id instead, through the warehouse's own tiles.
+        """
+        schema = cls._layer_schema(object_name)
+        if not schema:
+            return None
+        geometry, attributes = schema
+
+        params = cls._feature_params(object_name, count=1, bbox=None)
+        params['cql_filter'] = cls._intersects(geometry, bbox)
+
+        features = cls._features_for(object_name, params)
+        measured = features is not None
+        if not measured:
+            if not attributes:
+                return None
+            params['propertyName'] = ','.join(attributes)
+            features = cls._features_for(object_name, params) or []
+
+        if not features:
+            return None
+        feature = features[0]
+
+        # A view with no primary key gets a fresh fid per request, which no
+        # later tile request can find again.
+        feature_id = feature.get('id')
+        if not isinstance(feature_id, str) or GENERATED_FID in feature_id:
+            feature_id = None
+
+        properties = feature.get('properties') or {}
+        return {
+            'id': feature_id,
+            'name': cls._feature_name(object_name, properties),
+            'properties': [
+                {'name': name, 'value': value}
+                for name, value in properties.items()
+                if name != geometry
+            ],
+            'geometry': feature.get('geometry') if measured else None,
+            'bounds': cls._bounds_of(feature) if measured else None,
+        }
+
+    @staticmethod
+    def _intersects(geometry: str, bbox: tuple) -> str:
+        """CQL for features touching `bbox`, a (west, south, east, north) box in degrees.
+
+        The SRID is what makes the ring degrees, longitude first, rather than
+        the layer's own BC Albers metres.
+        """
+        west, south, east, north = bbox
+        ring = (
+            f'{west} {south}, {east} {south}, {east} {north}, '
+            f'{west} {north}, {west} {south}'
+        )
+        return f'INTERSECTS({geometry}, SRID=4326;POLYGON(({ring})))'
+
+    @classmethod
+    def _feature_name(cls, object_name: str, properties: dict) -> Optional[str]:
+        """Return what this feature is called, as the layer's own map labels call it.
+
+        Taken from the columns the published style writes across the feature on
+        the map, rather than from a guess at which column sounds like a name.
+        A layer whose style labels nothing has no name to give, and the client
+        shows the layer's name in its place.
+        """
+        values = [
+            str(properties[column]).strip()
+            for column in cls._label_columns(object_name)
+            if properties.get(column) not in (None, '')
+        ]
+        return ' '.join(value for value in values if value) or None
+
+    @classmethod
+    def _label_columns(cls, object_name: str) -> list:
+        """Return the columns this layer's published style labels features with."""
+        key = f'bcgw:label:{object_name}'
+        remembered = cache.get(key)
+        if remembered is not None:
+            return remembered
+
+        columns = cls._style_label_columns(object_name)
+        cache.set(key, columns, timeout=LAYER_LABEL_CACHE_TTL_SECONDS)
+        return columns
+
+    @classmethod
+    def _style_label_columns(cls, object_name: str) -> list:
+        """Return the label columns read off the layer's published SLD.
+
+        A style that cannot be read leaves the feature unnamed rather than
+        raising: the heading falls back to the layer's own name, which is a
+        worse answer than a name but a better one than an error.
+        """
+        try:
+            body = cls._read(
+                object_name,
+                {
+                    'service': 'WMS',
+                    'version': '1.1.1',
+                    'request': 'GetStyles',
+                    'layers': f'pub:{object_name}',
+                },
+                BCGW_STYLE_BYTE_LIMIT,
+            )
+        except ServiceUnavailableError:
+            return []
+
+        if body is None or OWS_EXCEPTION_REPORT.search(body):
+            return []
+
+        columns = []
+        for label in STYLE_LABEL.findall(body):
+            for column in STYLE_LABEL_PROPERTY.findall(label):
+                if column not in columns:
+                    columns.append(column)
+            # The first label wins: later rules are the same layer drawn at
+            # another scale, and a heading takes one name.
+            if columns:
+                break
+
+        return columns[:MAX_LABEL_COLUMNS]
+
+    @classmethod
+    def _layer_schema(cls, object_name: str) -> Optional[tuple]:
+        """Return (geometry column, attribute names), or None for a layer with no WFS.
+
+        The geometry column is needed to filter on, and the attribute names to
+        ask for everything but it. Neither depends on where the user clicked.
+        """
+        key = f'bcgw:schema:{object_name}'
+        remembered = cache.get(key)
+        if remembered is not None:
+            # An empty list is how "publishes no feature type" is remembered.
+            return tuple(remembered) if remembered else None
+
+        schema = cls._describe(object_name)
+        cache.set(key, list(schema) if schema else [], timeout=LAYER_SCHEMA_CACHE_TTL_SECONDS)
+        return schema
+
+    @classmethod
+    def _describe(cls, object_name: str) -> Optional[tuple]:
+        """Read the layer's columns off DescribeFeatureType."""
+        body = cls._read(
+            object_name,
+            {
+                'service': 'WFS',
+                'version': '2.0.0',
+                'request': 'DescribeFeatureType',
+                'typeNames': f'pub:{object_name}',
+                'outputFormat': 'application/json',
+            },
+            BCGW_SCHEMA_BYTE_LIMIT,
+        )
+        if body is None:
+            current_app.logger.warning(
+                'BCGW schema for %s passed %d bytes.', object_name, BCGW_SCHEMA_BYTE_LIMIT
+            )
+            raise ServiceUnavailableError(UNAVAILABLE_MESSAGE)
+
+        if OWS_EXCEPTION_REPORT.search(body):
+            return None
+
+        try:
+            feature_types = json.loads(body).get('featureTypes') or []
+        except (ValueError, AttributeError) as exc:
+            current_app.logger.warning(
+                'BCGW returned an unreadable schema for %s: %s', object_name, exc
+            )
+            raise ServiceUnavailableError(UNAVAILABLE_MESSAGE) from exc
+
+        columns = feature_types[0].get('properties', []) if feature_types else []
+        geometry = next(
+            (
+                column.get('name') for column in columns
+                if str(column.get('type', '')).startswith('gml:')
+            ),
+            None,
+        )
+        if not geometry or not re.match(GEOMETRY_COLUMN_PATTERN, geometry):
+            return None
+
+        attributes = [
+            column['name'] for column in columns
+            if column.get('name') and column['name'] != geometry
+        ]
+        return geometry, attributes
 
     @staticmethod
     def _min_zoom_key(object_name: str) -> str:
@@ -421,11 +742,14 @@ class BcgwService:
         cls, object_name: str, count: int, bbox: Optional[tuple] = None
     ) -> Optional[list]:
         """Features as GeoJSON, or None when the answer was too big to carry."""
-        body = cls._read(
-            object_name,
-            cls._feature_params(object_name, count, bbox),
-            NEAREST_GEOMETRY_BYTE_LIMIT,
+        return cls._features_for(
+            object_name, cls._feature_params(object_name, count, bbox)
         )
+
+    @classmethod
+    def _features_for(cls, object_name: str, params: dict) -> Optional[list]:
+        """Run GetFeature with `params`; None when the answer was too big to carry."""
+        body = cls._read(object_name, params, BCGW_GEOMETRY_BYTE_LIMIT)
         if body is None:
             return None
 
@@ -461,7 +785,7 @@ class BcgwService:
         params = cls._feature_params(object_name, count=1, bbox=bbox)
         params['resultType'] = 'hits'
 
-        body = cls._read(object_name, params, NEAREST_GEOMETRY_BYTE_LIMIT)
+        body = cls._read(object_name, params, BCGW_GEOMETRY_BYTE_LIMIT)
         matched = MATCHED_COUNT.search(body or '')
         return int(matched.group(1)) if matched else 0
 

@@ -52,6 +52,8 @@ interface LayersContextValue {
   focusErrors: Readonly<Record<string, string>>;
   focusLayer: (layer: CatalogueLayer) => void;
   belowFloorIds: ReadonlySet<string>;
+  /** The zoom each enabled layer starts drawing at, by layer id. */
+  layerFloors: Readonly<Record<string, number>>;
   /** Enabled layers whose floor is past anything the map can zoom to. */
   beyondReachIds: ReadonlySet<string>;
   /** The layers map-api has starred for this user, newest first. */
@@ -136,6 +138,11 @@ export function LayersProvider({
         ),
       })),
     [appliedLayers, minZooms],
+  );
+
+  const layerFloors = useMemo(
+    () => Object.fromEntries(floors.map(({ id, floor }) => [id, floor])),
+    [floors],
   );
 
   const [belowFloorIds, setBelowFloorIds] = useState<ReadonlySet<string>>(
@@ -351,6 +358,7 @@ export function LayersProvider({
       focusErrors,
       focusLayer,
       belowFloorIds,
+      layerFloors,
       beyondReachIds,
       favourites,
       favouritesPending,
@@ -389,6 +397,7 @@ export function LayersProvider({
       focusErrors,
       focusLayer,
       belowFloorIds,
+      layerFloors,
       beyondReachIds,
       favourites,
       favouritesPending,

@@ -52,6 +52,11 @@ MAX_APPLIED_LAYERS_PER_MAP = 50
 # the path segment of an outbound URL).
 OBJECT_NAME_PATTERN = r'^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$'
 
+# An opaque id the client picks for itself, used only to tell one map's clicks
+# from another's. It reaches a cache key, so it is held to characters that
+# cannot mean anything there - and capped, because nothing about it is trusted.
+CLIENT_ID_PATTERN = r'^[A-Za-z0-9_-]{1,64}$'
+
 # BCGW's public OWS endpoint for one warehouse object. Only ever formatted with
 # an object name the schema has already validated - the path segment is what
 # stops a crafted name addressing another host.
@@ -95,11 +100,15 @@ BC_EXTENT = (-139.1, 48.2, -114.0, 60.1)
 # Bytes of feature geometry this pod will carry before it stops reading. A
 # single BCGW polygon can run past half a megabyte of coordinates - watershed
 # groups do - and decompressing and parsing that holds the GIL on a quarter of a
-# core, stalling every other request in the process. Past this the search window
-# frames the camera instead, which costs the user a little zoom and nothing else.
-# Set well above the few kilobytes a feature of a zoomable layer actually weighs,
-# so this bounds the tail rather than shaping the common answer.
-NEAREST_GEOMETRY_BYTE_LIMIT = 128 * 1024
+# core, stalling every other request in the process. Set well above the few
+# kilobytes a feature actually weighs, so this bounds the tail rather than
+# shaping the common answer.
+#
+# Both readers of a feature share it and neither is left with nothing: a search
+# frames the camera on its window instead, and a click keeps the feature's
+# attributes and shows it through the warehouse's own tiles rather than an
+# outline of its own.
+BCGW_GEOMETRY_BYTE_LIMIT = 128 * 1024
 
 # Bytes of a capabilities document this pod will carry. Separate from the
 # geometry cap because the two failures are not alike: a feature too big to
@@ -122,8 +131,9 @@ BCGW_READ_CHUNK_BYTES = 32 * 1024
 # that crosses it plus the unfiltered fallback: 8 + 8 + 8 at the timeout above,
 # which holds only because that timeout is enforced against the clock for the
 # whole of a hop rather than per read. See `_read`.
-# That has to stay under gunicorn's 30 second default, which does not fail one
-# request - it kills the worker, taking every other request on the pod with it.
+# That has to stay under the gunicorn timeout the entrypoint sets, which does not
+# fail one request - it kills the worker, taking every other request on the pod
+# with it.
 BCGW_SEARCH_BUDGET_SECONDS = 15
 
 # How long a thread will wait on another thread's identical in-flight search
@@ -137,12 +147,21 @@ BCGW_SEARCH_BUDGET_SECONDS = 15
 # for, and the caller's retry will usually find the answer cached.
 BCGW_SINGLE_FLIGHT_WAIT_SECONDS = BCGW_WFS_TIMEOUT_SECONDS
 
+# Hops to the warehouse a single click's layers are identified on at once, and so
+# the width of the metadata fan-out. What is rationed here is openmaps, not the
+# CPU. Read from the same variable gunicorn does, so the fan-out of one click
+# cannot outgrow the requests the pod will serve at the same time.
+BCGW_METADATA_FANOUT = int(os.getenv('GUNICORN_THREADS', '8'))
+
 # Connections kept open to the warehouse. A fresh connection per hop costs a TLS
 # handshake to openmaps - measured at ~120ms, on every window of every search -
-# so the pool is sized to the worker's threads: any fewer and urllib3 discards
-# the connections a busy moment opens, putting the handshake straight back.
-# Read from the same variable gunicorn does, so the two cannot drift.
-BCGW_CONNECTION_POOL_SIZE = int(os.getenv('GUNICORN_THREADS', '8'))
+# so any fewer than the threads that use them and urllib3 discards the
+# connections a busy moment opens, putting the handshake straight back.
+#
+# Two sets of threads share the one session: the worker's own, and the metadata
+# pool they hand a click's layers to. This caps what is kept open, not what is in
+# flight, so it is the sum rather than the larger of them.
+BCGW_CONNECTION_POOL_SIZE = int(os.getenv('GUNICORN_THREADS', '8')) + BCGW_METADATA_FANOUT
 
 # Scale denominator at map zoom 0, from OGC's 0.28mm reference pixel, halving
 # with every zoom level. This is what turns a layer's published scale limit into
@@ -171,6 +190,56 @@ WMS_MAX_LAYER_MIN_ZOOM = 24
 # published style, which is revised on the scale of months, so this leans long -
 # it is the difference between one GetCapabilities per layer and one per press.
 LAYER_MIN_ZOOM_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+
+# How long a layer's attribute schema is worth remembering. It changes when the
+# warehouse table does, which is rarer still than its style.
+LAYER_SCHEMA_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+
+# Bytes of a DescribeFeatureType answer this pod will carry. Measured ones run
+# 2-5KB; past this something upstream has gone wrong.
+BCGW_SCHEMA_BYTE_LIMIT = 64 * 1024
+
+# Bytes of a published style this pod will carry. Measured ones run 3-250KB -
+# they carry every rule for every scale - so this has headroom over the largest
+# seen. Past it the feature simply has no name to show, which is a fallback the
+# popup already has, so it is not worth treating as an outage.
+BCGW_STYLE_BYTE_LIMIT = 512 * 1024
+
+# How long a layer's label field is worth remembering. It comes out of the same
+# published style as the drawing scale, and changes as rarely.
+LAYER_LABEL_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+
+# Widest box, in degrees a side, a metadata click may ask about. The client
+# sends a few pixels around the click, which is under half a degree even at the
+# map's furthest-out zoom - so this only ever stops a box nobody clicked.
+METADATA_MAX_SPAN_DEGREES = 2.0
+
+# Layers one click may ask about. A click identifies against every applied
+# layer at once, and the catalogue is large enough that a user can apply more
+# than anyone would read - so this is the point past which the answer is not
+# worth the warehouse traffic, not a guess at what is reasonable.
+METADATA_MAX_LAYERS = 60
+
+# Wall clock a whole click gets, across every layer it asks about. The fan-out
+# is bounded by the connection pool, so a click over many layers runs in waves;
+# this is what stops the last wave being answered long after the user has moved
+# on. A layer still queued when it passes is reported as a failure the user can
+# retry, which is a truer answer than a row that never resolves.
+#
+# Inside the 60 second gunicorn timeout the entrypoint sets, with room to spare
+# for the hop that crosses it: past that gunicorn kills the worker rather than
+# the request, taking every other request on the pod with it.
+METADATA_BUDGET_SECONDS = 20
+
+# How long a client's latest click number is worth remembering. Long enough to
+# outlive the click it belongs to by a wide margin, short enough that a client
+# that has gone away is forgotten. Nothing depends on it surviving: a missing
+# entry means no click has been superseded, which is the safe reading.
+METADATA_CLICK_TTL_SECONDS = 5 * 60
+
+# A geometry column name, as it goes into a CQL filter. Read off the warehouse,
+# not the caller, but checked all the same before it is spliced into one.
+GEOMETRY_COLUMN_PATTERN = r'^[A-Za-z_][A-Za-z0-9_]*$'
 
 # Favourites are a bookmark list, not layers drawn on the map
 MAX_FAVOURITE_LAYERS = 200

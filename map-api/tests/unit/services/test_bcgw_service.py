@@ -27,11 +27,11 @@ import pytest
 import requests
 
 from map_api.exceptions import ServiceUnavailableError
-from map_api.services.bcgw_service import IN_FLIGHT, BcgwService
+from map_api.services.bcgw_service import IN_FLIGHT, UNAVAILABLE_MESSAGE, BcgwService
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
-    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_READ_CHUNK_BYTES, BCGW_WFS_TIMEOUT_SECONDS,
-    NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES)
+    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_GEOMETRY_BYTE_LIMIT, BCGW_READ_CHUNK_BYTES, BCGW_STYLE_BYTE_LIMIT,
+    BCGW_WFS_TIMEOUT_SECONDS, NEAREST_SEARCH_WINDOWS_DEGREES)
 
 
 OBJECT_NAME = 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES'
@@ -187,7 +187,7 @@ def test_a_wider_window_does_not_send_the_camera_back_where_it_started(app):
 def test_a_wider_window_frames_a_feature_too_heavy_to_measure(app):
     """The window is still the fallback, just no longer the first answer."""
     near_empty = {'features': []}
-    oversized = 'x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1)
+    oversized = 'x' * (BCGW_GEOMETRY_BYTE_LIMIT + 1)
     get, _ = _answers(near_empty, 0, 3, oversized)
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
@@ -214,7 +214,7 @@ def test_falls_back_to_the_first_feature_when_none_are_near(app):
 
 def test_an_answer_past_the_byte_cap_frames_the_window(app):
     """A polygon too heavy to parse still points the camera the right way."""
-    get, _ = _answers('x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1))
+    get, _ = _answers('x' * (BCGW_GEOMETRY_BYTE_LIMIT + 1))
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         bounds = BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0)
@@ -225,7 +225,7 @@ def test_an_answer_past_the_byte_cap_frames_the_window(app):
 
 def test_an_oversized_fallback_lands_in_the_province(app):
     """The last resort cannot measure a giant feature, so it frames all of BC."""
-    oversized = 'x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1)
+    oversized = 'x' * (BCGW_GEOMETRY_BYTE_LIMIT + 1)
     get, _ = _answers(*_nothing_near(oversized))
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
@@ -745,7 +745,7 @@ def test_a_capabilities_document_heavier_than_a_feature_is_still_read(app):
     document worth abandoning - there is no window to fall back on here, only
     the floor the document carries.
     """
-    padding = 'x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1)
+    padding = 'x' * (BCGW_GEOMETRY_BYTE_LIMIT + 1)
     body = (
         f'<WMS_Capabilities><Layer><Name>pub:x</Name><Abstract>{padding}</Abstract>'
         '<MaxScaleDenominator>250000.0</MaxScaleDenominator></Layer></WMS_Capabilities>'
@@ -786,3 +786,320 @@ def test_a_thread_that_gives_up_on_a_scale_lookup_says_so(app):
                 BcgwService.layer_min_zoom(OBJECT_NAME)
     finally:
         _release(key, lock)
+
+
+CLICK = (-123.101, 49.299, -123.099, 49.301)
+
+
+def _schema(geometry='SHAPE', attributes=('NAME', 'AREA')):
+    """Return a DescribeFeatureType answer, as openmaps sends it in JSON."""
+    columns = [{'name': name, 'type': 'xsd:string'} for name in attributes]
+    columns.insert(1, {'name': geometry, 'type': 'gml:Geometry'})
+    return {'featureTypes': [{'typeName': OBJECT_NAME, 'properties': columns}]}
+
+
+def _style(*label_columns):
+    """Return a published style whose TextSymbolizer labels with those columns."""
+    labels = ''.join(
+        f'<ogc:PropertyName>{column}</ogc:PropertyName>' for column in label_columns
+    )
+    text = (
+        f'<sld:TextSymbolizer><sld:Label>{labels}</sld:Label></sld:TextSymbolizer>'
+        if labels else ''
+    )
+    return (
+        '<sld:StyledLayerDescriptor xmlns:sld="http://www.opengis.net/sld" '
+        'xmlns:ogc="http://www.opengis.net/ogc" version="1.0.0"><sld:NamedLayer>'
+        f'<sld:UserStyle><sld:FeatureTypeStyle><sld:Rule>{text}</sld:Rule>'
+        '</sld:FeatureTypeStyle></sld:UserStyle>'
+        '</sld:NamedLayer></sld:StyledLayerDescriptor>'
+    )
+
+
+def _with_feature(fid='WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES.7', geometry=True):
+    """Return a GetFeature answer holding one feature."""
+    feature = {
+        'id': fid,
+        'properties': {'NAME': 'Musqueam 2', 'AREA': 190.5},
+        'geometry': {'type': 'Point', 'coordinates': [-123.1, 49.3]} if geometry else None,
+    }
+    return {'features': [feature]}
+
+
+def test_metadata_filters_on_the_geometry_itself_in_degrees(app):
+    """INTERSECTS on the named column, with an SRID, rather than a WFS bbox."""
+    get, calls = _answers(_schema(), _with_feature(), _style('NAME'))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        feature = BcgwService.metadata(OBJECT_NAME, CLICK)
+
+    assert calls[0]['request'] == 'DescribeFeatureType'
+    cql = calls[1]['cql_filter']
+    assert cql.startswith('INTERSECTS(SHAPE, SRID=4326;POLYGON((-123.101 49.299, ')
+    assert 'bbox' not in calls[1]
+    assert calls[1]['count'] == 1
+    assert feature == {
+        'id': 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES.7',
+        'name': 'Musqueam 2',
+        'properties': [
+            {'name': 'NAME', 'value': 'Musqueam 2'},
+            {'name': 'AREA', 'value': 190.5},
+        ],
+        'geometry': {'type': 'Point', 'coordinates': [-123.1, 49.3]},
+        'bounds': [-123.1, 49.3, -123.1, 49.3],
+    }
+
+
+def test_metadata_asks_for_the_schema_once_per_layer(app):
+    """Columns do not move with the click, so the second click costs one hop."""
+    get, calls = _answers(_schema(), _with_feature(), _style('NAME'), _with_feature())
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        BcgwService.metadata(OBJECT_NAME, CLICK)
+        BcgwService.metadata(OBJECT_NAME, CLICK)
+
+    assert [call['request'] for call in calls] == [
+        'DescribeFeatureType', 'GetFeature', 'GetStyles', 'GetFeature'
+    ]
+
+
+def test_metadata_nothing_at_the_point_is_none(app):
+    """An empty click is no feature, not an error."""
+    get, _calls = _answers(_schema(), {'features': []})
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK) is None
+
+
+def test_metadata_a_heavy_feature_still_has_its_attributes(app):
+    """Past the byte cap the feature is asked for again, without its geometry."""
+    too_heavy = 'x' * (BCGW_GEOMETRY_BYTE_LIMIT + 1)
+    get, calls = _answers(_schema(), too_heavy, _with_feature(geometry=False), _style('NAME'))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        feature = BcgwService.metadata(OBJECT_NAME, CLICK)
+
+    assert calls[2]['propertyName'] == 'NAME,AREA'
+    assert feature['id'] == 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES.7'
+    assert feature['geometry'] is None
+    assert feature['bounds'] is None
+    assert [p['name'] for p in feature['properties']] == ['NAME', 'AREA']
+
+
+def test_metadata_drops_an_id_the_warehouse_made_up(app):
+    """A view without a key gets a fresh fid per request, which no tile can find."""
+    fid = f'{OBJECT_NAME}.fid--3ca745fa_1a0c74abbe2_-7e3'
+    get, _calls = _answers(_schema(), _with_feature(fid=fid), _style('NAME'))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['id'] is None
+
+
+def test_metadata_a_layer_with_no_wfs_is_nothing_rather_than_an_outage(app):
+    """And it is remembered, so the next click asks the warehouse nothing."""
+    get, calls = _answers(_exception_report())
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK) is None
+        assert BcgwService.metadata(OBJECT_NAME, CLICK) is None
+
+    assert len(calls) == 1
+
+
+def test_metadata_will_not_splice_a_strange_geometry_column_into_cql(app):
+    """The column comes from upstream, but it is still checked before use."""
+    get, calls = _answers(_schema(geometry='SHAPE) OR (1=1'))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK) is None
+
+    assert len(calls) == 1
+
+
+def test_metadata_an_unreadable_schema_is_unavailable(app):
+    """A schema that cannot be read is the warehouse failing, worth a retry."""
+    get, _calls = _answers('not json')
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        with pytest.raises(ServiceUnavailableError):
+            BcgwService.metadata(OBJECT_NAME, CLICK)
+
+
+def test_metadata_names_a_feature_the_way_the_layer_labels_it(app):
+    """The heading comes from the style's own label, not a guess at a column."""
+    get, _calls = _answers(_schema(), _with_feature(), _style('NAME'))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['name'] == 'Musqueam 2'
+
+
+def test_metadata_joins_a_label_built_from_several_columns(app):
+    """A composed label reads as the map draws it, in the style's own order."""
+    get, _calls = _answers(_schema(), _with_feature(), _style('NAME', 'AREA'))
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['name'] == 'Musqueam 2 190.5'
+
+
+def test_metadata_leaves_a_feature_unnamed_when_the_style_labels_nothing(app):
+    """The client puts the layer's own name in the heading instead."""
+    get, _calls = _answers(_schema(), _with_feature(), _style())
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['name'] is None
+
+
+def test_metadata_reads_the_style_once_per_layer(app):
+    """A label does not move with the click, so it is read like the schema."""
+    get, calls = _answers(_schema(), _with_feature(), _style('NAME'), _with_feature())
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        BcgwService.metadata(OBJECT_NAME, CLICK)
+        BcgwService.metadata(OBJECT_NAME, CLICK)
+
+    assert [call['request'] for call in calls].count('GetStyles') == 1
+
+
+def test_metadata_survives_a_style_it_cannot_read(app):
+    """An unnamed feature is a worse heading than a name, a better one than an error."""
+    get, _calls = _answers(_schema(), _with_feature(), _exception_report())
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['name'] is None
+
+
+def test_metadata_survives_a_style_too_big_to_carry(app):
+    """Styles run to a quarter of a megabyte; one past the cap is not an outage."""
+    get, _calls = _answers(
+        _schema(), _with_feature(), 'x' * (BCGW_STYLE_BYTE_LIMIT + 1)
+    )
+
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.metadata(OBJECT_NAME, CLICK)['name'] is None
+
+
+# Fanning one click out over many layers
+
+
+OTHER_OBJECT_NAME = 'WHSE_FOREST_VEGETATION.VEG_COMP_LYR_R1_POLY'
+
+
+def test_metadata_batch_answers_every_layer_in_the_order_asked(app):
+    """Each layer carries its own outcome, and the order is the caller's."""
+    with app.app_context(), patch.object(
+        BcgwService, 'metadata', side_effect=[{'id': 'a'}, None]
+    ):
+        results = BcgwService.metadata_batch([OBJECT_NAME, OTHER_OBJECT_NAME], CLICK)
+
+    assert [row['object_name'] for row in results] == [OBJECT_NAME, OTHER_OBJECT_NAME]
+    assert [row['status'] for row in results] == ['found', 'empty']
+    assert results[0]['feature'] == {'id': 'a'}
+
+
+def test_metadata_batch_one_layer_failing_leaves_the_others_alone(app):
+    """An unpublished table costs the user that row, not the whole click."""
+    def answer(object_name, _bbox):
+        if object_name == OTHER_OBJECT_NAME:
+            raise ServiceUnavailableError('The warehouse did not answer.')
+        return {'id': 'a'}
+
+    with app.app_context(), patch.object(BcgwService, 'metadata', side_effect=answer):
+        results = BcgwService.metadata_batch([OBJECT_NAME, OTHER_OBJECT_NAME], CLICK)
+
+    assert [row['status'] for row in results] == ['found', 'error']
+    assert results[1]['error'] == 'The warehouse did not answer.'
+    assert results[1]['feature'] is None
+
+
+def test_metadata_batch_asks_the_warehouse_nothing_once_abandoned(app):
+    """A click the user has replaced stops before it reaches openmaps."""
+    with app.app_context(), patch.object(BcgwService, 'metadata') as metadata:
+        results = BcgwService.metadata_batch(
+            [OBJECT_NAME, OTHER_OBJECT_NAME], CLICK, abandoned=lambda: True
+        )
+
+    metadata.assert_not_called()
+    assert [row['status'] for row in results] == ['error', 'error']
+
+
+def test_metadata_batch_abandons_only_what_has_not_started(app):
+    """Layers already in flight finish; the queue behind them is what is dropped.
+
+    The check is per layer, so a click abandoned partway through still reports
+    the layers that had already run - it is the warehouse traffic being saved,
+    not the answers.
+    """
+    started = []
+
+    def abandoned():
+        # Abandoned from the second layer on, as a newer click landing would.
+        return len(started) >= 1
+
+    def answer(object_name, _bbox):
+        started.append(object_name)
+        return {'id': object_name}
+
+    with app.app_context(), patch.object(BcgwService, 'metadata', side_effect=answer):
+        results = BcgwService.metadata_batch(
+            [OBJECT_NAME, OTHER_OBJECT_NAME], CLICK, abandoned=abandoned
+        )
+
+    assert started == [OBJECT_NAME]
+    assert [row['status'] for row in results] == ['found', 'error']
+
+
+def test_metadata_batch_runs_its_layers_at_once(app):
+    """Fifty layers is fifty waits; serially that is a click nobody waits out."""
+    running = threading.Barrier(3, timeout=5)
+
+    def answer(object_name, _bbox):
+        # Every layer has to be in flight for this to get past the barrier, so
+        # it times out rather than passing if the fan-out ever goes serial.
+        running.wait()
+        return {'id': object_name}
+
+    names = [OBJECT_NAME, OTHER_OBJECT_NAME, 'WHSE_BASEMAPPING.THIRD_LAYER']
+    with app.app_context(), patch.object(BcgwService, 'metadata', side_effect=answer):
+        results = BcgwService.metadata_batch(names, CLICK)
+
+    assert [row['status'] for row in results] == ['found'] * 3
+
+
+def test_metadata_batch_gives_up_on_a_layer_that_runs_past_the_budget(app):
+    """A row the user can retry beats one that never resolves."""
+    def answer(object_name, _bbox):
+        if object_name == OTHER_OBJECT_NAME:
+            time.sleep(1)
+        return {'id': object_name}
+
+    with app.app_context(), \
+            patch('map_api.services.bcgw_service.METADATA_BUDGET_SECONDS', 0.05), \
+            patch.object(BcgwService, 'metadata', side_effect=answer):
+        results = BcgwService.metadata_batch([OBJECT_NAME, OTHER_OBJECT_NAME], CLICK)
+
+    assert [row['object_name'] for row in results] == [OBJECT_NAME, OTHER_OBJECT_NAME]
+    assert results[1]['status'] == 'error'
+    assert 'too long' in results[1]['error']
+
+
+def test_metadata_batch_a_layer_failing_unexpectedly_is_still_one_row(app):
+    """A bug reading one layer's answer costs that row, not the click.
+
+    The warehouse is not the only thing that can go wrong for a layer - a body
+    shaped in a way the reader did not expect raises out of `metadata` as
+    something other than an outage, and without a catch-all that would come back
+    out of the pool and 500 the whole click.
+    """
+    def answer(object_name, _bbox):
+        if object_name == OTHER_OBJECT_NAME:
+            raise TypeError("'NoneType' object is not subscriptable")
+        return {'id': 'a'}
+
+    with app.app_context(), patch.object(BcgwService, 'metadata', side_effect=answer):
+        results = BcgwService.metadata_batch(
+            [OBJECT_NAME, OTHER_OBJECT_NAME, 'WHSE_BASEMAPPING.THIRD_LAYER'], CLICK
+        )
+
+    assert [row['status'] for row in results] == ['found', 'error', 'found']
+    assert results[1]['error'] == UNAVAILABLE_MESSAGE
+    assert results[0]['feature'] == {'id': 'a'}

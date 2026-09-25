@@ -1,11 +1,9 @@
 import { Box, Button } from "@mui/material";
 import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import { useTheme } from "@mui/material/styles";
-import type { Map as MapLibreMap } from "maplibre-gl";
 import CatalogueSection from "@/components/Layers/Catalogue/CatalogueSection";
 import FavouritesSection from "@/components/Layers/Favourites/FavouritesSection";
 import MyLayersSection from "@/components/Layers/UserLayers/MyLayersSection";
-import { LayersProvider } from "@/components/Layers/LayersContext";
 import { useSessionFlag } from "@/utils/useSessionFlag";
 
 /** Ties the button's `aria-controls` to the panel it opens. */
@@ -17,13 +15,13 @@ const PANEL_OPEN_KEY = "epic-map:layers-panel-open";
 /**
  * The Layers button and the panel it opens.
  */
-export default function LayersControl({ map }: { map: MapLibreMap | null }) {
+export default function LayersControl() {
   const theme = useTheme();
 
   const [open, setOpen] = useSessionFlag(PANEL_OPEN_KEY, false);
 
   return (
-    <LayersProvider map={map}>
+    <>
       <Button
         onClick={() => setOpen((isOpen) => !isOpen)}
         aria-expanded={open}
@@ -89,6 +87,6 @@ export default function LayersControl({ map }: { map: MapLibreMap | null }) {
           <MyLayersSection />
         </Box>
       )}
-    </LayersProvider>
+    </>
   );
 }

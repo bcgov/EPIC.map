@@ -9,7 +9,9 @@ import {
 } from "maplibre-gl";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 import BasemapSwitch from "@/components/BasemapSwitch";
+import MetaDataControl from "@/components/MetaData/MetaDataControl";
 import LayersControl from "@/components/Layers/LayersControl";
+import { LayersProvider } from "@/components/Layers/LayersContext";
 import {
   DEFAULT_BASEMAP,
   DEFAULT_EXTENT,
@@ -157,7 +159,10 @@ export default function MapSurface() {
       ) : (
         <>
           <Box ref={containerRef} sx={{ width: "100%", height: "100%" }} />
-          <LayersControl map={map} />
+          <LayersProvider map={map}>
+            <LayersControl />
+            <MetaDataControl />
+          </LayersProvider>
           <BasemapSwitch current={basemap} onSelect={setBasemap} />
         </>
       )}
