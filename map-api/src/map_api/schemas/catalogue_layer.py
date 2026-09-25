@@ -178,12 +178,6 @@ class MetaDataFeatureSchema(Schema):
     )
 
 
-class MetaDataSchema(Schema):
-    """What a layer has at a point: a feature, or null for nothing."""
-
-    feature = fields.Nested(MetaDataFeatureSchema, allow_none=True)
-
-
 class LayerMinZoomSchema(Schema):
     """The zoom a layer starts drawing at, as openmaps publishes it."""
 

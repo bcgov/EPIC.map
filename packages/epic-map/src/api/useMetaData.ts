@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Geometry } from "geojson";
 import type { AppliedLayer } from "@/api/useAppliedLayers";
@@ -123,17 +123,35 @@ export const useMetaData = (
     queryFn: ({ signal }) => ask(objectNames, signal),
     enabled: box !== null && objectNames.length > 0,
     staleTime: METADATA_STALE_MS,
+    gcTime: METADATA_STALE_MS,
     // A failure shows as its own row with a Retry, which is the user's call.
     retry: false,
     refetchOnWindowFocus: false,
   });
 
+  // Retries still running, so a click that replaces theirs can drop them.
+  const running = useRef<Set<AbortController>>(new Set());
+
+  useEffect(() => {
+    const started = running.current;
+    return () => {
+      started.forEach((controller) => controller.abort());
+      started.clear();
+    };
+  }, [click]);
+
   const retry = useCallback(
     (objectName: string) => {
       if (box === null) return;
+
+      const asked = click;
+      const controller = new AbortController();
+      running.current.add(controller);
+
       setRetrying((names) => new Set(names).add(objectName));
-      void ask([objectName])
+      void ask([objectName], controller.signal)
         .then((results) => {
+          if (clickRef.current !== asked) return;
           setRetried((answers) => ({ ...answers, ...byObjectName(results) }));
         })
         .catch(() => {
@@ -141,6 +159,8 @@ export const useMetaData = (
           // and its Retry is still there.
         })
         .finally(() => {
+          running.current.delete(controller);
+          if (clickRef.current !== asked) return;
           setRetrying((names) => {
             const left = new Set(names);
             left.delete(objectName);
@@ -148,7 +168,7 @@ export const useMetaData = (
           });
         });
     },
-    [ask, box],
+    [ask, box, click],
   );
 
   const byLayer = useMemo(

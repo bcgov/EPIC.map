@@ -55,10 +55,12 @@ export default function MetaDataControl() {
   const appliedRef = useRef(appliedLayers);
   appliedRef.current = appliedLayers;
 
+  // Counts up for the life of the widget, never per map instance
+  const clicks = useRef(0);
+
   useEffect(() => {
     if (!map) return undefined;
 
-    let clicks = 0;
     const onClick = (event: MapMouseEvent) => {
       const layers = appliedRef.current
         .filter((layer) => layer.objectName)
@@ -70,10 +72,10 @@ export default function MetaDataControl() {
       }
 
       const container = map.getContainer();
-      clicks += 1;
+      clicks.current += 1;
       setChosenLayerId(null);
       setClick({
-        key: clicks,
+        key: clicks.current,
         box: clickBox(map, event.point, METADATA_TOLERANCE_PX),
         placement: popupPlacement(
           event.point,
@@ -90,25 +92,24 @@ export default function MetaDataControl() {
     };
   }, [map]);
 
-  // A layer switched off after the click drops out of the popup with it.
-  const layers = useMemo(
+  const shown = useMemo(
     () => click?.layers.filter((layer) => visibleIds.has(layer.id)) ?? [],
     [click, visibleIds],
   );
 
   const { byLayer, isError, retrying, retry } = useMetaData(
-    layers,
+    click?.layers ?? [],
     click?.box ?? null,
     click?.key ?? 0,
   );
-  const allRows = toRows(layers, byLayer, { failed: isError, retrying });
+  const allRows = toRows(shown, byLayer, { failed: isError, retrying });
   const loading = isLoading(allRows);
   const rows = loading ? [] : visibleRows(allRows);
   const selected = selectedRow(rows, chosenLayerId);
 
   useEffect(() => {
-    if (click && layers.length === 0) setClick(null);
-  }, [click, layers.length]);
+    if (click && shown.length === 0) setClick(null);
+  }, [click, shown.length]);
 
   const highlightLayer = selected?.layer.objectName ?? null;
   const highlightFeature = selected?.feature ?? null;
@@ -176,7 +177,7 @@ export default function MetaDataControl() {
     !beyondReachIds.has(selected?.layer.id ?? "") &&
     (belowFloorIds.has(selected?.layer.id ?? "") || outOfView);
 
-  if (!click || layers.length === 0) return null;
+  if (!click || shown.length === 0) return null;
 
   return (
     <MetaDataPopup

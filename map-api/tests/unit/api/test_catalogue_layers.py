@@ -397,3 +397,33 @@ def test_metadata_a_client_that_sends_no_click_number_is_never_abandoned(
         )
 
     assert service.call_args.kwargs['abandoned']() is False
+
+
+def test_metadata_a_layer_raising_does_not_500_the_click(app, client, jwt, session):
+    """The whole way through, one layer going wrong is still a 200.
+
+    The service is real here rather than stubbed: what is being checked is that
+    nothing a single layer does escapes the pool and reaches the client as a
+    failure of the request.
+    """
+    other = 'WHSE_FOREST_VEGETATION.VEG_COMP_LYR_R1_POLY'
+
+    def answer(object_name, _bbox):
+        if object_name == other:
+            raise TypeError("'NoneType' object is not subscriptable")
+        return FEATURE
+
+    with patch(
+        'map_api.services.bcgw_service.BcgwService.metadata', side_effect=answer
+    ):
+        response = client.post(
+            METADATA_ENDPOINT,
+            json={**AROUND_A_CLICK, 'objectNames': [OBJECT_NAME, other]},
+            headers=factory_auth_header(jwt),
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    results = response.json['results']
+    assert [row['status'] for row in results] == ['found', 'error']
+    assert results[0]['feature'] == FEATURE
+    assert results[1]['error']

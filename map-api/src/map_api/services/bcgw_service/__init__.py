@@ -40,12 +40,12 @@ from requests.adapters import HTTPAdapter
 from map_api.exceptions import ServiceUnavailableError
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
-    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_CONNECTION_POOL_SIZE, BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES,
-    BCGW_SCHEMA_BYTE_LIMIT, BCGW_SEARCH_BUDGET_SECONDS, BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_STYLE_BYTE_LIMIT,
-    BCGW_WFS_TIMEOUT_SECONDS, GEOMETRY_COLUMN_PATTERN, LAYER_LABEL_CACHE_TTL_SECONDS, LAYER_MIN_ZOOM_CACHE_TTL_SECONDS,
-    LAYER_SCHEMA_CACHE_TTL_SECONDS, METADATA_BUDGET_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS,
-    NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES, WMS_MAX_LAYER_MIN_ZOOM,
-    WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO)
+    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_CONNECTION_POOL_SIZE, BCGW_GEOMETRY_BYTE_LIMIT, BCGW_METADATA_FANOUT,
+    BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES, BCGW_SCHEMA_BYTE_LIMIT, BCGW_SEARCH_BUDGET_SECONDS,
+    BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_STYLE_BYTE_LIMIT, BCGW_WFS_TIMEOUT_SECONDS, GEOMETRY_COLUMN_PATTERN,
+    LAYER_LABEL_CACHE_TTL_SECONDS, LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, LAYER_SCHEMA_CACHE_TTL_SECONDS,
+    METADATA_BUDGET_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS, NEAREST_SEARCH_WINDOWS_DEGREES,
+    WMS_MAX_LAYER_MIN_ZOOM, WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO)
 
 
 # A [west, south, east, north] box, which is what the client fits the map to.
@@ -176,17 +176,13 @@ def _single_flight(key: str):
 
 # The threads a click's layers are identified on, shared by every request on the
 # pod rather than made per click. What is being rationed is the warehouse, not
-# the CPU: sized to the connection pool so a fan-out reuses the open connections
-# instead of opening more, and so twenty clients clicking at once still put the
-# same number of requests to openmaps as one does.
-#
-# Gunicorn's own threads are not these. A worker thread serving a click submits
-# its layers here and waits, so the pod holds at most its thread count of clicks
-# and this pool answers them all - which is the point: the alternative is a pool
-# per request, where the tenth simultaneous click opens the eightieth connection
-# to openmaps.
+# the CPU: twenty clients clicking at once put no more work to openmaps than one
+# does. Gunicorn's own threads are not these - a worker thread serving a click
+# submits its layers here and waits - which is the point: the alternative is a
+# pool per request, where the tenth simultaneous click opens the eightieth
+# connection to openmaps.
 METADATA_POOL = ThreadPoolExecutor(
-    max_workers=BCGW_CONNECTION_POOL_SIZE, thread_name_prefix='bcgw-metadata'
+    max_workers=BCGW_METADATA_FANOUT, thread_name_prefix='bcgw-metadata'
 )
 
 
@@ -299,6 +295,11 @@ class BcgwService:
                     feature = cls.metadata(object_name, bbox)
                 except ServiceUnavailableError as exc:
                     return cls._metadata_error(object_name, exc.description)
+                except Exception:  # noqa: B902 # pylint: disable=broad-except
+                    current_app.logger.exception(
+                        'Identifying %s failed unexpectedly.', object_name
+                    )
+                    return cls._metadata_error(object_name, UNAVAILABLE_MESSAGE)
 
                 return {
                     'object_name': object_name,
@@ -748,7 +749,7 @@ class BcgwService:
     @classmethod
     def _features_for(cls, object_name: str, params: dict) -> Optional[list]:
         """Run GetFeature with `params`; None when the answer was too big to carry."""
-        body = cls._read(object_name, params, NEAREST_GEOMETRY_BYTE_LIMIT)
+        body = cls._read(object_name, params, BCGW_GEOMETRY_BYTE_LIMIT)
         if body is None:
             return None
 
@@ -784,7 +785,7 @@ class BcgwService:
         params = cls._feature_params(object_name, count=1, bbox=bbox)
         params['resultType'] = 'hits'
 
-        body = cls._read(object_name, params, NEAREST_GEOMETRY_BYTE_LIMIT)
+        body = cls._read(object_name, params, BCGW_GEOMETRY_BYTE_LIMIT)
         matched = MATCHED_COUNT.search(body or '')
         return int(matched.group(1)) if matched else 0
 

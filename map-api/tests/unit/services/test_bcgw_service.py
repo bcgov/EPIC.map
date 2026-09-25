@@ -27,11 +27,11 @@ import pytest
 import requests
 
 from map_api.exceptions import ServiceUnavailableError
-from map_api.services.bcgw_service import IN_FLIGHT, BcgwService
+from map_api.services.bcgw_service import IN_FLIGHT, UNAVAILABLE_MESSAGE, BcgwService
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
-    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_READ_CHUNK_BYTES, BCGW_STYLE_BYTE_LIMIT, BCGW_WFS_TIMEOUT_SECONDS,
-    NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES)
+    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_GEOMETRY_BYTE_LIMIT, BCGW_READ_CHUNK_BYTES, BCGW_STYLE_BYTE_LIMIT,
+    BCGW_WFS_TIMEOUT_SECONDS, NEAREST_SEARCH_WINDOWS_DEGREES)
 
 
 OBJECT_NAME = 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES'
@@ -187,7 +187,7 @@ def test_a_wider_window_does_not_send_the_camera_back_where_it_started(app):
 def test_a_wider_window_frames_a_feature_too_heavy_to_measure(app):
     """The window is still the fallback, just no longer the first answer."""
     near_empty = {'features': []}
-    oversized = 'x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1)
+    oversized = 'x' * (BCGW_GEOMETRY_BYTE_LIMIT + 1)
     get, _ = _answers(near_empty, 0, 3, oversized)
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
@@ -214,7 +214,7 @@ def test_falls_back_to_the_first_feature_when_none_are_near(app):
 
 def test_an_answer_past_the_byte_cap_frames_the_window(app):
     """A polygon too heavy to parse still points the camera the right way."""
-    get, _ = _answers('x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1))
+    get, _ = _answers('x' * (BCGW_GEOMETRY_BYTE_LIMIT + 1))
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
         bounds = BcgwService.nearest_feature_bounds(OBJECT_NAME, -123.0, 49.0)
@@ -225,7 +225,7 @@ def test_an_answer_past_the_byte_cap_frames_the_window(app):
 
 def test_an_oversized_fallback_lands_in_the_province(app):
     """The last resort cannot measure a giant feature, so it frames all of BC."""
-    oversized = 'x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1)
+    oversized = 'x' * (BCGW_GEOMETRY_BYTE_LIMIT + 1)
     get, _ = _answers(*_nothing_near(oversized))
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
@@ -745,7 +745,7 @@ def test_a_capabilities_document_heavier_than_a_feature_is_still_read(app):
     document worth abandoning - there is no window to fall back on here, only
     the floor the document carries.
     """
-    padding = 'x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1)
+    padding = 'x' * (BCGW_GEOMETRY_BYTE_LIMIT + 1)
     body = (
         f'<WMS_Capabilities><Layer><Name>pub:x</Name><Abstract>{padding}</Abstract>'
         '<MaxScaleDenominator>250000.0</MaxScaleDenominator></Layer></WMS_Capabilities>'
@@ -873,7 +873,7 @@ def test_metadata_nothing_at_the_point_is_none(app):
 
 def test_metadata_a_heavy_feature_still_has_its_attributes(app):
     """Past the byte cap the feature is asked for again, without its geometry."""
-    too_heavy = 'x' * (NEAREST_GEOMETRY_BYTE_LIMIT + 1)
+    too_heavy = 'x' * (BCGW_GEOMETRY_BYTE_LIMIT + 1)
     get, calls = _answers(_schema(), too_heavy, _with_feature(geometry=False), _style('NAME'))
 
     with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
@@ -1080,3 +1080,26 @@ def test_metadata_batch_gives_up_on_a_layer_that_runs_past_the_budget(app):
     assert [row['object_name'] for row in results] == [OBJECT_NAME, OTHER_OBJECT_NAME]
     assert results[1]['status'] == 'error'
     assert 'too long' in results[1]['error']
+
+
+def test_metadata_batch_a_layer_failing_unexpectedly_is_still_one_row(app):
+    """A bug reading one layer's answer costs that row, not the click.
+
+    The warehouse is not the only thing that can go wrong for a layer - a body
+    shaped in a way the reader did not expect raises out of `metadata` as
+    something other than an outage, and without a catch-all that would come back
+    out of the pool and 500 the whole click.
+    """
+    def answer(object_name, _bbox):
+        if object_name == OTHER_OBJECT_NAME:
+            raise TypeError("'NoneType' object is not subscriptable")
+        return {'id': 'a'}
+
+    with app.app_context(), patch.object(BcgwService, 'metadata', side_effect=answer):
+        results = BcgwService.metadata_batch(
+            [OBJECT_NAME, OTHER_OBJECT_NAME, 'WHSE_BASEMAPPING.THIRD_LAYER'], CLICK
+        )
+
+    assert [row['status'] for row in results] == ['found', 'error', 'found']
+    assert results[1]['error'] == UNAVAILABLE_MESSAGE
+    assert results[0]['feature'] == {'id': 'a'}

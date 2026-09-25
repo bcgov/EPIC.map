@@ -100,11 +100,15 @@ BC_EXTENT = (-139.1, 48.2, -114.0, 60.1)
 # Bytes of feature geometry this pod will carry before it stops reading. A
 # single BCGW polygon can run past half a megabyte of coordinates - watershed
 # groups do - and decompressing and parsing that holds the GIL on a quarter of a
-# core, stalling every other request in the process. Past this the search window
-# frames the camera instead, which costs the user a little zoom and nothing else.
-# Set well above the few kilobytes a feature of a zoomable layer actually weighs,
-# so this bounds the tail rather than shaping the common answer.
-NEAREST_GEOMETRY_BYTE_LIMIT = 128 * 1024
+# core, stalling every other request in the process. Set well above the few
+# kilobytes a feature actually weighs, so this bounds the tail rather than
+# shaping the common answer.
+#
+# Both readers of a feature share it and neither is left with nothing: a search
+# frames the camera on its window instead, and a click keeps the feature's
+# attributes and shows it through the warehouse's own tiles rather than an
+# outline of its own.
+BCGW_GEOMETRY_BYTE_LIMIT = 128 * 1024
 
 # Bytes of a capabilities document this pod will carry. Separate from the
 # geometry cap because the two failures are not alike: a feature too big to
@@ -127,8 +131,9 @@ BCGW_READ_CHUNK_BYTES = 32 * 1024
 # that crosses it plus the unfiltered fallback: 8 + 8 + 8 at the timeout above,
 # which holds only because that timeout is enforced against the clock for the
 # whole of a hop rather than per read. See `_read`.
-# That has to stay under gunicorn's 30 second default, which does not fail one
-# request - it kills the worker, taking every other request on the pod with it.
+# That has to stay under the gunicorn timeout the entrypoint sets, which does not
+# fail one request - it kills the worker, taking every other request on the pod
+# with it.
 BCGW_SEARCH_BUDGET_SECONDS = 15
 
 # How long a thread will wait on another thread's identical in-flight search
@@ -142,12 +147,21 @@ BCGW_SEARCH_BUDGET_SECONDS = 15
 # for, and the caller's retry will usually find the answer cached.
 BCGW_SINGLE_FLIGHT_WAIT_SECONDS = BCGW_WFS_TIMEOUT_SECONDS
 
+# Hops to the warehouse a single click's layers are identified on at once, and so
+# the width of the metadata fan-out. What is rationed here is openmaps, not the
+# CPU. Read from the same variable gunicorn does, so the fan-out of one click
+# cannot outgrow the requests the pod will serve at the same time.
+BCGW_METADATA_FANOUT = int(os.getenv('GUNICORN_THREADS', '8'))
+
 # Connections kept open to the warehouse. A fresh connection per hop costs a TLS
 # handshake to openmaps - measured at ~120ms, on every window of every search -
-# so the pool is sized to the worker's threads: any fewer and urllib3 discards
-# the connections a busy moment opens, putting the handshake straight back.
-# Read from the same variable gunicorn does, so the two cannot drift.
-BCGW_CONNECTION_POOL_SIZE = int(os.getenv('GUNICORN_THREADS', '8'))
+# so any fewer than the threads that use them and urllib3 discards the
+# connections a busy moment opens, putting the handshake straight back.
+#
+# Two sets of threads share the one session: the worker's own, and the metadata
+# pool they hand a click's layers to. This caps what is kept open, not what is in
+# flight, so it is the sum rather than the larger of them.
+BCGW_CONNECTION_POOL_SIZE = int(os.getenv('GUNICORN_THREADS', '8')) + BCGW_METADATA_FANOUT
 
 # Scale denominator at map zoom 0, from OGC's 0.28mm reference pixel, halving
 # with every zoom level. This is what turns a layer's published scale limit into
@@ -212,9 +226,9 @@ METADATA_MAX_LAYERS = 60
 # on. A layer still queued when it passes is reported as a failure the user can
 # retry, which is a truer answer than a row that never resolves.
 #
-# Under gunicorn's 30 second default with room for the hop that crosses it: past
-# that gunicorn kills the worker rather than the request, taking every other
-# request on the pod with it.
+# Inside the 60 second gunicorn timeout the entrypoint sets, with room to spare
+# for the hop that crosses it: past that gunicorn kills the worker rather than
+# the request, taking every other request on the pod with it.
 METADATA_BUDGET_SECONDS = 20
 
 # How long a client's latest click number is worth remembering. Long enough to
