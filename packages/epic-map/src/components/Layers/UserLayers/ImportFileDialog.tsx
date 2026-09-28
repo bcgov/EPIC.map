@@ -321,6 +321,7 @@ export default function ImportFileDialog({
               fullWidth
               size="small"
               required
+              sx={{ marginBottom: 0 }}
               InputProps={{
                 endAdornment: problems.name && (
                   <WarningAmberIcon
@@ -351,6 +352,11 @@ export default function ImportFileDialog({
               size="small"
               multiline
               minRows={3}
+              sx={{
+                marginBottom: 0,
+                "& .MuiInputBase-root.MuiInputBase-sizeSmall.MuiInputBase-multiline":
+                  { height: "auto", alignItems: "flex-start" },
+              }}
             />
           </Box>
 

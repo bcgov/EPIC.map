@@ -18,6 +18,10 @@ export const IMPORTED_LAYERS_PATH = "/users/me/imported-layers";
 
 const IMPORTED_LAYERS_KEY = epicMapQueryKey("users", "me", "imported-layers");
 
+/** Where a layer's features are cached once fetched; they never change after upload. */
+export const importedFeaturesKey = (layerId: string) =>
+  epicMapQueryKey("users", "me", "imported-layers", layerId, "features");
+
 export interface ImportedLayerResponse {
   id: string;
   name: string;
@@ -42,6 +46,7 @@ export interface ImportedLayer {
   geometryType: string;
   featureCount: number;
   extent: MapExtent | null;
+  uploadedAt: string;
 }
 
 export const toImportedLayer = (row: ImportedLayerResponse): ImportedLayer => ({
@@ -54,7 +59,21 @@ export const toImportedLayer = (row: ImportedLayerResponse): ImportedLayer => ({
   geometryType: row.geometry_type,
   featureCount: row.feature_count,
   extent: row.extent,
+  uploadedAt: /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(row.created_date)
+    ? row.created_date
+    : `${row.created_date}Z`,
 });
+
+export const formatUploadedDate = (uploadedAt: string): string => {
+  const date = new Date(uploadedAt);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleDateString("en-CA", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+};
 
 const NO_LAYERS: readonly ImportedLayer[] = [];
 

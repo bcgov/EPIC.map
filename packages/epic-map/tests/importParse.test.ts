@@ -4,12 +4,12 @@ import type { Feature } from "geojson";
 import {
   asFeatureCollection,
   formatOf,
-  geoBounds,
   geometrySummary,
   layerNameFromFile,
   parseImportFile,
   touchesBc,
 } from "@/components/Layers/UserLayers/importUtils";
+import { geoBounds } from "@/utils/geo";
 
 const feature = (type: string, coordinates: unknown): Feature =>
   ({

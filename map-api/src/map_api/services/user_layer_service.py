@@ -40,7 +40,7 @@ from map_api.models.user_layer_feature import UserLayerFeature
 from map_api.utils.constant import (
     BC_EXTENT, MAX_USER_LAYER_FEATURE_BYTES, MAX_USER_LAYER_FEATURES, MAX_USER_LAYER_GEOJSON_BYTES,
     MAX_USER_LAYER_PROPERTIES_BYTES, USER_LAYER_INSERT_BATCH_BYTES, USER_LAYER_INSERT_BATCH_ROWS,
-    USER_LAYER_OUTPUT_PRECISION, USER_LAYER_STORAGE_SRID, USER_LAYER_STREAM_BATCH_ROWS)
+    USER_LAYER_OUTPUT_PRECISION, USER_LAYER_STORAGE_SRID, USER_LAYER_STREAM_BATCH_ROWS, USER_LAYER_STREAM_CHUNK_BYTES)
 
 
 # The widget's one-word summary of each GeoJSON geometry type.
@@ -329,11 +329,11 @@ class UserLayerService:
 
         # A repair can empty a geometry that had nothing to it, such as a
         # polygon with no area; there is nothing of those left to draw.
-        db.session.execute(
+        emptied = db.session.execute(
             text('DELETE FROM user_layer_features WHERE layer_id = :layer_id AND ST_IsEmpty(geom)'),
             {'layer_id': layer.id},
-        )
-        layer.feature_count = UserLayerFeature.query.filter_by(layer_id=layer.id).count()
+        ).rowcount
+        layer.feature_count = count - emptied
         if layer.feature_count == 0:
             raise BadRequestError('This file holds no features to import.')
         layer.geometry_type = labels.pop() if len(labels) == 1 else 'Mixed'
@@ -346,11 +346,15 @@ class UserLayerService:
         db.session.refresh(layer)
 
     @classmethod
-    def feature_collection_chunks(cls, layer: UserLayer) -> Iterator[str]:
+    def feature_collection_chunks(cls, layer_id) -> Iterator[str]:
         """Yield the layer as a WGS 84 FeatureCollection, a few rows at a time.
 
         Postgres writes each feature's JSON, and rows are fetched in batches
         from a server-side cursor, so the whole layer is never held here.
+
+        Takes the id rather than the layer: this runs while the response
+        streams, after the request's session has been committed and discarded,
+        and a model instance from that session can no longer be read.
         """
         feature_json = func.json_build_object(
             'type', 'Feature',
@@ -362,15 +366,21 @@ class UserLayerService:
         )
         rows = db.session.execute(
             select(feature_json.cast(db.Text))
-            .where(UserLayerFeature.layer_id == layer.id)
+            .where(UserLayerFeature.layer_id == layer_id)
             .order_by(UserLayerFeature.id)
             .execution_options(yield_per=USER_LAYER_STREAM_BATCH_ROWS)
         ).scalars()
 
-        yield '{"type":"FeatureCollection","features":['
+        chunk = ['{"type":"FeatureCollection","features":[']
+        size = 0
         for index, row in enumerate(rows):
-            yield row if index == 0 else ',' + row
-        yield ']}'
+            chunk.append(row if index == 0 else ',' + row)
+            size += len(row)
+            if size >= USER_LAYER_STREAM_CHUNK_BYTES:
+                yield ''.join(chunk)
+                chunk, size = [], 0
+        chunk.append(']}')
+        yield ''.join(chunk)
 
     @classmethod
     def delete_layer(cls, layer_id, user_id: int) -> Optional[UserLayer]:

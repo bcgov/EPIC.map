@@ -370,6 +370,19 @@ def test_features_come_back_as_wgs84_geojson_in_file_order(app, client, jwt, ses
     assert body['features'][0]['geometry']['coordinates'] == pytest.approx(VICTORIA, abs=1e-6)
 
 
+def test_features_are_gzipped_for_a_client_that_accepts_it(app, client, jwt, session):
+    """The browser asks for gzip, and GeoJSON shrinks well."""
+    headers = factory_auth_header(jwt)
+    layer_id = put(client, headers, features=[point(VICTORIA, NAME='Legislature')]).json['id']
+
+    response = client.get(f'{ENDPOINT}/{layer_id}/features', headers={**headers, 'Accept-Encoding': 'gzip'})
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.headers['Content-Encoding'] == 'gzip'
+    body = json.loads(gzip.decompress(response.get_data()))
+    assert body['features'][0]['properties'] == {'NAME': 'Legislature'}
+
+
 def test_another_users_features_are_not_found(app, client, jwt, session):
     """Ownership is part of the lookup."""
     theirs = put(client, second_user_auth_header(jwt)).json
@@ -427,3 +440,30 @@ def test_a_line_that_is_not_utf8_is_refused(app, client, jwt, session):
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json['message'] == 'Feature 1 is not valid JSON.'
+
+
+def test_features_stream_after_the_request_session_is_gone(app, client, jwt, session):
+    """The stream runs after the view returns, when the request's models are detached.
+
+    The fixture keeps one session alive for the whole test, which hides this; so
+    the layer is detached by hand before the stream is read, the way it is by
+    the time a real server gets to it.
+    """
+    layer_id = uuid.UUID(put(client, factory_auth_header(jwt), features=[point(VICTORIA)]).json['id'])
+    db.session.expire_all()
+    db.session.expunge_all()
+
+    body = json.loads(''.join(user_layer_service.UserLayerService.feature_collection_chunks(layer_id)))
+
+    assert len(body['features']) == 1
+
+
+def test_features_stream_in_pieces_that_join_into_one_collection(app, client, jwt, session, monkeypatch):
+    """Rows are gathered into pieces rather than written one by one."""
+    monkeypatch.setattr(user_layer_service, 'USER_LAYER_STREAM_CHUNK_BYTES', 1)
+    layer_id = uuid.UUID(put(client, factory_auth_header(jwt), features=[point(VICTORIA)] * 3).json['id'])
+
+    chunks = list(user_layer_service.UserLayerService.feature_collection_chunks(layer_id))
+
+    assert len(chunks) == 4
+    assert len(json.loads(''.join(chunks))['features']) == 3

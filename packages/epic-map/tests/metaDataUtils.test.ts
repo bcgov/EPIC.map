@@ -7,6 +7,8 @@ import type {
   MetaDataLayerResult,
 } from "@/api/useMetaData";
 import {
+  importedRows,
+  NO_ATTRIBUTES,
   attributeLabel,
   attributeValue,
   clickBox,
@@ -366,5 +368,72 @@ describe("highlight", () => {
     expect(url.searchParams.get("FEATUREID")).toBe("WHSE_TEST.A.Prince George");
     expect(url.searchParams.get("SLD_BODY")).toContain("<Name>pub:WHSE_TEST.A</Name>");
     expect(url.href.startsWith(wmsTileUrl("WHSE_TEST.A").split("&BBOX")[0])).toBe(true);
+  });
+});
+
+describe("importedRows", () => {
+  const roads = { id: "roads", name: "Roads" };
+  const parks = { id: "parks", name: "Parks" };
+  const feature = (id: number, properties: Record<string, unknown> | null) => ({
+    type: "Feature" as const,
+    id,
+    geometry: { type: "Point" as const, coordinates: [-123.37, 48.42] },
+    properties,
+  });
+
+  it("keeps only the topmost feature of each layer, in the order they were hit", () => {
+    const rows = importedRows(
+      [
+        { layerId: "parks", featureId: 2 },
+        { layerId: "roads", featureId: 7 },
+        { layerId: "parks", featureId: 3 },
+      ],
+      [roads, parks],
+      (_layerId, featureId) => feature(Number(featureId), { ID: featureId }),
+    );
+
+    expect(rows.map((row) => row.layer.id)).toEqual(["parks", "roads"]);
+    expect(rows[0].feature?.properties).toEqual([{ name: "ID", value: 2 }]);
+  });
+
+  it("reads attributes from the layer's own data, with their bounds", () => {
+    const [row] = importedRows(
+      [{ layerId: "roads", featureId: 7 }],
+      [roads],
+      () => feature(7, { SURFACE: "gravel" }),
+    );
+
+    expect(row.status).toBe("found");
+    expect(row.feature?.bounds).toEqual([-123.37, 48.42, -123.37, 48.42]);
+  });
+
+  it("falls back to the map's copy when the layer's data has no such feature", () => {
+    const [row] = importedRows(
+      [{ layerId: "roads", featureId: undefined, rendered: feature(0, { A: 1 }) }],
+      [roads],
+      () => null,
+    );
+
+    expect(row.feature?.properties).toEqual([{ name: "A", value: 1 }]);
+  });
+
+  it("lists a feature with no attributes, for the popup to say so", () => {
+    const [row] = importedRows(
+      [{ layerId: "roads", featureId: 7 }],
+      [roads],
+      () => feature(7, null),
+    );
+
+    expect(row.feature?.properties).toEqual([]);
+  });
+
+  it("drops a hit on a layer it was not given", () => {
+    expect(
+      importedRows([{ layerId: "gone", featureId: 1 }], [roads], () => null),
+    ).toEqual([]);
+  });
+
+  it("says a feature has no metadata in the design's words", () => {
+    expect(NO_ATTRIBUTES).toBe("No metadata for this feature.");
   });
 });

@@ -9,7 +9,7 @@ import { DEFAULT_LAYER_OPACITY } from "@/utils/config";
  * a pale halo on hover, a ring on the focused thumb, and a larger thumb with a
  * wider halo while dragging.
  */
-const sliderSx = (theme: Theme) => ({
+export const sliderSx = (theme: Theme) => ({
   padding: "0.5rem 0",
   marginTop: "0.5rem",
   color: theme.palette.primary.main,

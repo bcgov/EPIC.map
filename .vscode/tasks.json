@@ -7,7 +7,6 @@
   //   map-api            make debug     flask --debug, reloads on .py change
   //   packages/epic-map  npm run dev    vite build --watch, rebuilds dist
   "version": "2.0.0",
-
   // Tasks run in a NON-login, NON-interactive shell by default, which never
   // sources ~/.zshrc. nvm and ~/.docker/bin are both set up there, so without
   // this the tasks fall through to /usr/local/bin/node - Node v14.16.0 - and
@@ -16,10 +15,13 @@
   "options": {
     "shell": {
       "executable": "/bin/zsh",
-      "args": ["-l", "-i", "-c"]
+      "args": [
+        "-l",
+        "-i",
+        "-c"
+      ]
     }
   },
-
   // `presentation.close` makes each terminal disappear when its task exits, so
   // stopping the stack leaves no dead panes behind. The trade-off: a task that
   // dies on startup takes its error message with it. If a dev server refuses to
@@ -29,27 +31,48 @@
     {
       "label": "dev",
       "detail": "map-web + map-api + packages/epic-map, all watching, in split terminals",
-      "dependsOn": ["dev: web", "dev: api", "dev: widget"],
+      "dependsOn": [
+        "dev: web",
+        "dev: api",
+        "dev: widget"
+      ],
       "dependsOrder": "parallel",
-      "group": { "kind": "build", "isDefault": true },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
       "problemMatcher": []
     },
     {
       "label": "dev: web",
       "type": "shell",
       "command": "npm run dev",
-      "options": { "cwd": "${workspaceFolder}/map-web" },
+      "options": {
+        "cwd": "${workspaceFolder}/map-web"
+      },
       "isBackground": true,
-      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always", "close": true },
+      "presentation": {
+        "group": "dev",
+        "panel": "dedicated",
+        "reveal": "always",
+        "close": true
+      },
       "problemMatcher": []
     },
     {
       "label": "dev: api",
       "type": "shell",
       "command": "make debug",
-      "options": { "cwd": "${workspaceFolder}/map-api" },
+      "options": {
+        "cwd": "${workspaceFolder}/map-api"
+      },
       "isBackground": true,
-      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always", "close": true },
+      "presentation": {
+        "group": "dev",
+        "panel": "dedicated",
+        "reveal": "always",
+        "close": true
+      },
       "problemMatcher": []
     },
     {
@@ -60,17 +83,29 @@
       // stop `dev`. VS Code signals the task shell, though, and flask's
       // reloader child can outlive it and keep holding port 5000. Run this
       // when a restart complains the port is already in use.
-      "command": "for p in 5173 5000; do lsof -ti tcp:$p -sTCP:LISTEN | while read pid; do kill $pid; done; done; pkill -f 'vite build --watch'; true",
-      "presentation": { "panel": "shared", "reveal": "silent", "clear": true, "close": true },
+      "command": "for p in 5173 5000 5174; do lsof -ti tcp:$p -sTCP:LISTEN | while read pid; do kill $pid; done; done; pkill -f 'vite build --watch'; true",
+      "presentation": {
+        "panel": "shared",
+        "reveal": "silent",
+        "clear": true,
+        "close": true
+      },
       "problemMatcher": []
     },
     {
       "label": "dev: widget",
       "type": "shell",
       "command": "npm run dev",
-      "options": { "cwd": "${workspaceFolder}/packages/epic-map" },
+      "options": {
+        "cwd": "${workspaceFolder}/packages/epic-map"
+      },
       "isBackground": true,
-      "presentation": { "group": "dev", "panel": "dedicated", "reveal": "always", "close": true },
+      "presentation": {
+        "group": "dev",
+        "panel": "dedicated",
+        "reveal": "always",
+        "close": true
+      },
       "problemMatcher": []
     }
   ]

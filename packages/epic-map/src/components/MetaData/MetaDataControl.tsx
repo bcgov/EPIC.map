@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Feature, FeatureCollection } from "geojson";
 import type { MapMouseEvent } from "maplibre-gl";
+import { useQueryClient } from "@tanstack/react-query";
 import type { AppliedLayer } from "@/api/useAppliedLayers";
+import { importedFeaturesKey } from "@/api/useImportedLayers";
 import { useMetaData } from "@/api/useMetaData";
 import MetaDataPopup from "@/components/MetaData/MetaDataPopup";
 import {
   clickBox,
+  importedRows,
   isLoading,
   popupPlacement,
   popupTitle,
@@ -12,11 +16,18 @@ import {
   toRows,
   useFeatureOutOfView,
   visibleRows,
+  type ImportedHit,
   type MetaDataRow,
   type PopupPlacement,
 } from "@/components/MetaData/metaDataUtils";
 import { useLayers } from "@/components/Layers/LayersContext";
-import { hideHighlight, showHighlight } from "@/components/Layers/layerUtils";
+import {
+  hideHighlight,
+  importedLayerIdOf,
+  importedStyleLayerIds,
+  showHighlight,
+} from "@/components/Layers/layerUtils";
+import { useImportedLayersContext } from "@/components/Layers/UserLayers/ImportedLayersContext";
 import type { MapExtent } from "@/types";
 import {
   FOCUS_FLY_MS,
@@ -34,10 +45,13 @@ interface MetaDataClick {
   placement: PopupPlacement;
   /** The layers switched on at the moment of the click, top of the stack first. */
   layers: AppliedLayer[];
+  /** Imported features under the click, answered on the spot. */
+  imported: MetaDataRow[];
 }
 
 /**
- * Click the map, see what the enabled catalogue layers have there.
+ * Click the map, see what the enabled layers have there: catalogue layers by
+ * asking map-api, imported layers from the features already on the map.
  */
 export default function MetaDataControl() {
   const {
@@ -49,11 +63,18 @@ export default function MetaDataControl() {
     layerFloors,
   } = useLayers();
 
+  const { layers: importedLayers, hiddenIds: importedHiddenIds } =
+    useImportedLayersContext();
+  const queryClient = useQueryClient();
+
   const [click, setClick] = useState<MetaDataClick | null>(null);
   const [chosenLayerId, setChosenLayerId] = useState<string | null>(null);
 
   const appliedRef = useRef(appliedLayers);
   appliedRef.current = appliedLayers;
+
+  const importedRef = useRef({ importedLayers, importedHiddenIds });
+  importedRef.current = { importedLayers, importedHiddenIds };
 
   // Counts up for the life of the widget, never per map instance
   const clicks = useRef(0);
@@ -66,7 +87,37 @@ export default function MetaDataControl() {
         .filter((layer) => layer.objectName)
         .reverse();
 
-      if (layers.length === 0) {
+      const { importedLayers: stored, importedHiddenIds: hidden } =
+        importedRef.current;
+      const shownImported = stored.filter((layer) => !hidden.has(layer.id));
+      const styleLayers = shownImported
+        .flatMap((layer) => importedStyleLayerIds(layer.id))
+        .filter((id) => map.getLayer(id));
+      const { x, y } = event.point;
+      const t = METADATA_TOLERANCE_PX;
+      const hits: ImportedHit[] = styleLayers.length
+        ? map
+            .queryRenderedFeatures(
+              [
+                [x - t, y - t],
+                [x + t, y + t],
+              ],
+              { layers: styleLayers },
+            )
+            .flatMap((rendered) => {
+              const layerId = importedLayerIdOf(rendered.layer.id);
+              return layerId
+                ? [{ layerId, featureId: rendered.id, rendered: rendered as Feature }]
+                : [];
+            })
+        : [];
+      const findFeature = (layerId: string, featureId: ImportedHit["featureId"]) =>
+        queryClient
+          .getQueryData<FeatureCollection>(importedFeaturesKey(layerId))
+          ?.features.find((feature) => feature.id === featureId) ?? null;
+      const imported = importedRows(hits, shownImported, findFeature);
+
+      if (layers.length === 0 && imported.length === 0) {
         setClick(null);
         return;
       }
@@ -83,6 +134,7 @@ export default function MetaDataControl() {
           POPUP_WIDTH_PX,
         ),
         layers,
+        imported,
       });
     };
 
@@ -90,32 +142,46 @@ export default function MetaDataControl() {
     return () => {
       map.off("click", onClick);
     };
-  }, [map]);
+  }, [map, queryClient]);
 
   const shown = useMemo(
     () => click?.layers.filter((layer) => visibleIds.has(layer.id)) ?? [],
     [click, visibleIds],
   );
 
+  // Switching an imported layer off takes its row out of an open popup, the
+  // way switching off a catalogue layer does.
+  const shownImported = useMemo(
+    () =>
+      click?.imported.filter((row) => !importedHiddenIds.has(row.layer.id)) ??
+      [],
+    [click, importedHiddenIds],
+  );
+  const nothingShown = shown.length === 0 && shownImported.length === 0;
+
   const { byLayer, isError, retrying, retry } = useMetaData(
     click?.layers ?? [],
     click?.box ?? null,
     click?.key ?? 0,
   );
-  const allRows = toRows(shown, byLayer, { failed: isError, retrying });
+  // Imported layers draw above the catalogue's, so their rows lead.
+  const allRows = [
+    ...shownImported,
+    ...toRows(shown, byLayer, { failed: isError, retrying }),
+  ];
   const loading = isLoading(allRows);
   const rows = loading ? [] : visibleRows(allRows);
   const selected = selectedRow(rows, chosenLayerId);
 
   useEffect(() => {
-    if (click && shown.length === 0) setClick(null);
-  }, [click, shown.length]);
+    if (click && nothingShown) setClick(null);
+  }, [click, nothingShown]);
 
   const highlightLayer = selected?.layer.objectName ?? null;
   const highlightFeature = selected?.feature ?? null;
 
   useEffect(() => {
-    if (!map || !highlightLayer || !highlightFeature) return undefined;
+    if (!map || !highlightFeature) return undefined;
     showHighlight(map, {
       objectName: highlightLayer,
       featureId: highlightFeature.id,
@@ -177,7 +243,7 @@ export default function MetaDataControl() {
     !beyondReachIds.has(selected?.layer.id ?? "") &&
     (belowFloorIds.has(selected?.layer.id ?? "") || outOfView);
 
-  if (!click || shown.length === 0) return null;
+  if (!click || nothingShown) return null;
 
   return (
     <MetaDataPopup

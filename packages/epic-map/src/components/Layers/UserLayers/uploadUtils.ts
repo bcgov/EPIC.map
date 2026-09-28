@@ -12,21 +12,39 @@ import type { ImportDraft } from "@/components/Layers/UserLayers/ImportFileDialo
 /** The form field map-api reads the features from. */
 export const FEATURES_FIELD = "features";
 
+/** Features written per step, between which the page gets to paint. */
+const LINES_PER_CHUNK = 500;
+
 /**
  * One feature per line. map-api reads the upload a line at a time, which is
  * what lets a layer larger than its memory be stored at all.
+ *
+ * A stream, so the uncompressed text is never held whole, and the page stays
+ * responsive while a large layer is written out.
  */
-export const toFeatureLines = (collection: FeatureCollection): Blob =>
-  new Blob(
-    collection.features.map((feature) => `${JSON.stringify(feature)}\n`),
-    { type: "application/x-ndjson" },
-  );
+export const toFeatureLines = (
+  collection: FeatureCollection,
+): ReadableStream<BufferSource> => {
+  const { features } = collection;
+  const encoder = new TextEncoder();
+  let next = 0;
+
+  return new ReadableStream<BufferSource>({
+    async pull(controller) {
+      if (next > 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      const end = Math.min(next + LINES_PER_CHUNK, features.length);
+      let text = "";
+      for (; next < end; next += 1)
+        text += `${JSON.stringify(features[next])}\n`;
+      if (text) controller.enqueue(encoder.encode(text));
+      if (next >= features.length) controller.close();
+    },
+  });
+};
 
 /** GeoJSON is mostly repeated digits and keys, so this is usually a tenth the size. */
-export const gzip = (blob: Blob): Promise<Blob> =>
-  new Response(
-    blob.stream().pipeThrough(new CompressionStream("gzip")),
-  ).blob();
+export const gzip = (lines: ReadableStream<BufferSource>): Promise<Blob> =>
+  new Response(lines.pipeThrough(new CompressionStream("gzip"))).blob();
 
 /** The multipart body of `PUT /users/me/imported-layers/<id>`. */
 export const buildImportForm = (
@@ -75,7 +93,6 @@ export const CONNECTION_INTERRUPTED = "The connection was interrupted";
 
 const MEGABYTE = 1024 * 1024;
 
-/** "19.6 of 28.5 MB". */
 export const formatUploadSize = (loaded: number, total: number): string =>
   `${(loaded / MEGABYTE).toFixed(1)} of ${(total / MEGABYTE).toFixed(1)} MB`;
 

@@ -18,7 +18,9 @@ a dropped connection is answered with the layer already stored rather than a
 second copy.
 """
 
+import zlib
 from http import HTTPStatus
+from typing import Iterable, Iterator
 
 from flask import Response, request, stream_with_context
 from flask_restx import Namespace, Resource
@@ -41,6 +43,20 @@ layer_model = ApiHelper.convert_ma_schema_to_restx_model(
 
 # The form field the features arrive in.
 FEATURES_FIELD = 'features'
+
+
+def _gzipped(chunks: Iterable[str]) -> Iterator[bytes]:
+    """Gzip a streamed response as it goes out.
+
+    GeoJSON shrinks about tenfold. The fastest level, since the pod has a
+    fraction of a core.
+    """
+    compressor = zlib.compressobj(zlib.Z_BEST_SPEED, zlib.DEFLATED, 16 + zlib.MAX_WBITS)
+    for chunk in chunks:
+        packed = compressor.compress(chunk.encode('utf-8'))
+        if packed:
+            yield packed
+    yield compressor.flush()
 
 
 @cors_preflight('GET, OPTIONS')
@@ -124,7 +140,9 @@ class ImportedLayerFeatures(Resource):
         layer = UserLayerService.get_layer(layer_id, user.id)
         if layer is None:
             raise ResourceNotFoundError(f'Layer {layer_id} not found')
-        return Response(
-            stream_with_context(UserLayerService.feature_collection_chunks(layer)),
-            mimetype='application/geo+json',
-        )
+        chunks = UserLayerService.feature_collection_chunks(layer.id)
+        headers = {'Vary': 'Accept-Encoding'}
+        if request.accept_encodings.quality('gzip') > 0:
+            chunks = _gzipped(chunks)
+            headers['Content-Encoding'] = 'gzip'
+        return Response(stream_with_context(chunks), mimetype='application/geo+json', headers=headers)

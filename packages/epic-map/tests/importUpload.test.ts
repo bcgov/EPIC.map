@@ -1,7 +1,7 @@
 import { AxiosError, type AxiosResponse } from "axios";
 import type { FeatureCollection } from "geojson";
 import { describe, expect, it } from "vitest";
-import { toImportedLayer } from "@/api/useImportedLayers";
+import { formatUploadedDate, toImportedLayer } from "@/api/useImportedLayers";
 import type { ImportDraft } from "@/components/Layers/UserLayers/ImportFileDialog";
 import {
   buildImportForm,
@@ -71,20 +71,38 @@ const httpError = (status: number, data: unknown = {}) =>
     data,
   } as AxiosResponse);
 
+const linesOf = (collection: FeatureCollection): Promise<string> =>
+  new Response(toFeatureLines(collection)).text();
+
 describe("toFeatureLines", () => {
   it("writes one feature per line, each whole on its own", async () => {
-    const lines = (await toFeatureLines(collection).text()).trimEnd().split("\n");
+    const lines = (await linesOf(collection)).trimEnd().split("\n");
 
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[1])).toEqual(collection.features[1]);
+  });
+
+  it("writes every feature of a layer larger than one step", async () => {
+    const many: FeatureCollection = {
+      type: "FeatureCollection",
+      features: Array.from({ length: 1201 }, (_, index) => ({
+        ...collection.features[0],
+        properties: { index },
+      })),
+    };
+
+    const lines = (await linesOf(many)).trimEnd().split("\n");
+
+    expect(lines).toHaveLength(1201);
+    expect(JSON.parse(lines[1200]).properties).toEqual({ index: 1200 });
   });
 });
 
 describe("gzip", () => {
   it("round-trips the features exactly", async () => {
-    const lines = toFeatureLines(collection);
-
-    expect(await gunzip(await gzip(lines))).toBe(await lines.text());
+    expect(await gunzip(await gzip(toFeatureLines(collection)))).toBe(
+      await linesOf(collection),
+    );
   });
 });
 
@@ -210,5 +228,43 @@ describe("toImportedLayer", () => {
       isSensitive: true,
       featureCount: 12,
     });
+  });
+});
+
+describe("upload dates", () => {
+  const stored = (created_date: string) =>
+    toImportedLayer({
+      id: "0b8f6a57-3c0e-4c55-9d38-8e5a4c1c2f10",
+      name: "Roads",
+      description: null,
+      is_sensitive: false,
+      source_format: "GeoJSON",
+      source_filename: "roads.geojson",
+      source_crs: null,
+      geometry_type: "Line",
+      feature_count: 1,
+      extent: null,
+      created_date,
+    });
+
+  it("reads map-api's zoneless timestamp as UTC", () => {
+    expect(stored("2026-04-21T12:00:00.123456").uploadedAt).toBe(
+      "2026-04-21T12:00:00.123456Z",
+    );
+  });
+
+  it("leaves a timestamp that already names its zone alone", () => {
+    expect(stored("2026-04-21T12:00:00+00:00").uploadedAt).toBe(
+      "2026-04-21T12:00:00+00:00",
+    );
+  });
+
+  it("formats the date the way catalogue dates read", () => {
+    // Midday UTC is the same calendar day from Hawaii to New Zealand.
+    expect(formatUploadedDate("2026-04-21T12:00:00Z")).toBe("Apr 21, 2026");
+  });
+
+  it("shows nothing for a date it cannot read", () => {
+    expect(formatUploadedDate("not a date")).toBe("");
   });
 });

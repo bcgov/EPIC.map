@@ -1,6 +1,7 @@
-import type { Feature, FeatureCollection, Position } from "geojson";
+import type { Feature, FeatureCollection } from "geojson";
 import type { MapExtent } from "@/types";
 import { BC_EXTENT, MAX_IMPORT_FILE_MB } from "@/utils/config";
+import { geoBounds } from "@/utils/geo";
 
 /**
  * Everything that happens to an imported file before Upload: whether the
@@ -152,43 +153,6 @@ export const geometrySummary = (features: readonly Feature[]): string => {
   );
   if (labels.size === 0) return "None";
   return labels.size === 1 ? [...labels][0] : "Mixed";
-};
-
-const isPosition = (value: unknown): value is Position =>
-  Array.isArray(value) &&
-  typeof value[0] === "number" &&
-  typeof value[1] === "number";
-
-/** The extent of everything in the file, walked rather than trusted to `bbox`. */
-export const geoBounds = (features: readonly Feature[]): MapExtent | null => {
-  let west = Infinity;
-  let south = Infinity;
-  let east = -Infinity;
-  let north = -Infinity;
-
-  const visit = (coordinates: unknown): void => {
-    if (isPosition(coordinates)) {
-      const [x, y] = coordinates;
-      west = Math.min(west, x);
-      south = Math.min(south, y);
-      east = Math.max(east, x);
-      north = Math.max(north, y);
-      return;
-    }
-    if (Array.isArray(coordinates)) coordinates.forEach(visit);
-  };
-
-  for (const feature of features) {
-    const geometry = feature.geometry;
-    if (!geometry) continue;
-    if (geometry.type === "GeometryCollection")
-      geometry.geometries.forEach((inner) =>
-        visit("coordinates" in inner ? inner.coordinates : null),
-      );
-    else visit(geometry.coordinates);
-  }
-
-  return west === Infinity ? null : [west, south, east, north];
 };
 
 /** Whether any part of the extent overlaps the province. */

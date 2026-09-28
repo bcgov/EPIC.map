@@ -298,3 +298,7 @@ USER_LAYER_OUTPUT_PRECISION = 6
 
 # Rows fetched from the database at a time while features stream back.
 USER_LAYER_STREAM_BATCH_ROWS = 500
+
+# Bytes gathered before a piece of the features response is written, so a large
+# layer goes out in a few hundred writes rather than one per feature.
+USER_LAYER_STREAM_CHUNK_BYTES = 64 * 1024
