@@ -145,6 +145,17 @@ export const describeUploadFailure = (
   if (response.status >= 500)
     return { message: "The layer could not be saved.", retryable: true };
 
+  if (response.status === 401)
+    return {
+      message: "Your session has expired. Sign in again, then try again.",
+      retryable: true,
+    };
+  if (response.status === 403)
+    return {
+      message: "You do not have permission to import layers.",
+      retryable: false,
+    };
+
   const body = (response.data ?? {}) as ErrorBody;
   const message =
     firstFieldError(body.errors) ??

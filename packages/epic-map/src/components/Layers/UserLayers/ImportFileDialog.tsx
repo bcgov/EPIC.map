@@ -46,7 +46,11 @@ const SENSITIVE_ID = "epic-map-import-sensitive";
 /** Stands in for a figure the file has not given up, or never will. */
 const UNKNOWN = "—";
 
-const NO_PROBLEMS: ImportFormProblems = { name: null, sensitive: null };
+const NO_PROBLEMS: ImportFormProblems = {
+  name: null,
+  description: null,
+  sensitive: null,
+};
 
 /**
  * The file, read and previewed, with the details it will be saved under.
@@ -97,7 +101,10 @@ export default function ImportFileDialog({
   }, [file]);
 
   const submit = () => {
-    const found = validateImportForm(name, sensitive, existingNames);
+    const found = validateImportForm(
+      { name, description, sensitive },
+      existingNames,
+    );
     setProblems(found);
     if (!parsed || hasProblem(found)) return;
 
@@ -347,7 +354,12 @@ export default function ImportFileDialog({
             <TextField
               id="epic-map-import-description"
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={(event) => {
+                setDescription(event.target.value);
+                setProblems((current) => ({ ...current, description: null }));
+              }}
+              error={problems.description !== null}
+              helperText={problems.description ?? undefined}
               fullWidth
               size="small"
               multiline

@@ -436,6 +436,13 @@ export const highlightTileUrl = (
  */
 export const MAX_IMPORT_FILE_MB = 50;
 
+/** The most features an imported layer may hold; map-api refuses more. */
+export const MAX_IMPORT_FEATURES = 50_000;
+
+/** The longest an imported layer's name and description may be, as map-api stores them. */
+export const MAX_LAYER_NAME_LENGTH = 100;
+export const MAX_LAYER_DESCRIPTION_LENGTH = 1000;
+
 /**
  * How long an upload may go without sending a byte before its row says it has
  * stalled. Progress events arrive many times a second while bytes are moving,

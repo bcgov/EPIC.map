@@ -154,6 +154,22 @@ describe("parseImportFile", () => {
     ).rejects.toThrow(/could not be read as GeoJSON/);
   });
 
+  it("refuses a layer with more features than map-api will store", async () => {
+    const victoria = { type: "Point", coordinates: [-123.37, 48.42] };
+    const tooMany = {
+      type: "FeatureCollection",
+      features: Array.from({ length: 50_001 }, () => ({
+        type: "Feature",
+        geometry: victoria,
+        properties: {},
+      })),
+    };
+
+    await expect(parseImportFile(geoJsonFile(tooMany))).rejects.toThrow(
+      "This layer has more than 50,000 features. Split it into smaller files.",
+    );
+  });
+
   it("refuses a layer with nothing inside British Columbia", async () => {
     const london = { type: "Point", coordinates: [-0.13, 51.51] };
 

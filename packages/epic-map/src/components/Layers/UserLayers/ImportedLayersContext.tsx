@@ -30,8 +30,8 @@ interface ImportedLayersContextValue {
   pending: boolean;
   error: unknown;
   retry: () => void;
-  /** Layers switched off. Every other layer is on, a new one included. */
-  hiddenIds: ReadonlySet<string>;
+  /** Layers switched on: ones uploaded or zoomed to since the map opened. */
+  shownIds: ReadonlySet<string>;
   /** Opacity per layer, as a percent; a layer not listed is fully opaque. */
   opacities: Readonly<Record<string, number>>;
   toggleVisible: (layerId: string) => void;
@@ -64,7 +64,8 @@ const ImportedLayersContext = createContext<ImportedLayersContextValue | null>(
  * panel neither abandons an upload nor takes the layers off the map.
  *
  * Whether a layer is on and how opaque it is are kept for the life of the
- * map, not stored: a reload starts every layer on and fully opaque.
+ * map, not stored. A reload starts every layer off - each one switched on
+ * fetches all its features - and a new upload arrives on.
  */
 export function ImportedLayersProvider({
   map,
@@ -75,7 +76,7 @@ export function ImportedLayersProvider({
 }) {
   const { layers, isPending, error, retry, addLayer } = useImportedLayers();
 
-  const [hiddenIds, setHiddenIds] = useState<ReadonlySet<string>>(
+  const [shownIds, setShownIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
   const [opacities, setOpacities] = useState<Readonly<Record<string, number>>>(
@@ -94,13 +95,20 @@ export function ImportedLayersProvider({
     [map],
   );
 
+  const show = useCallback((layerId: string) => {
+    setShownIds((current) =>
+      current.has(layerId) ? current : new Set(current).add(layerId),
+    );
+  }, []);
+
   const onUploaded = useCallback(
     (row: ImportedLayerResponse) => {
       addLayer(row);
+      show(row.id);
       // Arrives switched on, and in view - the user has just asked for it.
       fitTo(row.extent);
     },
-    [addLayer, fitTo],
+    [addLayer, show, fitTo],
   );
 
   const { uploads, startUpload, cancelUpload, retryUpload, dismissUpload } =
@@ -109,12 +117,12 @@ export function ImportedLayersProvider({
   const { failedIds, retryFeatures } = useImportedLayersOnMap(
     map,
     layers,
-    hiddenIds,
+    shownIds,
     opacities,
   );
 
   const toggleVisible = useCallback((layerId: string) => {
-    setHiddenIds((current) => {
+    setShownIds((current) => {
       const next = new Set(current);
       if (!next.delete(layerId)) next.add(layerId);
       return next;
@@ -127,15 +135,10 @@ export function ImportedLayersProvider({
 
   const focusLayer = useCallback(
     (layer: ImportedLayer) => {
-      setHiddenIds((current) => {
-        if (!current.has(layer.id)) return current;
-        const next = new Set(current);
-        next.delete(layer.id);
-        return next;
-      });
+      show(layer.id);
       fitTo(layer.extent);
     },
-    [fitTo],
+    [show, fitTo],
   );
 
   const takenNames = useMemo(
@@ -152,7 +155,7 @@ export function ImportedLayersProvider({
       pending: isPending,
       error,
       retry: () => void retry(),
-      hiddenIds,
+      shownIds,
       opacities,
       toggleVisible,
       setOpacity,
@@ -171,7 +174,7 @@ export function ImportedLayersProvider({
       isPending,
       error,
       retry,
-      hiddenIds,
+      shownIds,
       opacities,
       toggleVisible,
       setOpacity,

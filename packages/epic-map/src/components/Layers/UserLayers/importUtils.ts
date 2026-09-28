@@ -1,6 +1,12 @@
 import type { Feature, FeatureCollection } from "geojson";
 import type { MapExtent } from "@/types";
-import { BC_EXTENT, MAX_IMPORT_FILE_MB } from "@/utils/config";
+import {
+  BC_EXTENT,
+  MAX_IMPORT_FEATURES,
+  MAX_IMPORT_FILE_MB,
+  MAX_LAYER_DESCRIPTION_LENGTH,
+  MAX_LAYER_NAME_LENGTH,
+} from "@/utils/config";
 import { geoBounds } from "@/utils/geo";
 
 /**
@@ -295,10 +301,14 @@ export const parseImportFile = async (file: File): Promise<ParsedImport> => {
   const geojson = asFeatureCollection(read.data);
   if (geojson.features.length === 0)
     throw new Error("This file holds no features to import.");
+  // map-api refuses both of these too, but only once the whole file has been
+  // sent - saying so here spares the user the upload.
+  if (geojson.features.length > MAX_IMPORT_FEATURES)
+    throw new Error(
+      `This layer has more than ${MAX_IMPORT_FEATURES.toLocaleString("en-CA")} features. Split it into smaller files.`,
+    );
 
   const bounds = geoBounds(geojson.features);
-  // map-api refuses such a layer too, but only once the whole file has been
-  // sent and stored - saying so here spares the user the upload.
   if (bounds && !touchesBc(bounds))
     throw new Error("This layer lies entirely outside British Columbia.");
 
@@ -320,9 +330,17 @@ export const SENSITIVE_REQUIRED =
 
 export type SensitiveChoice = "yes" | "no" | "";
 
+/** What the user has typed and chosen. */
+export type ImportFormValues = {
+  name: string;
+  description: string;
+  sensitive: SensitiveChoice;
+};
+
 /** What is wrong with the form, field by field; `null` where nothing is. */
 export type ImportFormProblems = {
   name: string | null;
+  description: string | null;
   sensitive: string | null;
 };
 
@@ -331,6 +349,8 @@ const nameProblem = (
   existingNames: readonly string[],
 ): string | null => {
   if (!name) return "Enter a layer name.";
+  if (name.length > MAX_LAYER_NAME_LENGTH)
+    return `Enter a layer name of ${MAX_LAYER_NAME_LENGTH} characters or fewer.`;
 
   const taken = existingNames.some(
     (existing) => existing.trim().toLowerCase() === name.toLowerCase(),
@@ -345,13 +365,16 @@ const nameProblem = (
  * empty name and no choice made, and neither is a mistake until they submit.
  */
 export const validateImportForm = (
-  name: string,
-  sensitive: SensitiveChoice,
+  { name, description, sensitive }: ImportFormValues,
   existingNames: readonly string[],
 ): ImportFormProblems => ({
   name: nameProblem(name.trim(), existingNames),
+  description:
+    description.trim().length > MAX_LAYER_DESCRIPTION_LENGTH
+      ? `Enter a description of ${MAX_LAYER_DESCRIPTION_LENGTH} characters or fewer.`
+      : null,
   sensitive: sensitive === "" ? SENSITIVE_REQUIRED : null,
 });
 
 export const hasProblem = (problems: ImportFormProblems): boolean =>
-  problems.name !== null || problems.sensitive !== null;
+  Object.values(problems).some((problem) => problem !== null);

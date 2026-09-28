@@ -179,6 +179,8 @@ def test_another_users_layer_id_is_refused(app, client, jwt, session):
     ({'is_sensitive': None}, 'is_sensitive', 'Select whether this layer contains sensitive information'),
     ({'name': '   '}, 'name', 'Enter a layer name.'),
     ({'name': None}, 'name', 'Enter a layer name.'),
+    ({'name': 'x' * 101}, 'name', 'Enter a layer name of 100 characters or fewer.'),
+    ({'description': 'x' * 1001}, 'description', 'Enter a description of 1000 characters or fewer.'),
     ({'source_format': 'CSV'}, 'source_format', None),
 ])
 def test_form_fields_are_validated(app, client, jwt, session, fields, field, message):

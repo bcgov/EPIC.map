@@ -41,7 +41,7 @@ const featuresAndFailures = (results: UseQueryResult<FeatureCollection>[]) => ({
 export const useImportedLayersOnMap = (
   map: MapLibreMap | null,
   layers: readonly ImportedLayer[],
-  hiddenIds: ReadonlySet<string>,
+  shownIds: ReadonlySet<string>,
   opacities: Readonly<Record<string, number>>,
 ) => {
   const { api } = useMapWidget();
@@ -58,7 +58,7 @@ export const useImportedLayersOnMap = (
         );
         return response.data;
       },
-      enabled: !hiddenIds.has(layer.id),
+      enabled: shownIds.has(layer.id),
       staleTime: Infinity,
       retry: false,
     })),
@@ -95,7 +95,7 @@ export const useImportedLayersOnMap = (
     }
 
     layers.forEach((layer, index) => {
-      const visible = !hiddenIds.has(layer.id);
+      const visible = shownIds.has(layer.id);
       if (drawn.current.has(layer.id)) {
         setImportedLayerVisibility(map, layer.id, visible);
         return;
@@ -111,7 +111,7 @@ export const useImportedLayersOnMap = (
       );
       drawn.current.add(layer.id);
     });
-  }, [map, layers, features, colors, hiddenIds]);
+  }, [map, layers, features, colors, shownIds]);
 
   useEffect(() => {
     if (!map) return;

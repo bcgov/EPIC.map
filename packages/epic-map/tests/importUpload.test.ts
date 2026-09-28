@@ -193,6 +193,24 @@ describe("describeUploadFailure", () => {
     expect(describeUploadFailure(invalid).message).toBe("Enter a layer name.");
   });
 
+  it("says a sign-in has lapsed rather than that the layer was refused", () => {
+    const expired = httpError(401, {
+      code: "token_expired",
+      description: "token is expired",
+    });
+
+    expect(describeUploadFailure(expired)).toEqual({
+      message: "Your session has expired. Sign in again, then try again.",
+      retryable: true,
+    });
+  });
+
+  it("says a user without access cannot import", () => {
+    expect(describeUploadFailure(httpError(403, {})).message).toBe(
+      "You do not have permission to import layers.",
+    );
+  });
+
   it("says a layer is too large when map-api gives no reason", () => {
     expect(describeUploadFailure(httpError(413, "")).message).toBe(
       "This layer is too large to upload.",

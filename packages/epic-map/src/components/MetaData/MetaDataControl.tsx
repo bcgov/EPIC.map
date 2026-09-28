@@ -63,7 +63,7 @@ export default function MetaDataControl() {
     layerFloors,
   } = useLayers();
 
-  const { layers: importedLayers, hiddenIds: importedHiddenIds } =
+  const { layers: importedLayers, shownIds: importedShownIds } =
     useImportedLayersContext();
   const queryClient = useQueryClient();
 
@@ -73,8 +73,8 @@ export default function MetaDataControl() {
   const appliedRef = useRef(appliedLayers);
   appliedRef.current = appliedLayers;
 
-  const importedRef = useRef({ importedLayers, importedHiddenIds });
-  importedRef.current = { importedLayers, importedHiddenIds };
+  const importedRef = useRef({ importedLayers, importedShownIds });
+  importedRef.current = { importedLayers, importedShownIds };
 
   // Counts up for the life of the widget, never per map instance
   const clicks = useRef(0);
@@ -87,9 +87,9 @@ export default function MetaDataControl() {
         .filter((layer) => layer.objectName)
         .reverse();
 
-      const { importedLayers: stored, importedHiddenIds: hidden } =
+      const { importedLayers: stored, importedShownIds: shown } =
         importedRef.current;
-      const shownImported = stored.filter((layer) => !hidden.has(layer.id));
+      const shownImported = stored.filter((layer) => shown.has(layer.id));
       const styleLayers = shownImported
         .flatMap((layer) => importedStyleLayerIds(layer.id))
         .filter((id) => map.getLayer(id));
@@ -107,11 +107,20 @@ export default function MetaDataControl() {
             .flatMap((rendered) => {
               const layerId = importedLayerIdOf(rendered.layer.id);
               return layerId
-                ? [{ layerId, featureId: rendered.id, rendered: rendered as Feature }]
+                ? [
+                    {
+                      layerId,
+                      featureId: rendered.id,
+                      rendered: rendered as Feature,
+                    },
+                  ]
                 : [];
             })
         : [];
-      const findFeature = (layerId: string, featureId: ImportedHit["featureId"]) =>
+      const findFeature = (
+        layerId: string,
+        featureId: ImportedHit["featureId"],
+      ) =>
         queryClient
           .getQueryData<FeatureCollection>(importedFeaturesKey(layerId))
           ?.features.find((feature) => feature.id === featureId) ?? null;
@@ -153,9 +162,8 @@ export default function MetaDataControl() {
   // way switching off a catalogue layer does.
   const shownImported = useMemo(
     () =>
-      click?.imported.filter((row) => !importedHiddenIds.has(row.layer.id)) ??
-      [],
-    [click, importedHiddenIds],
+      click?.imported.filter((row) => importedShownIds.has(row.layer.id)) ?? [],
+    [click, importedShownIds],
   );
   const nothingShown = shown.length === 0 && shownImported.length === 0;
 

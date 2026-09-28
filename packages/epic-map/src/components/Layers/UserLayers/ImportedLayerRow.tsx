@@ -35,7 +35,7 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
   const theme = useTheme();
   const { expandedId, toggleExpanded } = useLayers();
   const {
-    hiddenIds,
+    shownIds,
     opacities,
     toggleVisible,
     setOpacity,
@@ -47,7 +47,7 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
 
   const expanded = expandedId === layer.id;
-  const visible = !hiddenIds.has(layer.id);
+  const visible = shownIds.has(layer.id);
   // Only while it is on: a layer switched off is not expected on the map.
   const failed = visible && failedIds.has(layer.id);
   const opacity = opacityOf(opacities, layer.id);

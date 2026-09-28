@@ -24,6 +24,10 @@ from map_api.utils.constant import (
     MAX_USER_LAYER_DESCRIPTION_LENGTH, MAX_USER_LAYER_NAME_LENGTH, USER_LAYER_SOURCE_FORMATS)
 
 
+NAME_TOO_LONG = f'Enter a layer name of {MAX_USER_LAYER_NAME_LENGTH} characters or fewer.'
+DESCRIPTION_TOO_LONG = f'Enter a description of {MAX_USER_LAYER_DESCRIPTION_LENGTH} characters or fewer.'
+
+
 class UserLayerSchema(Schema):
     """One imported layer, without its features."""
 
@@ -61,12 +65,15 @@ class UserLayerImportSchema(Schema):
 
     name = fields.Str(
         data_key='name', required=True,
-        validate=validate.Length(min=1, max=MAX_USER_LAYER_NAME_LENGTH, error='Enter a layer name.'),
+        validate=[
+            validate.Length(min=1, error='Enter a layer name.'),
+            validate.Length(max=MAX_USER_LAYER_NAME_LENGTH, error=NAME_TOO_LONG),
+        ],
         error_messages={'required': 'Enter a layer name.'},
     )
     description = fields.Str(
         data_key='description', load_default=None, allow_none=True,
-        validate=validate.Length(max=MAX_USER_LAYER_DESCRIPTION_LENGTH),
+        validate=validate.Length(max=MAX_USER_LAYER_DESCRIPTION_LENGTH, error=DESCRIPTION_TOO_LONG),
     )
     is_sensitive = fields.Bool(
         data_key='is_sensitive', required=True,

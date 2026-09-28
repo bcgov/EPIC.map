@@ -6,6 +6,7 @@ import {
   reprojectedFrom,
   SENSITIVE_REQUIRED,
   validateImportForm,
+  type SensitiveChoice,
 } from "@/components/Layers/UserLayers/importUtils";
 
 const BC_ALBERS =
@@ -65,34 +66,52 @@ describe("reprojectedFrom", () => {
   });
 });
 
+const validate = (
+  name: string,
+  sensitive: SensitiveChoice,
+  existingNames: string[],
+  description = "",
+) => validateImportForm({ name, description, sensitive }, existingNames);
+
 describe("validateImportForm", () => {
   it("passes a named layer with a choice made", () => {
-    const problems = validateImportForm("Roads", "no", []);
+    const problems = validate("Roads", "no", []);
     expect(hasProblem(problems)).toBe(false);
   });
 
   it("asks for a name that is missing or only spaces", () => {
-    expect(validateImportForm("", "yes", []).name).toBe("Enter a layer name.");
-    expect(validateImportForm("   ", "yes", []).name).toBe(
+    expect(validate("", "yes", []).name).toBe("Enter a layer name.");
+    expect(validate("   ", "yes", []).name).toBe(
       "Enter a layer name.",
     );
   });
 
   it("refuses a name the user has already used, however it is cased", () => {
-    expect(validateImportForm("roads ", "yes", ["Roads"]).name).toBe(
+    expect(validate("roads ", "yes", ["Roads"]).name).toBe(
       'You already have a layer named "roads". Enter a different name.',
     );
   });
 
   it("asks for a sensitivity choice until one is made", () => {
-    expect(validateImportForm("Roads", "", []).sensitive).toBe(
+    expect(validate("Roads", "", []).sensitive).toBe(
       SENSITIVE_REQUIRED,
     );
-    expect(validateImportForm("Roads", "yes", []).sensitive).toBeNull();
+    expect(validate("Roads", "yes", []).sensitive).toBeNull();
+  });
+
+  it("refuses a name or description longer than map-api stores", () => {
+    expect(validate("x".repeat(101), "yes", []).name).toBe(
+      "Enter a layer name of 100 characters or fewer.",
+    );
+    expect(validate("x".repeat(100), "yes", []).name).toBeNull();
+    expect(validate("Roads", "yes", [], "x".repeat(1001)).description).toBe(
+      "Enter a description of 1000 characters or fewer.",
+    );
+    expect(validate("Roads", "yes", [], "x".repeat(1000)).description).toBeNull();
   });
 
   it("reports both problems at once", () => {
-    const problems = validateImportForm("", "", []);
+    const problems = validate("", "", []);
     expect(problems.name).not.toBeNull();
     expect(problems.sensitive).not.toBeNull();
   });
