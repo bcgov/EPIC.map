@@ -142,6 +142,11 @@ class _Config():  # pylint: disable=too-few-public-methods
     TESTING = False
     DEBUG = False
 
+    # Largest request body Werkzeug will read, answered with a 413 past it. Sized
+    # for an imported layer - the widget takes files up to 50 MB and sends their
+    # features gzipped - with headroom for GeoJSON running larger than the file.
+    MAX_CONTENT_LENGTH = 100 * 1024 * 1024
+
     # POSTGRESQL
     DB_USER = os.getenv('DATABASE_USERNAME', '')
     DB_PASSWORD = os.getenv('DATABASE_PASSWORD', '')

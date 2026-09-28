@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import type { Feature } from "geojson";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { AppliedLayer } from "@/api/useAppliedLayers";
 import type { MetaDataByLayer, MetaDataFeature } from "@/api/useMetaData";
 import type { MapExtent } from "@/types";
 import { MIN_FEATURE_PIXELS } from "@/utils/config";
+import { geoBounds } from "@/utils/geo";
 
 /**
  * What the metadata popup shows: which layers are listed, which one is
@@ -49,8 +51,18 @@ export const clickBox = (
 
 export type MetaDataRowStatus = "pending" | "found" | "empty" | "error";
 
+/**
+ * A layer as the popup lists it. A catalogue layer is asked by object name;
+ * an imported one has none, since its features are already on the map.
+ */
+export interface MetaDataLayer {
+  id: string;
+  name: string;
+  objectName?: string | null;
+}
+
 export interface MetaDataRow {
-  layer: AppliedLayer;
+  layer: MetaDataLayer;
   status: MetaDataRowStatus;
   feature: MetaDataFeature | null;
   retrying: boolean;
@@ -81,6 +93,56 @@ export const toRows = (
       retrying: Boolean(objectName && retrying.has(objectName)),
     };
   });
+
+/** An imported feature under a click, as the map reported it. */
+export interface ImportedHit {
+  layerId: string;
+  featureId: string | number | undefined;
+  /** The map's own copy, for a feature the layer's data cannot be searched for. */
+  rendered?: Feature;
+}
+
+/**
+ * Rows for the imported layers under a click, answered on the spot: their
+ * features are already in the browser, so nothing is asked of map-api.
+ *
+ * `hits` comes topmost first, and only a layer's topmost feature is kept - the
+ * one the user can see they clicked. The feature is read back from the layer's
+ * own data rather than the map's copy, which clips geometry to a tile and
+ * flattens nested attributes to strings.
+ */
+export const importedRows = (
+  hits: readonly ImportedHit[],
+  layers: readonly MetaDataLayer[],
+  findFeature: (layerId: string, featureId: ImportedHit["featureId"]) => Feature | null,
+): MetaDataRow[] => {
+  const byId = new Map(layers.map((layer) => [layer.id, layer]));
+  const rows: MetaDataRow[] = [];
+  const seen = new Set<string>();
+
+  for (const { layerId, featureId, rendered } of hits) {
+    const layer = byId.get(layerId);
+    if (!layer || seen.has(layerId)) continue;
+    seen.add(layerId);
+
+    const feature = findFeature(layerId, featureId) ?? rendered ?? null;
+    rows.push({
+      layer,
+      status: "found",
+      feature: {
+        id: null,
+        name: null,
+        properties: Object.entries(feature?.properties ?? {}).map(
+          ([name, value]) => ({ name, value }),
+        ),
+        geometry: feature?.geometry ?? null,
+        bounds: feature ? geoBounds([feature]) : null,
+      },
+      retrying: false,
+    });
+  }
+  return rows;
+};
 
 /** Still waiting on the first answer from at least one layer. */
 export const isLoading = (rows: readonly MetaDataRow[]): boolean =>
@@ -272,6 +334,9 @@ export const attributeLabel = (name: string): string =>
     .join(" ");
 
 export const EMPTY_VALUE = "—";
+
+/** Shown for a feature that carries no attributes at all. */
+export const NO_ATTRIBUTES = "No metadata for this feature.";
 
 export const attributeValue = (value: unknown): string => {
   if (value === null || value === undefined || value === "") return EMPTY_VALUE;

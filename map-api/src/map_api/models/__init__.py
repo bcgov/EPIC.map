@@ -20,3 +20,5 @@ from .user import User
 from .user_applied_layer import UserAppliedLayer
 from .user_favourite_folder import UserFavouriteFolder
 from .user_favourite_layer import UserFavouriteLayer
+from .user_layer import UserLayer
+from .user_layer_feature import UserLayerFeature

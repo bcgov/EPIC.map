@@ -43,6 +43,14 @@ redis:
 # Created by hand in the namespace, never by this chart - it holds SECRET_KEY.
 secretName: map-api-secrets
 
+# How long the router waits on this API before answering 504. Its default is
+# 30s, which a layer import outlives: the features are stored in one request,
+# and at this pod's quarter core a large file takes minutes. gunicorn does not
+# cut it shorter - its --timeout is a worker heartbeat, which the threaded
+# worker keeps sending while a request runs.
+route:
+  timeout: 300s
+
 service:
   type: ClusterIP
   port: 8080

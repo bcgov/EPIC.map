@@ -32,14 +32,14 @@ import { MAX_VISIBLE_LAYERS } from "@/utils/config";
 const ZOOM_HINT_COLOR = "#8A6A01";
 
 /** Every control in the row shows the same ring, so tabbing is easy to follow. */
-const focusRing = (theme: Theme) => ({
+export const focusRing = (theme: Theme) => ({
   "&:focus-visible": {
     outline: `2px solid ${theme.palette.primary.main}`,
     outlineOffset: "-2px",
   },
 });
 
-const toggleSx = (theme: Theme) => ({
+export const toggleSx = (theme: Theme) => ({
   width: "2.5rem",
   height: "1.25rem",
   padding: 0,

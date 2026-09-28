@@ -31,6 +31,7 @@ import {
   showOutlineLayer,
   showWmsLayer,
 } from "@/components/Layers/layerUtils";
+import { ImportedLayersProvider } from "@/components/Layers/UserLayers/ImportedLayersContext";
 import {
   DEFAULT_LAYER_OPACITY,
   effectiveMinZoom,
@@ -427,7 +428,9 @@ export function LayersProvider({
   );
 
   return (
-    <LayersContext.Provider value={value}>{children}</LayersContext.Provider>
+    <LayersContext.Provider value={value}>
+      <ImportedLayersProvider map={map}>{children}</ImportedLayersProvider>
+    </LayersContext.Provider>
   );
 }
 

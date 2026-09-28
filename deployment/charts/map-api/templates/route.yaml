@@ -4,6 +4,8 @@ metadata:
   labels:
     app: "{{ .Chart.Name }}"
   name: "{{ .Chart.Name }}"
+  annotations:
+    haproxy.router.openshift.io/timeout: {{ .Values.route.timeout | quote }}
 spec:
   host: "{{ .Chart.Name }}-{{ .Release.Namespace }}.apps.gold.devops.gov.bc.ca"
   tls:

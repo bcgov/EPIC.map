@@ -254,3 +254,51 @@ DEFAULT_FOLDER_NAME = 'Untitled folder'
 
 # The longest a folder name may be, matching the column it is stored in.
 MAX_FOLDER_NAME_LENGTH = 100
+
+# The longest an imported layer's name and description may be, matching their
+# columns.
+MAX_USER_LAYER_NAME_LENGTH = 100
+MAX_USER_LAYER_DESCRIPTION_LENGTH = 1000
+
+# What an imported layer was read from, as the widget names it.
+USER_LAYER_SOURCE_FORMATS = ('GeoJSON', 'KML', 'Shapefile')
+
+# The widget's one-word summary of a layer's geometry.
+USER_LAYER_GEOMETRY_TYPES = ('Point', 'Line', 'Polygon', 'Mixed')
+
+# BC Albers, which imported features are stored in so lengths and areas are
+# measured in metres the way the rest of the province's data is.
+USER_LAYER_STORAGE_SRID = 3005
+
+# The largest imported layer, in features. Every feature is one insert and one
+# row streamed back to the map, so this is what bounds how long an import holds
+# a worker thread.
+MAX_USER_LAYER_FEATURES = 50_000
+
+# Bytes of GeoJSON an import may unpack to. The upload itself is capped by
+# MAX_CONTENT_LENGTH, but it arrives gzipped, so this is what stops a small
+# upload inflating without end.
+MAX_USER_LAYER_GEOJSON_BYTES = 512 * 1024 * 1024
+
+# Bytes of one feature's line. A detailed provincial polygon can run to a few
+# megabytes; past this one feature would own the pod's memory.
+MAX_USER_LAYER_FEATURE_BYTES = 16 * 1024 * 1024
+
+# Bytes of one feature's attributes, once serialised.
+MAX_USER_LAYER_PROPERTIES_BYTES = 64 * 1024
+
+# Features are inserted in batches, closed at whichever limit comes first: the
+# row count keeps round trips down, the byte count keeps a batch of large
+# polygons from holding hundreds of megabytes at once.
+USER_LAYER_INSERT_BATCH_ROWS = 1000
+USER_LAYER_INSERT_BATCH_BYTES = 4 * 1024 * 1024
+
+# Decimal places of the coordinates sent back to the map - about 10cm.
+USER_LAYER_OUTPUT_PRECISION = 6
+
+# Rows fetched from the database at a time while features stream back.
+USER_LAYER_STREAM_BATCH_ROWS = 500
+
+# Bytes gathered before a piece of the features response is written, so a large
+# layer goes out in a few hundred writes rather than one per feature.
+USER_LAYER_STREAM_CHUNK_BYTES = 64 * 1024

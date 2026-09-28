@@ -6,14 +6,18 @@ import type { MapBasemapStyles, MapExtent } from "@/types";
  */
 
 /**
- * British Columbia, as `[west, south, east, north]`.
- *
- * The default view, and deliberately an extent rather than a center/zoom pair: a
+ * British Columbia, as `[west, south, east, north]`. The same box as
+ * BC_EXTENT in map-api, which refuses an imported layer with nothing inside it.
+ */
+export const BC_EXTENT: MapExtent = [-139.1, 48.2, -114.0, 60.1];
+
+/**
+ * The default view: the whole province, and deliberately an extent rather than a center/zoom pair: a
  * fixed zoom shows a different amount of the province in a full-page host than
  * in a sidebar. Fitting bounds puts the whole province on screen at whatever
  * size the host gives the widget. `initialExtent` overrides it.
  */
-export const DEFAULT_EXTENT: MapExtent = [-139.1, 48.2, -114.0, 60.1];
+export const DEFAULT_EXTENT: MapExtent = BC_EXTENT;
 
 export const MIN_ZOOM = 3;
 export const MAX_ZOOM = 18;
@@ -425,3 +429,23 @@ export const highlightTileUrl = (
 ): string =>
   `${wmsTileUrl(objectName)}&FEATUREID=${encodeURIComponent(featureId)}` +
   `&SLD_BODY=${encodeURIComponent(highlightSld(objectName))}`;
+
+/**
+ * Largest file the panel will take in, in megabytes. The check is client-side
+ * so an oversized file is refused before anything reads it.
+ */
+export const MAX_IMPORT_FILE_MB = 50;
+
+/** The most features an imported layer may hold; map-api refuses more. */
+export const MAX_IMPORT_FEATURES = 50_000;
+
+/** The longest an imported layer's name and description may be, as map-api stores them. */
+export const MAX_LAYER_NAME_LENGTH = 100;
+export const MAX_LAYER_DESCRIPTION_LENGTH = 1000;
+
+/**
+ * How long an upload may go without sending a byte before its row says it has
+ * stalled. Progress events arrive many times a second while bytes are moving,
+ * so this is long enough to ride out a blip and short enough to be honest.
+ */
+export const UPLOAD_STALL_AFTER_MS = 5000;

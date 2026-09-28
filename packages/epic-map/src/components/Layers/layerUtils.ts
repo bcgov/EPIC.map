@@ -1,5 +1,5 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
-import type { Geometry } from "geojson";
+import type { FeatureCollection, Geometry } from "geojson";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
   HIGHLIGHT_CASING_COLOR,
@@ -248,7 +248,8 @@ const [
 ] = HIGHLIGHT_LAYERS;
 
 export interface FeatureHighlight {
-  objectName: string;
+  /** The warehouse layer it came from; null for an imported feature. */
+  objectName: string | null;
   /** The warehouse's id for it, or null when that id is not stable. */
   featureId: string | null;
   /** Its shape, or null when it was too heavy for map-api to carry. */
@@ -323,7 +324,7 @@ export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => 
       return;
     }
 
-    if (featureId) {
+    if (objectName && featureId) {
       map.addSource(HIGHLIGHT_SOURCE, {
         type: "raster",
         tiles: [highlightTileUrl(objectName, featureId)],
@@ -376,4 +377,155 @@ export const layersBelowFloor = (
     if (!current.has(id)) return next;
   }
   return current;
+};
+
+// Layers the user imported
+
+/**
+ * An imported layer is drawn from its own features rather than tiles: they
+ * came from the user's file, and no warehouse serves them. Styled the way the
+ * import preview drew them, so the layer looks as it did before Upload.
+ */
+
+const IMPORTED_PREFIX = `${WIDGET_ID_PREFIX}imported-`;
+const importedSourceId = (layerId: string) =>
+  `${IMPORTED_PREFIX}src-${layerId}`;
+const IMPORTED_PARTS = ["fill", "line", "point"] as const;
+const importedLayerId = (
+  layerId: string,
+  part: (typeof IMPORTED_PARTS)[number],
+) => `${IMPORTED_PREFIX}${part}-${layerId}`;
+
+/** The map layers one imported layer is drawn with. */
+export const importedStyleLayerIds = (layerId: string): string[] =>
+  IMPORTED_PARTS.map((part) => importedLayerId(layerId, part));
+
+/** The imported layer a map layer draws, or null for any other map layer. */
+export const importedLayerIdOf = (styleLayerId: string): string | null => {
+  for (const part of IMPORTED_PARTS) {
+    const prefix = `${IMPORTED_PREFIX}${part}-`;
+    if (styleLayerId.startsWith(prefix)) return styleLayerId.slice(prefix.length);
+  }
+  return null;
+};
+
+export interface ImportedLayerColors {
+  line: string;
+  fill: string;
+}
+
+/** Every paint property opacity scales, by the part it belongs to. */
+const IMPORTED_OPACITY_PROPERTIES = [
+  ["fill", "fill-opacity"],
+  ["line", "line-opacity"],
+  ["point", "circle-opacity"],
+  ["point", "circle-stroke-opacity"],
+] as const;
+
+/** Those properties at the given percent, as a paint block per part. */
+const importedOpacityPaint = (percent: number) => {
+  const opacity = percent / 100;
+  return {
+    fill: { "fill-opacity": opacity },
+    line: { "line-opacity": opacity },
+    point: { "circle-opacity": opacity, "circle-stroke-opacity": opacity },
+  } as const;
+};
+
+/** Draw an imported layer, once. A layer already on the map is left as it is. */
+export const showImportedLayer = (
+  map: MapLibreMap,
+  layerId: string,
+  features: FeatureCollection,
+  colors: ImportedLayerColors,
+  opacity: number,
+) => {
+  whenStyleReady(map, () => {
+    const source = importedSourceId(layerId);
+    if (map.getSource(source)) return;
+
+    map.addSource(source, { type: "geojson", data: features });
+    // Under a selected feature's highlight, which has to stay readable on top.
+    const beneath = map.getLayer(HIGHLIGHT_FILL) ? HIGHLIGHT_FILL : undefined;
+    const paint = importedOpacityPaint(opacity);
+
+    map.addLayer(
+      {
+        id: importedLayerId(layerId, "fill"),
+        type: "fill",
+        source,
+        filter: ["==", ["geometry-type"], "Polygon"],
+        paint: { "fill-color": colors.fill, ...paint.fill },
+      },
+      beneath,
+    );
+    map.addLayer(
+      {
+        id: importedLayerId(layerId, "line"),
+        type: "line",
+        source,
+        filter: ["!=", ["geometry-type"], "Point"],
+        paint: { "line-color": colors.line, "line-width": 2, ...paint.line },
+      },
+      beneath,
+    );
+    map.addLayer(
+      {
+        id: importedLayerId(layerId, "point"),
+        type: "circle",
+        source,
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: {
+          "circle-radius": 5,
+          "circle-color": colors.fill,
+          "circle-stroke-color": colors.line,
+          "circle-stroke-width": 2,
+          ...paint.point,
+        },
+      },
+      beneath,
+    );
+  });
+};
+
+/**
+ * Show or hide an imported layer. Hidden rather than removed, so switching it
+ * back on neither fetches nor parses its features again.
+ */
+export const setImportedLayerVisibility = (
+  map: MapLibreMap,
+  layerId: string,
+  visible: boolean,
+) => {
+  whenStyleReady(map, () => {
+    for (const id of importedStyleLayerIds(layerId)) {
+      if (map.getLayer(id))
+        map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+    }
+  });
+};
+
+/** Repaint an imported layer at a new opacity, as a percent. */
+export const setImportedLayerOpacity = (
+  map: MapLibreMap,
+  layerId: string,
+  opacity: number,
+) => {
+  whenStyleReady(map, () => {
+    for (const [part, property] of IMPORTED_OPACITY_PROPERTIES) {
+      const id = importedLayerId(layerId, part);
+      if (map.getLayer(id)) map.setPaintProperty(id, property, opacity / 100);
+    }
+  });
+};
+
+/** Take an imported layer off the map, features and all. */
+export const removeImportedLayer = (map: MapLibreMap, layerId: string) => {
+  whenStyleReady(map, () => {
+    for (const id of importedStyleLayerIds(layerId)) {
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
+    const source = importedSourceId(layerId);
+    if (map.getSource(source)) map.removeSource(source);
+  });
 };

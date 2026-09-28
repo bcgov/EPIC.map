@@ -22,6 +22,7 @@ import {
   attributeValue,
   clampToContainer,
   featureHeading,
+  NO_ATTRIBUTES,
   stepFor,
   steppedIndex,
   type MetaDataRow,
@@ -552,6 +553,12 @@ function Detail({
           </Box>
         )}
       </Box>
+
+      {feature.properties.length === 0 && (
+        <Typography sx={{ ...labelSx, marginTop: "0.5rem" }}>
+          {NO_ATTRIBUTES}
+        </Typography>
+      )}
 
       <Box
         component="dl"

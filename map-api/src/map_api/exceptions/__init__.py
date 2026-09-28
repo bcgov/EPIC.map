@@ -19,7 +19,8 @@ BusinessException - error, status_code - Business rules error
 error - a description of the error {code / description: classname / full text}
 status_code - where possible use HTTP Error Codes
 """
-from werkzeug.exceptions import BadRequest, Conflict, Forbidden, NotFound, ServiceUnavailable, UnprocessableEntity
+from werkzeug.exceptions import (
+    BadRequest, Conflict, Forbidden, NotFound, RequestEntityTooLarge, ServiceUnavailable, UnprocessableEntity)
 from werkzeug.wrappers.response import Response
 
 
@@ -81,6 +82,16 @@ class UnprocessableEntityError(UnprocessableEntity):
         super().__init__(*args, **kwargs)
         self.description = message
         self.response = Response(message, status=UnprocessableEntity.code)
+
+
+class PayloadTooLargeError(RequestEntityTooLarge):
+    """Exception raised when what was sent is larger than the API will take."""
+
+    def __init__(self, message, *args, **kwargs):
+        """Return a valid PayloadTooLargeError."""
+        super().__init__(*args, **kwargs)
+        self.description = message
+        self.response = Response(message, status=RequestEntityTooLarge.code)
 
 
 class ServiceUnavailableError(ServiceUnavailable):
