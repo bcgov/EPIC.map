@@ -27,7 +27,7 @@ from flask_restx import Namespace, Resource
 
 from map_api.auth import auth
 from map_api.exceptions import BadRequestError, ResourceNotFoundError
-from map_api.schemas.user_layer import UserLayerImportSchema, UserLayerSchema
+from map_api.schemas.user_layer import UserLayerImportSchema, UserLayerSchema, UserLayerUpdateSchema
 from map_api.services.user_layer_service import UserLayerService
 from map_api.services.user_service import UserService
 from map_api.utils.util import cors_preflight
@@ -39,6 +39,9 @@ API = Namespace('imported-layers', description='Layers a user imports from their
 
 layer_model = ApiHelper.convert_ma_schema_to_restx_model(
     API, UserLayerSchema(), 'ImportedLayer'
+)
+layer_update_model = ApiHelper.convert_ma_schema_to_restx_model(
+    API, UserLayerUpdateSchema(), 'ImportedLayerUpdate'
 )
 
 # The form field the features arrive in.
@@ -77,8 +80,8 @@ class ImportedLayers(Resource):
         return UserLayerSchema(many=True).dump(layers), HTTPStatus.OK
 
 
-@cors_preflight('OPTIONS, PUT, DELETE')
-@API.route('/<uuid:layer_id>', methods=['PUT', 'DELETE', 'OPTIONS'])
+@cors_preflight('OPTIONS, PUT, PATCH, DELETE')
+@API.route('/<uuid:layer_id>', methods=['PUT', 'PATCH', 'DELETE', 'OPTIONS'])
 @API.doc(params={'layer_id': 'The layer identifier, chosen by the client'})
 class ImportedLayer(Resource):
     """One imported layer."""
@@ -107,6 +110,23 @@ class ImportedLayer(Resource):
         user = UserService.current_user()
         layer, created = UserLayerService.import_layer(layer_id, user.id, payload, features.stream)
         return UserLayerSchema().dump(layer), HTTPStatus.CREATED if created else HTTPStatus.OK
+
+    @staticmethod
+    @auth.require
+    @ApiHelper.swagger_decorators(API, endpoint_description='Edit an imported layer')
+    @API.expect(layer_update_model)
+    @API.response(code=200, model=layer_model, description='Success')
+    @API.response(400, 'Bad Request')
+    @API.response(404, 'Not Found')
+    @API.response(409, 'Name already in use')
+    def patch(layer_id):
+        """Change a layer's name, description or sensitivity; its features stay as they are."""
+        payload = UserLayerUpdateSchema().load(API.payload or {})
+        user = UserService.current_user()
+        layer = UserLayerService.update_layer(layer_id, user.id, payload)
+        if layer is None:
+            raise ResourceNotFoundError(f'Layer {layer_id} not found')
+        return UserLayerSchema().dump(layer), HTTPStatus.OK
 
     @staticmethod
     @auth.require

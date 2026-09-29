@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import axios from "axios";
 import {
   Box,
   Button,
@@ -18,6 +19,11 @@ import CloseIcon from "@mui/icons-material/Close";
 import DoNotDisturbAltOutlinedIcon from "@mui/icons-material/DoNotDisturbAltOutlined";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { alpha, useTheme } from "@mui/material/styles";
+import {
+  useImportedFeatures,
+  type ImportedLayer,
+  type ImportedLayerChanges,
+} from "@/api/useImportedLayers";
 import ImportPreviewMap, {
   MIN_PREVIEW_HEIGHT,
 } from "@/components/Layers/UserLayers/ImportPreviewMap";
@@ -52,35 +58,49 @@ const NO_PROBLEMS: ImportFormProblems = {
   sensitive: null,
 };
 
+/** A new file, read here and uploaded by the caller. */
+type ImportProps = { file: File; onUpload: (draft: ImportDraft) => void };
+/** A stored layer, whose details are saved by the caller. */
+type EditProps = {
+  layer: ImportedLayer;
+  onSave: (changes: ImportedLayerChanges) => Promise<void>;
+};
+
 /**
- * The file, read and previewed, with the details it will be saved under.
+ * The file, read and previewed, with the details it will be saved under - or
+ * a stored layer, previewed, with the details to change.
  *
- * Mounted per file, so the fields start from that file and nothing survives a
- * cancel.
+ * Mounted per file or edit, so the fields start from that file or layer and
+ * nothing survives a cancel.
  */
-export default function ImportFileDialog({
-  file,
-  existingNames,
-  onClose,
-  onUpload,
-}: {
-  file: File;
-  /** Names already taken, which a new layer may not repeat. */
-  existingNames: readonly string[];
-  onClose: () => void;
-  onUpload: (draft: ImportDraft) => void;
-}) {
+export default function ImportFileDialog(
+  props: {
+    /** Names already taken, which the layer may not repeat. */
+    existingNames: readonly string[];
+    onClose: () => void;
+  } & (ImportProps | EditProps),
+) {
+  const { existingNames, onClose } = props;
+  const file = "file" in props ? props.file : null;
+  const layer = "layer" in props ? props.layer : null;
   const theme = useTheme();
 
   const [parsed, setParsed] = useState<ParsedImport | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [parseFailure, setParseFailure] = useState<string | null>(null);
+  // Shared with the map, so a layer already switched on is not fetched again.
+  const features = useImportedFeatures(layer?.id ?? null);
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [sensitive, setSensitive] = useState<SensitiveChoice>("");
+  const [name, setName] = useState(layer?.name ?? "");
+  const [description, setDescription] = useState(layer?.description ?? "");
+  const [sensitive, setSensitive] = useState<SensitiveChoice>(
+    layer ? (layer.isSensitive ? "yes" : "no") : "",
+  );
   const [problems, setProblems] = useState<ImportFormProblems>(NO_PROBLEMS);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!file) return;
     // Closing mid-read must leave nothing behind, and a file large enough to
     // take a moment is exactly when that happens.
     let live = true;
@@ -93,23 +113,72 @@ export default function ImportFileDialog({
         // map cannot read is a name for nothing.
         setName(layerNameFromFile(file.name));
       })
-      .catch((cause: Error) => live && setFailure(cause.message));
+      .catch((cause: Error) => live && setParseFailure(cause.message));
 
     return () => {
       live = false;
     };
   }, [file]);
 
-  const submit = () => {
-    const found = validateImportForm(
-      { name, description, sensitive },
-      existingNames,
-    );
-    setProblems(found);
-    if (!parsed || hasProblem(found)) return;
+  const preview = layer
+    ? features.data && { geojson: features.data, bounds: layer.extent }
+    : parsed;
+  const failure = layer
+    ? features.isError
+      ? "Its features could not be loaded."
+      : null
+    : parseFailure;
 
-    onUpload({
-      file,
+  const save = async (
+    changes: ImportedLayerChanges,
+    onSave: EditProps["onSave"],
+  ) => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave(changes);
+      onClose();
+    } catch (error) {
+      setSaving(false);
+      const response = axios.isAxiosError(error) ? error.response : undefined;
+      const message = (response?.data as { message?: unknown } | undefined)
+        ?.message;
+      // Taken since the list was last fetched: said on the field, as the
+      // check on submit would have.
+      if (response?.status === 409 && typeof message === "string")
+        setProblems((current) => ({ ...current, name: message }));
+      else setSaveError("Your changes could not be saved. Try again.");
+    }
+  };
+
+  const submit = () => {
+    // A layer's own name is not a duplicate of itself.
+    const others = layer
+      ? existingNames.filter((taken) => taken !== layer.name)
+      : existingNames;
+    const found = validateImportForm({ name, description, sensitive }, others);
+    setProblems(found);
+    if (hasProblem(found)) return;
+
+    if ("onSave" in props) {
+      const changes = {
+        name: name.trim(),
+        description: description.trim() || null,
+        isSensitive: sensitive === "yes",
+      };
+      if (
+        changes.name === props.layer.name &&
+        changes.description === props.layer.description &&
+        changes.isSensitive === props.layer.isSensitive
+      )
+        onClose();
+      else void save(changes, props.onSave);
+      return;
+    }
+
+    if (!parsed) return;
+    props.onUpload({
+      file: props.file,
       parsed,
       name: name.trim(),
       description: description.trim(),
@@ -133,10 +202,24 @@ export default function ImportFileDialog({
     justifyContent: "center",
   } as const;
 
+  const summary = layer
+    ? [
+        layer.sourceFilename,
+        layer.sourceFormat,
+        layer.geometryType,
+        String(layer.featureCount),
+      ]
+    : [
+        file?.name ?? UNKNOWN,
+        parsed?.format ?? UNKNOWN,
+        parsed?.geometryType ?? UNKNOWN,
+        parsed ? String(parsed.featureCount) : UNKNOWN,
+      ];
+
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={saving ? undefined : onClose}
       aria-labelledby={TITLE_ID}
       maxWidth="md"
       fullWidth
@@ -159,8 +242,13 @@ export default function ImportFileDialog({
           fontWeight: theme.typography.fontWeightBold,
         }}
       >
-        Import File
-        <IconButton aria-label="Close" onClick={onClose} size="small">
+        {layer ? "Edit Layer" : "Import File"}
+        <IconButton
+          aria-label="Close"
+          onClick={onClose}
+          disabled={saving}
+          size="small"
+        >
           <CloseIcon />
         </IconButton>
       </DialogTitle>
@@ -172,15 +260,15 @@ export default function ImportFileDialog({
           padding: "1.5rem",
         }}
       >
-        {parsed && (
-          <ImportPreviewMap geojson={parsed.geojson} bounds={parsed.bounds} />
+        {preview && (
+          <ImportPreviewMap geojson={preview.geojson} bounds={preview.bounds} />
         )}
 
-        {!parsed && !failure && (
+        {!preview && !failure && (
           <Box sx={{ ...previewArea, gap: "0.75rem" }}>
             <CircularProgress size={20} />
             <Typography sx={{ fontSize: theme.typography.body2.fontSize }}>
-              Reading {file.name}…
+              {layer ? `Loading ${layer.name}…` : `Reading ${file?.name}…`}
             </Typography>
           </Box>
         )}
@@ -209,7 +297,9 @@ export default function ImportFileDialog({
                 color: theme.palette.text.primary,
               }}
             >
-              This file could not be imported
+              {layer
+                ? "This layer could not be previewed"
+                : "This file could not be imported"}
             </Typography>
             <Typography
               sx={{
@@ -250,12 +340,7 @@ export default function ImportFileDialog({
                 </Typography>
               ),
             )}
-            {[
-              file.name,
-              parsed?.format ?? UNKNOWN,
-              parsed?.geometryType ?? UNKNOWN,
-              parsed ? String(parsed.featureCount) : UNKNOWN,
-            ].map((value, index) => (
+            {summary.map((value, index) => (
               <Typography
                 key={value + index}
                 sx={{
@@ -427,6 +512,19 @@ export default function ImportFileDialog({
               </Typography>
             </Box>
           )}
+
+          {saveError && (
+            <Typography
+              role="alert"
+              sx={{
+                marginTop: "1rem",
+                fontSize: theme.typography.body2.fontSize,
+                color: theme.palette.error.main,
+              }}
+            >
+              {saveError}
+            </Typography>
+          )}
         </Box>
       </DialogContent>
 
@@ -439,6 +537,7 @@ export default function ImportFileDialog({
       >
         <Button
           onClick={onClose}
+          disabled={saving}
           color="inherit"
           sx={{ color: theme.palette.text.secondary }}
         >
@@ -446,13 +545,16 @@ export default function ImportFileDialog({
         </Button>
         <Button
           variant="contained"
-          // Only the file blocks the button; what is wrong with the form is
-          // said on the form, where it can be fixed.
-          disabled={!parsed}
+          // Only the file blocks Upload; what is wrong with the form is said
+          // on the form, where it can be fixed. An edit needs no preview.
+          disabled={layer ? saving : !parsed}
           onClick={submit}
+          startIcon={
+            saving ? <CircularProgress size={14} color="inherit" /> : undefined
+          }
           sx={{ minWidth: "7rem" }}
         >
-          Upload
+          {layer ? "Save changes" : "Upload"}
         </Button>
       </DialogActions>
     </Dialog>

@@ -17,18 +17,20 @@ export default function ImportedLayerMenu({
   layerName,
   anchorEl,
   onClose,
+  onEdit,
 }: {
   id: string;
   layerName: string;
   anchorEl: HTMLElement | null;
   onClose: () => void;
+  onEdit: () => void;
 }) {
   const theme = useTheme();
 
   const itemSx = {
-    gap: "0.5rem",
+    gap: "0.375rem",
     minHeight: "auto",
-    padding: "0.5rem 1rem",
+    padding: "0.625rem 1rem",
     fontSize: theme.typography.body2.fontSize,
     "&.Mui-focusVisible": {
       outline: `2px solid ${theme.palette.primary.main}`,
@@ -56,7 +58,6 @@ export default function ImportedLayerMenu({
         paper: {
           elevation: 0,
           sx: {
-            minWidth: "12rem",
             border: `1px solid ${theme.palette.divider}`,
             borderRadius: "4px",
             boxShadow: theme.shadows[2],
@@ -66,7 +67,10 @@ export default function ImportedLayerMenu({
       }}
     >
       <MenuItem
-        onClick={onClose}
+        onClick={() => {
+          onClose();
+          onEdit();
+        }}
         sx={{ ...itemSx, color: theme.palette.text.primary }}
       >
         <ListItemIcon sx={iconSx}>
@@ -74,10 +78,11 @@ export default function ImportedLayerMenu({
         </ListItemIcon>
         <ListItemText
           primary="Edit layer"
+          sx={{ margin: 0 }}
           primaryTypographyProps={{ fontSize: "inherit" }}
         />
       </MenuItem>
-      <Divider sx={{ marginY: 0 }} />
+      <Divider sx={{ "&&": { marginY: 0 } }} />
       <MenuItem
         onClick={onClose}
         sx={{ ...itemSx, color: theme.palette.error.main }}
@@ -87,6 +92,7 @@ export default function ImportedLayerMenu({
         </ListItemIcon>
         <ListItemText
           primary="Delete layer"
+          sx={{ margin: 0 }}
           primaryTypographyProps={{ fontSize: "inherit", color: "inherit" }}
         />
       </MenuItem>

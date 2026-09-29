@@ -97,6 +97,7 @@ def second_user_auth_header(jwt):
     [
         ('get', ENDPOINT),
         ('put', f'{ENDPOINT}/{uuid.uuid4()}'),
+        ('patch', f'{ENDPOINT}/{uuid.uuid4()}'),
         ('delete', f'{ENDPOINT}/{uuid.uuid4()}'),
         ('get', f'{ENDPOINT}/{uuid.uuid4()}/features'),
     ],
@@ -392,6 +393,115 @@ def test_another_users_features_are_not_found(app, client, jwt, session):
     response = client.get(f"{ENDPOINT}/{theirs['id']}/features", headers=factory_auth_header(jwt))
 
     assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+def patch(client, headers, layer_id, **body):
+    """Edit a layer and return the response."""
+    return client.patch(f'{ENDPOINT}/{layer_id}', json=body, headers=headers)
+
+
+def test_patch_changes_the_details_and_keeps_the_features(app, client, jwt, session):
+    """Name, description and sensitivity change; what was imported does not."""
+    headers = factory_auth_header(jwt)
+    layer = put(client, headers, features=[point(VICTORIA), point(NANAIMO)]).json
+
+    response = patch(
+        client, headers, layer['id'],
+        name=' Haul roads ', description='Active haul roads', is_sensitive=True,
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    body = response.json
+    assert body['name'] == 'Haul roads'
+    assert body['description'] == 'Active haul roads'
+    assert body['is_sensitive'] is True
+    assert body['feature_count'] == 2
+    assert body['extent'] == pytest.approx(layer['extent'])
+    stored = client.get(ENDPOINT, headers=headers).json[0]
+    assert (stored['name'], stored['description'], stored['is_sensitive']) == (
+        'Haul roads', 'Active haul roads', True)
+    assert UserLayerFeature.query.count() == 2
+
+
+def test_patch_leaves_out_what_was_not_sent(app, client, jwt, session):
+    """Only the fields sent change."""
+    headers = factory_auth_header(jwt)
+    layer = put(client, headers, is_sensitive='true').json
+
+    body = patch(client, headers, layer['id'], name='Haul roads').json
+
+    assert body['description'] == 'Resource roads'
+    assert body['is_sensitive'] is True
+
+
+def test_patch_clears_a_blank_description(app, client, jwt, session):
+    """Emptied is absent, as on import."""
+    headers = factory_auth_header(jwt)
+    layer = put(client, headers).json
+
+    body = patch(client, headers, layer['id'], description='   ').json
+
+    assert body['description'] is None
+
+
+def test_patch_to_another_layers_name_is_refused(app, client, jwt, session):
+    """The widget's own message, and nothing changes."""
+    headers = factory_auth_header(jwt)
+    put(client, headers, name='Roads')
+    trails = put(client, headers, name='Trails').json
+
+    response = patch(client, headers, trails['id'], name='ROADS', description='Changed')
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json['message'] == 'You already have a layer named "ROADS". Enter a different name.'
+    assert db.session.get(UserLayer, uuid.UUID(trails['id'])).description == 'Resource roads'
+
+
+def test_patch_may_keep_or_recase_its_own_name(app, client, jwt, session):
+    """A layer's own name is not a duplicate of itself."""
+    headers = factory_auth_header(jwt)
+    layer = put(client, headers, name='Roads').json
+
+    assert patch(client, headers, layer['id'], name='Roads').status_code == HTTPStatus.OK
+    assert patch(client, headers, layer['id'], name='ROADS').json['name'] == 'ROADS'
+
+
+@pytest.mark.parametrize('body, message', [
+    ({'name': '  '}, 'Enter a layer name.'),
+    ({'name': 'x' * 256}, 'Enter a layer name of'),
+    ({}, 'Send a name, description or is_sensitive.'),
+])
+def test_patch_fields_are_validated(app, client, jwt, session, body, message):
+    """The same rules as an import."""
+    headers = factory_auth_header(jwt)
+    layer = put(client, headers).json
+
+    response = patch(client, headers, layer['id'], **body)
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert message in json.dumps(response.json)
+    assert db.session.get(UserLayer, uuid.UUID(layer['id'])).name == 'Roads'
+
+
+@pytest.mark.parametrize('body', [[1], 'Roads', 42])
+def test_patch_with_a_body_that_is_not_an_object_is_refused(app, client, jwt, session, body):
+    """A 400, not a crash."""
+    headers = factory_auth_header(jwt)
+    layer = put(client, headers).json
+
+    response = client.patch(f"{ENDPOINT}/{layer['id']}", json=body, headers=headers)
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+
+
+def test_patch_on_another_users_layer_is_not_found(app, client, jwt, session):
+    """Someone else's layer cannot be edited."""
+    theirs = put(client, second_user_auth_header(jwt)).json
+
+    response = patch(client, factory_auth_header(jwt), theirs['id'], name='Mine now')
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert db.session.get(UserLayer, uuid.UUID(theirs['id'])).name == 'Roads'
 
 
 def test_delete_removes_the_layer_and_its_features(app, client, jwt, session):

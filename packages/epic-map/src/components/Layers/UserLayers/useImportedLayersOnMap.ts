@@ -8,8 +8,8 @@ import {
 } from "@tanstack/react-query";
 import { alpha, useTheme } from "@mui/material/styles";
 import {
-  IMPORTED_LAYERS_PATH,
   importedFeaturesKey,
+  importedFeaturesQuery,
   type ImportedLayer,
 } from "@/api/useImportedLayers";
 import {
@@ -50,17 +50,8 @@ export const useImportedLayersOnMap = (
 
   const { data: features, failed } = useQueries({
     queries: layers.map((layer) => ({
-      queryKey: importedFeaturesKey(layer.id),
-      queryFn: async ({ signal }: { signal: AbortSignal }) => {
-        const response = await api.get<FeatureCollection>(
-          `${IMPORTED_LAYERS_PATH}/${layer.id}/features`,
-          { signal },
-        );
-        return response.data;
-      },
+      ...importedFeaturesQuery(api, layer.id),
       enabled: shownIds.has(layer.id),
-      staleTime: Infinity,
-      retry: false,
     })),
     combine: featuresAndFailures,
   });

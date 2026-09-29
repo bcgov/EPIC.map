@@ -11,6 +11,7 @@ import {
   useImportedLayers,
   useLayerUploads,
   type ImportedLayer,
+  type ImportedLayerChanges,
   type ImportedLayerResponse,
 } from "@/api/useImportedLayers";
 import type { ImportDraft } from "@/components/Layers/UserLayers/ImportFileDialog";
@@ -41,6 +42,8 @@ interface ImportedLayersContextValue {
   /** Layers whose features could not be fetched, so are not on the map. */
   failedIds: ReadonlySet<string>;
   retryFeatures: (layerId: string) => void;
+  /** Save a layer's new name, description and sensitivity. */
+  updateLayer: (layerId: string, changes: ImportedLayerChanges) => Promise<void>;
   uploads: readonly UploadRow[];
   /** Names a new layer may not take: stored layers and ones still uploading. */
   takenNames: readonly string[];
@@ -74,7 +77,8 @@ export function ImportedLayersProvider({
   map: MapLibreMap | null;
   children: ReactNode;
 }) {
-  const { layers, isPending, error, retry, addLayer } = useImportedLayers();
+  const { layers, isPending, error, retry, addLayer, updateLayer } =
+    useImportedLayers();
 
   const [shownIds, setShownIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -162,6 +166,7 @@ export function ImportedLayersProvider({
       focusLayer,
       failedIds,
       retryFeatures,
+      updateLayer,
       uploads,
       takenNames,
       startUpload,
@@ -181,6 +186,7 @@ export function ImportedLayersProvider({
       focusLayer,
       failedIds,
       retryFeatures,
+      updateLayer,
       uploads,
       takenNames,
       startUpload,

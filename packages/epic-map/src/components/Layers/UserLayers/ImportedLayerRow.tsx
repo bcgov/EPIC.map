@@ -22,6 +22,7 @@ import {
   opacityOf,
   useImportedLayersContext,
 } from "@/components/Layers/UserLayers/ImportedLayersContext";
+import ImportFileDialog from "@/components/Layers/UserLayers/ImportFileDialog";
 import ImportedLayerMenu from "@/components/Layers/UserLayers/ImportedLayerMenu";
 
 /**
@@ -42,9 +43,12 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
     focusLayer,
     failedIds,
     retryFeatures,
+    takenNames,
+    updateLayer,
   } = useImportedLayersContext();
 
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const expanded = expandedId === layer.id;
   const visible = shownIds.has(layer.id);
@@ -59,7 +63,8 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
 
   const iconButtonSx = {
     flexShrink: 0,
-    padding: "0.125rem",
+    padding: "0.25rem",
+    borderRadius: `${theme.shape.borderRadius}px`,
     color: theme.palette.text.primary,
     ...focusRing(theme),
   } as const;
@@ -171,54 +176,57 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
           )}
         </Box>
 
-        <IconButton
-          size="small"
-          onClick={() => focusLayer(layer)}
-          disabled={!layer.extent}
-          aria-label={`Zoom to ${layer.name}`}
-          sx={iconButtonSx}
-        >
-          <ZoomInIcon sx={{ fontSize: "1.25rem" }} />
-        </IconButton>
+        <Box sx={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+          <IconButton
+            size="small"
+            onClick={() => focusLayer(layer)}
+            disabled={!layer.extent}
+            aria-label={`Zoom to ${layer.name}`}
+            sx={iconButtonSx}
+          >
+            <ZoomInIcon sx={{ fontSize: "1.25rem" }} />
+          </IconButton>
 
-        <IconButton
-          size="small"
-          onClick={(event) => {
-            const button = event.currentTarget;
-            setMenuAnchor((current) => (current ? null : button));
-          }}
-          aria-label={`Actions for ${layer.name}`}
-          aria-haspopup="menu"
-          aria-expanded={Boolean(menuAnchor)}
-          aria-controls={menuAnchor ? menuId : undefined}
-          sx={{
-            ...iconButtonSx,
-            ...(menuAnchor && { backgroundColor: theme.palette.grey[100] }),
-          }}
-        >
-          <MoreVertIcon sx={{ fontSize: "1.25rem" }} />
-        </IconButton>
-        <ImportedLayerMenu
-          id={menuId}
-          layerName={layer.name}
-          anchorEl={menuAnchor}
-          onClose={() => setMenuAnchor(null)}
-        />
+          <IconButton
+            size="small"
+            onClick={(event) => {
+              const button = event.currentTarget;
+              setMenuAnchor((current) => (current ? null : button));
+            }}
+            aria-label={`Actions for ${layer.name}`}
+            aria-haspopup="menu"
+            aria-expanded={Boolean(menuAnchor)}
+            aria-controls={menuAnchor ? menuId : undefined}
+            sx={{
+              ...iconButtonSx,
+              ...(menuAnchor && { backgroundColor: theme.palette.grey[50] }),
+            }}
+          >
+            <MoreVertIcon sx={{ fontSize: "1.25rem" }} />
+          </IconButton>
+          <ImportedLayerMenu
+            id={menuId}
+            layerName={layer.name}
+            anchorEl={menuAnchor}
+            onClose={() => setMenuAnchor(null)}
+            onEdit={() => setEditing(true)}
+          />
 
-        <IconButton
-          size="small"
-          onClick={() => toggleExpanded(layer.id)}
-          aria-expanded={expanded}
-          aria-controls={infoId}
-          aria-label={`Layer details for ${layer.name}`}
-          sx={{
-            ...iconButtonSx,
-            transition: theme.transitions.create("transform"),
-            transform: expanded ? "rotate(180deg)" : "none",
-          }}
-        >
-          <KeyboardArrowDownIcon sx={{ fontSize: "1.25rem" }} />
-        </IconButton>
+          <IconButton
+            size="small"
+            onClick={() => toggleExpanded(layer.id)}
+            aria-expanded={expanded}
+            aria-controls={infoId}
+            aria-label={`Layer details for ${layer.name}`}
+            sx={{
+              ...iconButtonSx,
+              transition: theme.transitions.create("transform"),
+              transform: expanded ? "rotate(180deg)" : "none",
+            }}
+          >
+            <KeyboardArrowDownIcon sx={{ fontSize: "1.25rem" }} />
+          </IconButton>
+        </Box>
       </Box>
 
       {failed && (
@@ -263,6 +271,15 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
             Try again
           </Button>
         </Box>
+      )}
+
+      {editing && (
+        <ImportFileDialog
+          layer={layer}
+          existingNames={takenNames}
+          onClose={() => setEditing(false)}
+          onSave={(changes) => updateLayer(layer.id, changes)}
+        />
       )}
 
       <Collapse in={expanded} id={infoId}>
