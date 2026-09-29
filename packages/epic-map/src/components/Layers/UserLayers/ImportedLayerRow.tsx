@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -14,7 +14,10 @@ import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import WarningIcon from "@mui/icons-material/Warning";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import { useTheme } from "@mui/material/styles";
-import { formatUploadedDate, type ImportedLayer } from "@/api/useImportedLayers";
+import {
+  formatUploadedDate,
+  type ImportedLayer,
+} from "@/api/useImportedLayers";
 import { sliderSx } from "@/components/Layers/LayerInfo";
 import { focusRing, toggleSx } from "@/components/Layers/LayerRow";
 import { useLayers } from "@/components/Layers/LayersContext";
@@ -22,6 +25,7 @@ import {
   opacityOf,
   useImportedLayersContext,
 } from "@/components/Layers/UserLayers/ImportedLayersContext";
+import DeleteLayerConfirm from "@/components/Layers/UserLayers/DeleteLayerConfirm";
 import ImportFileDialog from "@/components/Layers/UserLayers/ImportFileDialog";
 import ImportedLayerMenu from "@/components/Layers/UserLayers/ImportedLayerMenu";
 
@@ -45,10 +49,22 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
     retryFeatures,
     takenNames,
     updateLayer,
+    deleteLayer,
   } = useImportedLayersContext();
 
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  // The confirm takes the row's place, so the ⋮ button it came from is a new
+  // one by the time Cancel brings the row back.
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const refocusMenuButton = useRef(false);
+  useEffect(() => {
+    if (confirmingDelete || !refocusMenuButton.current) return;
+    refocusMenuButton.current = false;
+    menuButtonRef.current?.focus();
+  }, [confirmingDelete]);
 
   const expanded = expandedId === layer.id;
   const visible = shownIds.has(layer.id);
@@ -101,6 +117,20 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
       </Typography>
     </>
   );
+
+  if (confirmingDelete)
+    return (
+      <Box component="li" sx={{ listStyle: "none", padding: "0.25rem 1rem" }}>
+        <DeleteLayerConfirm
+          layerName={layer.name}
+          onCancel={() => {
+            refocusMenuButton.current = true;
+            setConfirmingDelete(false);
+          }}
+          onDelete={() => deleteLayer(layer.id)}
+        />
+      </Box>
+    );
 
   return (
     <Box component="li" sx={{ listStyle: "none" }}>
@@ -188,6 +218,7 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
           </IconButton>
 
           <IconButton
+            ref={menuButtonRef}
             size="small"
             onClick={(event) => {
               const button = event.currentTarget;
@@ -210,6 +241,7 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
             anchorEl={menuAnchor}
             onClose={() => setMenuAnchor(null)}
             onEdit={() => setEditing(true)}
+            onDelete={() => setConfirmingDelete(true)}
           />
 
           <IconButton

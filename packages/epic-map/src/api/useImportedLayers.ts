@@ -160,9 +160,32 @@ export const useImportedLayers = () => {
     [api, queryClient],
   );
 
+  /**
+   * Delete a layer and its features for good, then drop it and its cached
+   * features here. Rejects with map-api's error, leaving the layer listed.
+   */
+  const deleteLayer = useCallback(
+    async (layerId: string) => {
+      await api.delete(`${IMPORTED_LAYERS_PATH}/${layerId}`);
+      queryClient.setQueryData<ImportedLayer[]>(IMPORTED_LAYERS_KEY, (current) =>
+        current?.filter((entry) => entry.id !== layerId),
+      );
+      queryClient.removeQueries({ queryKey: importedFeaturesKey(layerId) });
+    },
+    [api, queryClient],
+  );
+
   const layers = useMemo(() => data ?? NO_LAYERS, [data]);
 
-  return { layers, isPending, error, retry: refetch, addLayer, updateLayer };
+  return {
+    layers,
+    isPending,
+    error,
+    retry: refetch,
+    addLayer,
+    updateLayer,
+    deleteLayer,
+  };
 };
 
 /** What an upload holds between attempts, so Try Again repeats the same one. */

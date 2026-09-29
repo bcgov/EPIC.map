@@ -43,7 +43,12 @@ interface ImportedLayersContextValue {
   failedIds: ReadonlySet<string>;
   retryFeatures: (layerId: string) => void;
   /** Save a layer's new name, description and sensitivity. */
-  updateLayer: (layerId: string, changes: ImportedLayerChanges) => Promise<void>;
+  updateLayer: (
+    layerId: string,
+    changes: ImportedLayerChanges,
+  ) => Promise<void>;
+  /** Delete a layer for good, taking it off the map. */
+  deleteLayer: (layerId: string) => Promise<void>;
   uploads: readonly UploadRow[];
   /** Names a new layer may not take: stored layers and ones still uploading. */
   takenNames: readonly string[];
@@ -77,8 +82,15 @@ export function ImportedLayersProvider({
   map: MapLibreMap | null;
   children: ReactNode;
 }) {
-  const { layers, isPending, error, retry, addLayer, updateLayer } =
-    useImportedLayers();
+  const {
+    layers,
+    isPending,
+    error,
+    retry,
+    addLayer,
+    updateLayer,
+    deleteLayer: deleteStoredLayer,
+  } = useImportedLayers();
 
   const [shownIds, setShownIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -145,6 +157,26 @@ export function ImportedLayersProvider({
     [show, fitTo],
   );
 
+  // Off the map follows from leaving `layers`; what the map kept for it goes too.
+  const deleteLayer = useCallback(
+    async (layerId: string) => {
+      await deleteStoredLayer(layerId);
+      setShownIds((current) => {
+        if (!current.has(layerId)) return current;
+        const next = new Set(current);
+        next.delete(layerId);
+        return next;
+      });
+      setOpacities((current) => {
+        if (!(layerId in current)) return current;
+        const next = { ...current };
+        delete next[layerId];
+        return next;
+      });
+    },
+    [deleteStoredLayer],
+  );
+
   const takenNames = useMemo(
     () => [
       ...layers.map((layer) => layer.name),
@@ -167,6 +199,7 @@ export function ImportedLayersProvider({
       failedIds,
       retryFeatures,
       updateLayer,
+      deleteLayer,
       uploads,
       takenNames,
       startUpload,
@@ -187,6 +220,7 @@ export function ImportedLayersProvider({
       failedIds,
       retryFeatures,
       updateLayer,
+      deleteLayer,
       uploads,
       takenNames,
       startUpload,
