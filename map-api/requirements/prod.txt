@@ -19,7 +19,8 @@ itsdangerous
 werkzeug
 sqlalchemy-utils
 Flask-Caching
-sqlalchemy
+# 2.1 makes postgresql:// mean psycopg 3, which is not installed.
+sqlalchemy>=2.0,<2.1
 secure>=1.0.0
 python-dotenv
 requests

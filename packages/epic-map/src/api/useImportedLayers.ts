@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import axios from "axios";
+import axios, { type AxiosInstance } from "axios";
+import type { FeatureCollection } from "geojson";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ImportDraft } from "@/components/Layers/UserLayers/ImportFileDialog";
 import {
@@ -21,6 +22,29 @@ const IMPORTED_LAYERS_KEY = epicMapQueryKey("users", "me", "imported-layers");
 /** Where a layer's features are cached once fetched; they never change after upload. */
 export const importedFeaturesKey = (layerId: string) =>
   epicMapQueryKey("users", "me", "imported-layers", layerId, "features");
+
+/** One fetch per layer, shared by the map and the edit preview. */
+export const importedFeaturesQuery = (api: AxiosInstance, layerId: string) => ({
+  queryKey: importedFeaturesKey(layerId),
+  queryFn: async ({ signal }: { signal: AbortSignal }) => {
+    const response = await api.get<FeatureCollection>(
+      `${IMPORTED_LAYERS_PATH}/${layerId}/features`,
+      { signal },
+    );
+    return response.data;
+  },
+  staleTime: Infinity,
+  retry: false,
+});
+
+/** A layer's features, or nothing while `layerId` is null. */
+export const useImportedFeatures = (layerId: string | null) => {
+  const { api } = useMapWidget();
+  return useQuery({
+    ...importedFeaturesQuery(api, layerId ?? ""),
+    enabled: layerId !== null,
+  });
+};
 
 export interface ImportedLayerResponse {
   id: string;
@@ -48,6 +72,12 @@ export interface ImportedLayer {
   extent: MapExtent | null;
   uploadedAt: string;
 }
+
+/** What the user may change about a layer once it is stored. */
+export type ImportedLayerChanges = Pick<
+  ImportedLayer,
+  "name" | "description" | "isSensitive"
+>;
 
 export const toImportedLayer = (row: ImportedLayerResponse): ImportedLayer => ({
   id: row.id,
@@ -108,9 +138,31 @@ export const useImportedLayers = () => {
     [queryClient],
   );
 
+  /**
+   * Save a layer's new details and show them in place. Rejects with map-api's
+   * error, so the form that asked can say what went wrong.
+   */
+  const updateLayer = useCallback(
+    async (layerId: string, changes: ImportedLayerChanges) => {
+      const response = await api.patch<ImportedLayerResponse>(
+        `${IMPORTED_LAYERS_PATH}/${layerId}`,
+        {
+          name: changes.name,
+          description: changes.description,
+          is_sensitive: changes.isSensitive,
+        },
+      );
+      const layer = toImportedLayer(response.data);
+      queryClient.setQueryData<ImportedLayer[]>(IMPORTED_LAYERS_KEY, (current) =>
+        current?.map((entry) => (entry.id === layer.id ? layer : entry)),
+      );
+    },
+    [api, queryClient],
+  );
+
   const layers = useMemo(() => data ?? NO_LAYERS, [data]);
 
-  return { layers, isPending, error, retry: refetch, addLayer };
+  return { layers, isPending, error, retry: refetch, addLayer, updateLayer };
 };
 
 /** What an upload holds between attempts, so Try Again repeats the same one. */

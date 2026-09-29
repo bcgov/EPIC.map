@@ -383,6 +383,29 @@ class UserLayerService:
         yield ''.join(chunk)
 
     @classmethod
+    def update_layer(cls, layer_id, user_id: int, data: dict) -> Optional[UserLayer]:
+        """Change a layer's name, description or sensitivity. None if it is not this user's.
+
+        Its own name does not count as taken, so a change of case goes through.
+        """
+        layer = UserLayer.find_one_for_user(layer_id, user_id)
+        if layer is None:
+            return None
+        if 'name' in data and UserLayer.name_taken(user_id, data['name'], exclude_id=layer.id):
+            raise ResourceExistsError(layer_name_taken_message(data['name']))
+
+        for key in ('name', 'description', 'is_sensitive'):
+            if key in data:
+                setattr(layer, key, data[key])
+        try:
+            layer.save()
+        except IntegrityError as exc:
+            db.session.rollback()
+            # Lost a race with another request taking the same name.
+            raise ResourceExistsError(layer_name_taken_message(data['name'])) from exc
+        return layer
+
+    @classmethod
     def delete_layer(cls, layer_id, user_id: int) -> Optional[UserLayer]:
         """Delete a layer and its features, or return None if it is not this user's."""
         layer = UserLayer.find_one_for_user(layer_id, user_id)
