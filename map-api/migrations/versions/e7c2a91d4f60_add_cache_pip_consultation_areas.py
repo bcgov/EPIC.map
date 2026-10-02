@@ -19,7 +19,11 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'e7c2a91d4f60'
-down_revision = 'b8e4f27c1a53'
+# Re-pointed from b8e4f27c1a53 when this branch caught up with develop: the
+# user_layers migration had taken that parent in the meantime, and two heads off
+# one revision make `flask db upgrade` refuse to run. The order is arbitrary -
+# these cache tables share nothing with user_layers - so following it is free.
+down_revision = 'e3f19a6c42d8'
 branch_labels = None
 depends_on = None
 
