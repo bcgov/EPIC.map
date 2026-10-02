@@ -16,6 +16,7 @@
 Test Utility for creating model factory.
 """
 import time
+import uuid
 
 from faker import Faker
 from flask import g
@@ -25,6 +26,7 @@ from map_api.models.user import User as UserModel
 from map_api.models.user_applied_layer import UserAppliedLayer as UserAppliedLayerModel
 from map_api.models.user_favourite_folder import UserFavouriteFolder as UserFavouriteFolderModel
 from map_api.models.user_favourite_layer import UserFavouriteLayer as UserFavouriteLayerModel
+from map_api.models.user_layer import UserLayer as UserLayerModel
 from map_api.utils.constant import DEFAULT_FOLDER_NAME, DEFAULT_LAYER_OPACITY, LAYER_SOURCE_BCDC
 
 
@@ -182,3 +184,19 @@ def factory_favourite_folder(user_id, **overrides):
     )
     folder.save()
     return folder
+
+
+def factory_user_layer(user_id, **overrides):
+    """Return a committed imported layer row for a user, holding no features."""
+    layer = UserLayerModel(
+        id=overrides.pop('id', uuid.uuid4()),
+        user_id=user_id,
+        name=overrides.pop('name', 'Roads'),
+        is_sensitive=overrides.pop('is_sensitive', False),
+        source_format=overrides.pop('source_format', 'GeoJSON'),
+        source_filename=overrides.pop('source_filename', 'roads.geojson'),
+        geometry_type=overrides.pop('geometry_type', 'Line'),
+        **overrides,
+    )
+    layer.save()
+    return layer

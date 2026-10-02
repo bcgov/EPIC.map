@@ -6,14 +6,18 @@ import type { MapBasemapStyles, MapExtent } from "@/types";
  */
 
 /**
- * British Columbia, as `[west, south, east, north]`.
- *
- * The default view, and deliberately an extent rather than a center/zoom pair: a
+ * British Columbia, as `[west, south, east, north]`. The same box as
+ * BC_EXTENT in map-api, which refuses an imported layer with nothing inside it.
+ */
+export const BC_EXTENT: MapExtent = [-139.1, 48.2, -114.0, 60.1];
+
+/**
+ * The default view: the whole province, and deliberately an extent rather than a center/zoom pair: a
  * fixed zoom shows a different amount of the province in a full-page host than
  * in a sidebar. Fitting bounds puts the whole province on screen at whatever
  * size the host gives the widget. `initialExtent` overrides it.
  */
-export const DEFAULT_EXTENT: MapExtent = [-139.1, 48.2, -114.0, 60.1];
+export const DEFAULT_EXTENT: MapExtent = BC_EXTENT;
 
 export const MIN_ZOOM = 3;
 export const MAX_ZOOM = 18;
@@ -313,30 +317,51 @@ export const OUTLINE_POINT_SIZE_PX = 7;
  * point - and is shorter than spelling out the negation, which matters in
  * something that has to survive being a query parameter.
  */
-const outlineSld = (objectName: string): string => {
-  const stroke =
-    "<Stroke>" +
-    `<CssParameter name="stroke">${OUTLINE_COLOR}</CssParameter>` +
-    `<CssParameter name="stroke-width">${OUTLINE_WIDTH_PX}</CssParameter>` +
-    "</Stroke>";
+const shapesSld = (objectName: string, rules: string): string =>
+  '<StyledLayerDescriptor xmlns="http://www.opengis.net/sld"' +
+  ' xmlns:ogc="http://www.opengis.net/ogc" version="1.0.0">' +
+  `<NamedLayer><Name>pub:${objectName}</Name>` +
+  `<UserStyle><FeatureTypeStyle>${rules}</FeatureTypeStyle></UserStyle>` +
+  "</NamedLayer></StyledLayerDescriptor>";
 
-  return (
-    '<StyledLayerDescriptor xmlns="http://www.opengis.net/sld"' +
-    ' xmlns:ogc="http://www.opengis.net/ogc" version="1.0.0">' +
-    `<NamedLayer><Name>pub:${objectName}</Name>` +
-    "<UserStyle><FeatureTypeStyle>" +
-    '<Rule><ogc:Filter>' +
-    '<ogc:PropertyIsLike wildCard="*" singleChar="." escapeChar="!">' +
-    '<ogc:Function name="geometryType"><ogc:Function name="geometry"/>' +
-    "</ogc:Function><ogc:Literal>*Point*</ogc:Literal>" +
-    "</ogc:PropertyIsLike></ogc:Filter>" +
-    "<PointSymbolizer><Graphic><Mark>" +
-    `<WellKnownName>circle</WellKnownName>${stroke}</Mark>` +
-    `<Size>${OUTLINE_POINT_SIZE_PX}</Size></Graphic></PointSymbolizer></Rule>` +
-    "<Rule><ElseFilter/>" +
-    `<PolygonSymbolizer>${stroke}</PolygonSymbolizer>` +
-    `<LineSymbolizer>${stroke}</LineSymbolizer></Rule>` +
-    "</FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>"
+/** A rule for the geometries whose type matches `pattern`, e.g. `*Point*`. */
+const geometryRule = (pattern: string, symbolizers: string): string =>
+  '<Rule><ogc:Filter>' +
+  '<ogc:PropertyIsLike wildCard="*" singleChar="." escapeChar="!">' +
+  '<ogc:Function name="geometryType"><ogc:Function name="geometry"/>' +
+  `</ogc:Function><ogc:Literal>${pattern}</ogc:Literal>` +
+  "</ogc:PropertyIsLike></ogc:Filter>" +
+  `${symbolizers}</Rule>`;
+
+const elseRule = (symbolizers: string): string =>
+  `<Rule><ElseFilter/>${symbolizers}</Rule>`;
+
+const sldStroke = (color: string, width: number): string =>
+  "<Stroke>" +
+  `<CssParameter name="stroke">${color}</CssParameter>` +
+  `<CssParameter name="stroke-width">${width}</CssParameter>` +
+  "</Stroke>";
+
+const sldFill = (color: string, opacity: number): string =>
+  "<Fill>" +
+  `<CssParameter name="fill">${color}</CssParameter>` +
+  `<CssParameter name="fill-opacity">${opacity}</CssParameter>` +
+  "</Fill>";
+
+const sldCircle = (inner: string, size: number): string =>
+  "<PointSymbolizer><Graphic><Mark>" +
+  `<WellKnownName>circle</WellKnownName>${inner}</Mark>` +
+  `<Size>${size}</Size></Graphic></PointSymbolizer>`;
+
+const outlineSld = (objectName: string): string => {
+  const stroke = sldStroke(OUTLINE_COLOR, OUTLINE_WIDTH_PX);
+  return shapesSld(
+    objectName,
+    geometryRule("*Point*", sldCircle(stroke, OUTLINE_POINT_SIZE_PX)) +
+      elseRule(
+        `<PolygonSymbolizer>${stroke}</PolygonSymbolizer>` +
+          `<LineSymbolizer>${stroke}</LineSymbolizer>`,
+      ),
   );
 };
 
@@ -357,3 +382,94 @@ export const outlineTileUrl = (objectName: string): string =>
  * value per pixel of travel; without this each one would be its own PATCH.
  */
 export const OPACITY_SAVE_DEBOUNCE_MS = 400;
+
+/**
+ * Pixels either side of a click that still count as on a feature. A point or a
+ * line is a few pixels wide on screen and nothing wide in the data, so without
+ * this it could only be hit by landing on it exactly.
+ */
+export const METADATA_TOLERANCE_PX = 5;
+
+/**
+ * How small a feature may be drawn before "Zoom in to view" is worth offering.
+ *
+ * A sub-hectare tenure at province scale is a feature the map is technically
+ * showing and the user cannot see. Measured on the longer side, so a long thin
+ * line is not treated as invisible for being narrow.
+ */
+export const MIN_FEATURE_PIXELS = 24;
+
+/** A clicked point's answer is worth keeping this long, should it be clicked again. */
+export const METADATA_STALE_MS = 60_000;
+
+/**
+ * The selected feature: BC gold on a navy casing.
+ *
+ * Gold is the province's own accent and is nothing like the light blue a
+ * layer's outline is drawn in, so the one selected feature cannot be mistaken
+ * for the layer around it. The navy casing is what carries it over the pale
+ * basemap, where gold alone would wash out; over satellite imagery the gold
+ * carries itself.
+ */
+export const HIGHLIGHT_COLOR = "#FCBA19";
+export const HIGHLIGHT_CASING_COLOR = "#013366";
+export const HIGHLIGHT_WIDTH_PX = 3;
+export const HIGHLIGHT_CASING_WIDTH_PX = 6;
+export const HIGHLIGHT_FILL_OPACITY = 0.2;
+export const HIGHLIGHT_POINT_SIZE_PX = 12;
+
+/**
+ * Casing first, so the navy stroke is drawn over it. Polygons get a rule of
+ * their own because a PolygonSymbolizer closes and fills a line it is handed.
+ */
+const highlightSld = (objectName: string): string => {
+  const casing = sldStroke(HIGHLIGHT_CASING_COLOR, HIGHLIGHT_CASING_WIDTH_PX);
+  const stroke = sldStroke(HIGHLIGHT_COLOR, HIGHLIGHT_WIDTH_PX);
+  const fill = sldFill(HIGHLIGHT_COLOR, HIGHLIGHT_FILL_OPACITY);
+  const line = `<LineSymbolizer>${casing}</LineSymbolizer>` +
+    `<LineSymbolizer>${stroke}</LineSymbolizer>`;
+  return shapesSld(
+    objectName,
+    geometryRule(
+      "*Point*",
+      sldCircle(casing, HIGHLIGHT_POINT_SIZE_PX) +
+        sldCircle(fill + stroke, HIGHLIGHT_POINT_SIZE_PX),
+    ) +
+      geometryRule("*Polygon*", `<PolygonSymbolizer>${fill}</PolygonSymbolizer>${line}`) +
+      elseRule(line),
+  );
+};
+
+/**
+ * WMS tiles of one feature, drawn in the highlight style.
+ *
+ * For a feature too heavy for map-api to carry its geometry back: the warehouse
+ * draws it by id instead, and the style lifts the layer's scale limit the same
+ * way the outline's does.
+ */
+export const highlightTileUrl = (
+  objectName: string,
+  featureId: string,
+): string =>
+  `${wmsTileUrl(objectName)}&FEATUREID=${encodeURIComponent(featureId)}` +
+  `&SLD_BODY=${encodeURIComponent(highlightSld(objectName))}`;
+
+/**
+ * Largest file the panel will take in, in megabytes. The check is client-side
+ * so an oversized file is refused before anything reads it.
+ */
+export const MAX_IMPORT_FILE_MB = 50;
+
+/** The most features an imported layer may hold; map-api refuses more. */
+export const MAX_IMPORT_FEATURES = 50_000;
+
+/** The longest an imported layer's name and description may be, as map-api stores them. */
+export const MAX_LAYER_NAME_LENGTH = 100;
+export const MAX_LAYER_DESCRIPTION_LENGTH = 1000;
+
+/**
+ * How long an upload may go without sending a byte before its row says it has
+ * stalled. Progress events arrive many times a second while bytes are moving,
+ * so this is long enough to ride out a blip and short enough to be honest.
+ */
+export const UPLOAD_STALL_AFTER_MS = 5000;

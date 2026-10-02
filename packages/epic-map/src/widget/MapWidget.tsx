@@ -1,13 +1,17 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Box } from "@mui/material";
-import { MapWidgetProvider, type MapWidgetContextValue } from "@/widget/MapWidgetContext";
+import {
+  MapWidgetProvider,
+  type MapWidgetContextValue,
+} from "@/widget/MapWidgetContext";
 import { createApiClient } from "@/utils/apiClient";
 import { createPublicClient } from "@/utils/publicClient";
 import { createTileRequestAuthorizer } from "@/utils/tileAuth";
 import { decodeHostIdentity, type HostIdentity } from "@/utils/identity";
 import MapSearchBar from "@/components/MapSearchBar";
 import MapSurface from "@/components/MapSurface";
+import { newClientId } from "@/utils/clientId";
 import type { MapFeature, MapWidgetError, MapWidgetProps } from "@/types";
 
 /**
@@ -53,15 +57,16 @@ export const MapWidget = ({
   // Reads the same token the API calls use, and returns only the display claims
   // out of it. Defined here because this is the one place that legitimately holds
   // getAccessToken — nothing downstream gets to see the token.
-  const readHostIdentity = useCallback(async (): Promise<HostIdentity | null> => {
-    try {
-      return decodeHostIdentity(await callbacks.current.getAccessToken());
-    } catch {
-      // The host has no token to give. Nothing to display; not an error worth
-      // interrupting the host over.
-      return null;
-    }
-  }, []);
+  const readHostIdentity =
+    useCallback(async (): Promise<HostIdentity | null> => {
+      try {
+        return decodeHostIdentity(await callbacks.current.getAccessToken());
+      } catch {
+        // The host has no token to give. Nothing to display; not an error worth
+        // interrupting the host over.
+        return null;
+      }
+    }, []);
 
   // Built here, and for the same reason as readHostIdentity above: this is one
   // of the two places that may hold getAccessToken. What it decides - which
@@ -94,9 +99,12 @@ export const MapWidget = ({
     [handleError],
   );
 
+  const [clientId] = useState(() => newClientId());
+
   const contextValue = useMemo<MapWidgetContextValue>(
     () => ({
       apiBaseUrl,
+      clientId,
       api,
       publicApi,
       readHostIdentity,
@@ -111,6 +119,7 @@ export const MapWidget = ({
     }),
     [
       apiBaseUrl,
+      clientId,
       api,
       publicApi,
       readHostIdentity,

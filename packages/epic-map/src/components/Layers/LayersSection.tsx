@@ -11,6 +11,8 @@ type LayersSectionProps = {
   expanded?: boolean;
   onToggle?: () => void;
   divider?: boolean;
+  /** Shown under the header whether or not the section is collapsed. */
+  pinned?: ReactNode;
   children: ReactNode;
 };
 
@@ -22,6 +24,7 @@ export default function LayersSection({
   expanded,
   onToggle,
   divider = true,
+  pinned,
   children,
 }: LayersSectionProps) {
   const theme = useTheme();
@@ -111,6 +114,7 @@ export default function LayersSection({
       }}
     >
       {header}
+      {pinned}
       <Collapse in={expanded ?? true} id={bodyId}>
         <Box sx={{ paddingBottom: "0.5rem" }}>{children}</Box>
       </Collapse>

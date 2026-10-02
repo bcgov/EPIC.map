@@ -30,10 +30,13 @@
     "@mui/icons-material": "^5.15.21",
     "@mui/material": "^5.15.20",
     "@tanstack/react-query": "^5.45.1",
+    "@tmcw/togeojson": "^7.1.2",
     "axios": "^1.7.2",
+    "but-unzip": "^0.1.10",
     "maplibre-gl": "^6.6.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "shpjs": "^6.2.0"
   },
   "devDependencies": {
     "@module-federation/vite": "^1.22.1",

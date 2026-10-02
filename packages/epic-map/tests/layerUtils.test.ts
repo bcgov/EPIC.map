@@ -3,6 +3,11 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
   hideOutlineLayer,
+  importedLayerIdOf,
+  importedStyleLayerIds,
+  setImportedLayerOpacity,
+  setImportedLayerVisibility,
+  showImportedLayer,
   setOutlineLayerMaxZoom,
   setWmsLayerMinZoom,
   showOutlineLayer,
@@ -333,5 +338,78 @@ describe("hideOutlineLayer", () => {
 
     expect(visibility).toEqual([{ id: added[0].id, value: "none" }]);
     expect(added).toHaveLength(1);
+  });
+});
+
+describe("imported layers on the map", () => {
+  const LAYER_ID = "0b8f6a57-3c0e-4c55-9d38-8e5a4c1c2f10";
+  const colors = { line: "#013366", fill: "rgba(1, 51, 102, 0.35)" };
+  const features = { type: "FeatureCollection" as const, features: [] };
+
+  /** A map whose style is ready, recording sources, layers and every change. */
+  const readyMap = () => {
+    const sources = new Map<string, unknown>();
+    const layers: { id: string; paint: Record<string, unknown> }[] = [];
+    const layout: { id: string; value: string }[] = [];
+    const paint: { id: string; property: string; value: unknown }[] = [];
+    const map = {
+      isStyleLoaded: () => true,
+      getSource: (id: string) => sources.get(id),
+      addSource: (id: string, spec: unknown) => sources.set(id, spec),
+      getLayer: (id: string) => layers.find((layer) => layer.id === id),
+      addLayer: (spec: { id: string; paint: Record<string, unknown> }) =>
+        layers.push(spec),
+      setLayoutProperty: (id: string, _key: string, value: string) =>
+        layout.push({ id, value }),
+      setPaintProperty: (id: string, property: string, value: unknown) =>
+        paint.push({ id, property, value }),
+    };
+    return { map: map as unknown as MapLibreMap, sources, layers, layout, paint };
+  };
+
+  it("names each map layer so it can be traced back to its imported layer", () => {
+    for (const id of importedStyleLayerIds(LAYER_ID))
+      expect(importedLayerIdOf(id)).toBe(LAYER_ID);
+  });
+
+  it("does not mistake a catalogue layer for an imported one", () => {
+    expect(importedLayerIdOf(`epic-wms-cat-${LAYER_ID}`)).toBeNull();
+  });
+
+  it("draws fill, line and point once, at the opacity already chosen", () => {
+    const { map, sources, layers } = readyMap();
+
+    showImportedLayer(map, LAYER_ID, features, colors, 65);
+    showImportedLayer(map, LAYER_ID, features, colors, 65);
+
+    expect(sources.size).toBe(1);
+    expect(layers.map((layer) => layer.id)).toEqual(importedStyleLayerIds(LAYER_ID));
+    expect(layers[0].paint["fill-opacity"]).toBe(0.65);
+    expect(layers[2].paint["circle-stroke-opacity"]).toBe(0.65);
+  });
+
+  it("hides every part of a layer switched off", () => {
+    const { map, layout } = readyMap();
+    showImportedLayer(map, LAYER_ID, features, colors, 100);
+
+    setImportedLayerVisibility(map, LAYER_ID, false);
+
+    expect(layout).toHaveLength(3);
+    expect(layout.every(({ value }) => value === "none")).toBe(true);
+  });
+
+  it("repaints every opacity property, as a fraction", () => {
+    const { map, paint } = readyMap();
+    showImportedLayer(map, LAYER_ID, features, colors, 100);
+
+    setImportedLayerOpacity(map, LAYER_ID, 40);
+
+    expect(paint.map(({ property }) => property)).toEqual([
+      "fill-opacity",
+      "line-opacity",
+      "circle-opacity",
+      "circle-stroke-opacity",
+    ]);
+    expect(paint.every(({ value }) => value === 0.4)).toBe(true);
   });
 });

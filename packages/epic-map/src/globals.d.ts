@@ -13,3 +13,14 @@ declare module "*.css?inline" {
   const css: string;
   export default css;
 }
+
+// shpjs ships no types of its own, and the published @types package describes
+// its v3 API. Only the one entry point the widget uses is declared: a zipped
+// shapefile in, GeoJSON out - an array of collections when the zip holds more
+// than one shapefile. Coordinates arrive in WGS84, reprojected from the `.prj`.
+declare module "shpjs" {
+  import type { FeatureCollection } from "geojson";
+  export function parseZip(
+    buffer: ArrayBuffer | Uint8Array,
+  ): Promise<FeatureCollection | FeatureCollection[]>;
+}
