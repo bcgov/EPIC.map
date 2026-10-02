@@ -114,6 +114,79 @@ Before running the following commands run `. venv/bin/activate` to enter into th
 The Swagger UI and `/swagger.json` are served only outside production-like
 environments — see `DOCS_ENABLED` in `resources/__init__.py`.
 
+## Loading hosted layers
+
+Some layers live in the BC Geographic Warehouse, which this API cannot reach, so EAO exports
+them: the features as a GeoPackage and the symbology as a `.lyrx` beside it, because no GIS
+interchange format carries both. `scripts/ingest_local_layer.py` loads a pair into PostGIS.
+
+There are two ways in, and past the download they are one code path — so what you rehearse
+locally is what runs in the cluster.
+
+> `make ingest-pip PIP_SOURCE=... PIP_LYRX=...`
+>
+> Loads files that are already on your machine: what somebody emailed you.
+> `make ingest-pip-dry-run` stages and checks them, reports what would change, and rolls back.
+
+> `make ingest-pip-s3`
+>
+> Fetches the delivery from object storage and loads that. No paths: which keys this layer is
+> delivered as lives in `local_layer_service/ingest_spec.py`, so moving a delivery is a
+> reviewed change rather than an environment variable. This is what the CronJob runs.
+> `make ingest-pip-s3-dry-run` is the same, rolled back.
+
+Both refuse rather than overwrite. Staging, checking, replacing and storing the style happen in
+one transaction, so a bad extract leaves the previous one being served, untouched.
+
+### What the exit code means
+
+Nobody is watching a scheduled run, so the exit code is how it reports.
+
+| Code | Meaning | What to do |
+|---|---|---|
+| 0 | Loaded, or the delivery was byte-for-byte what is already loaded | nothing |
+| 1 | **Refused** — the extract is bad and the previous layer is still being served | look at the file, then re-export |
+| 2 | **Could not run** — the delivery could not be fetched, GDAL could not read it, or the database would not answer | look at us |
+
+Keeping 1 and 2 apart is most of the point: a refusal is the guard working, a failure is the
+guard never having run. Every attempt, including both of those, writes one row:
+
+    select status, source_name, area_count, loaded_date, notes
+    from cache.local_layer_loads order by loaded_date desc limit 5;
+
+### Configuration
+
+`S3_BUCKET`, `S3_HOST`, `S3_REGION`, `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` in `.env` —
+see `sample.env`. `S3_HOST` is a hostname with no scheme; https is assumed, so a local minio is
+`http://localhost:9000`. `S3_SERVICE` is read by nothing: botocore supplies the SigV4 service
+name itself.
+
+To rehearse the S3 path destructively — deleting or truncating an object to watch the guard
+refuse — use the local mock rather than the shared bucket, which also holds Compliance and
+Submit data:
+
+    docker compose --profile s3 up -d s3mock
+
+It sits behind a compose profile so it never starts with a plain `docker compose up`. See the
+comment on that service in `docker-compose.yml` for the `.env` values and for the two things it
+does not emulate: it ignores credentials, and it needs
+`AWS_REQUEST_CHECKSUM_CALCULATION=when_required` for uploads over ~8MB.
+
+### Why there are two images
+
+GDAL is not a dependency of this repository, so on a laptop `ogr2ogr` runs from a pinned
+container. A pod cannot start a container, so the scheduled ingest runs on an image built
+**FROM that same pinned tag** — `Dockerfile.ingest`, built by `make build-ingest`. `INGEST_GDAL`
+(or `--gdal`) picks between them and defaults to whichever is available; the ingest image sets
+`local` so a broken `PATH` fails loudly instead of trying a `docker run` it cannot perform.
+
+The tag is named once, as `GDAL_IMAGE` in `local_layer_service/ogr.py`, and a unit test reads
+`Dockerfile.ingest`'s `FROM` line back and asserts they agree — otherwise the load you rehearse
+and the load the CronJob performs quietly stop being the same load.
+
+For the CronJob itself, and the secret it needs, see
+[`deployment/openshift/README.md`](../deployment/openshift/README.md).
+
 ## Debugging in the Editor
 
 ### Visual Studio Code

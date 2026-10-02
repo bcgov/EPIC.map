@@ -1,1 +1,19 @@
+# Keep the build context to what the image needs. .env in particular: config.py
+# calls load_dotenv(find_dotenv()), which from /opt/app-root/src/map_api would
+# find a copied-in /opt/app-root/.env - and since MAP-47 that file holds the
+# object store's secret key. CI builds from a clean checkout and never had one;
+# a laptop build did.
 venv
+.env
+.env.*
+!sample.env
+
+htmlcov/
+coverage.xml
+.coverage
+.pytest_cache/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.git
+*.zip

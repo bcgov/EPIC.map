@@ -157,6 +157,59 @@ db-downgrade: ## Update the local database to the previous migration
 db-migrate: ## Create a new migration
 	. venv/bin/activate && flask db migrate -m "$(message)"
 
+# Built from .env the same way every target below needs it. One definition, so
+# a change to how the database is addressed does not have to be made four times.
+DB_URL = postgresql://$(shell grep -E '^DATABASE_USERNAME=' .env | cut -d= -f2-):$(shell grep -E '^DATABASE_PASSWORD=' .env | cut -d= -f2-)@$(shell grep -E '^DATABASE_HOST=' .env | cut -d= -f2-):$(shell grep -E '^DATABASE_PORT=' .env | cut -d= -f2-)/$(shell grep -E '^DATABASE_NAME=' .env | cut -d= -f2-)
+
+ingest-local-layer: ## Load a hosted layer's extract and style: make ingest-local-layer LAYER=pip SOURCE=... LYRX=...
+	. venv/bin/activate && python scripts/ingest_local_layer.py \
+		--layer "$(LAYER)" \
+		--source "$(SOURCE)" \
+		$(if $(LYRX),--lyrx "$(LYRX)",) \
+		--database-url "$(DB_URL)"
+
+ingest-local-layer-dry-run: ## Say what an extract would change, without changing it
+	. venv/bin/activate && python scripts/ingest_local_layer.py \
+		--layer "$(LAYER)" \
+		--source "$(SOURCE)" \
+		$(if $(LYRX),--lyrx "$(LYRX)",) \
+		--dry-run \
+		--database-url "$(DB_URL)"
+
+# The same load, fetching the delivery instead of being handed it. No SOURCE or
+# LYRX: which keys this layer is delivered as is in ingest_spec.py, and the S3_*
+# credentials come out of .env the way the API's own configuration does. This is
+# what the CronJob runs, so it is the one to rehearse before enabling it.
+ingest-local-layer-s3: ## Load a hosted layer from its S3 delivery: make ingest-local-layer-s3 LAYER=pip
+	. venv/bin/activate && python scripts/ingest_local_layer.py \
+		--layer "$(LAYER)" \
+		--from-s3 \
+		--database-url "$(DB_URL)"
+
+ingest-local-layer-s3-dry-run: ## Say what the S3 delivery would change, without changing it
+	. venv/bin/activate && python scripts/ingest_local_layer.py \
+		--layer "$(LAYER)" \
+		--from-s3 \
+		--dry-run \
+		--database-url "$(DB_URL)"
+
+# Kept so the existing runbook still works. The PIP layer is one of several now,
+# and these are the general targets above with LAYER filled in.
+ingest-pip: ## Load the PIP consultation areas extract and its style: make ingest-pip PIP_SOURCE=... PIP_LYRX=...
+	$(MAKE) ingest-local-layer LAYER=pip SOURCE="$(PIP_SOURCE)" LYRX="$(PIP_LYRX)"
+
+ingest-pip-dry-run: ## Say what the PIP extract would change, without changing it
+	$(MAKE) ingest-local-layer-dry-run LAYER=pip SOURCE="$(PIP_SOURCE)" LYRX="$(PIP_LYRX)"
+
+ingest-pip-s3: ## Load the PIP consultation areas from its S3 delivery
+	$(MAKE) ingest-local-layer-s3 LAYER=pip
+
+ingest-pip-s3-dry-run: ## Say what the PIP S3 delivery would change, without changing it
+	$(MAKE) ingest-local-layer-s3-dry-run LAYER=pip
+
+build-ingest: ## Build the ingest image: GDAL plus this repo, what the CronJob runs
+	docker build . --file Dockerfile.ingest -t $(DOCKER_NAME)-ingest
+
 #################################################################################
 # Self Documenting Commands                                                     #
 #################################################################################
@@ -165,4 +218,4 @@ db-migrate: ## Create a new migration
 .DEFAULT_GOAL := help
 
 help:
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

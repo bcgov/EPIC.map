@@ -114,9 +114,38 @@ def get_named_config(config_name: str = 'development'):
     return config
 
 
+def get_ingest_config():
+    """Return the configuration the hosted-layer ingest runs under.
+
+    The ingest is a scheduled Job, not the app, so it has no app context to read
+    a Flask config out of - it reads the same configuration objects the app is
+    built from, which is what keeps the names and the defaults in one place.
+
+    Defaults to 'production' where get_named_config defaults to 'development'.
+    The pod's ConfigMap sets FLASK_ENV, so this only applies when it is missing,
+    and an unattended job that quietly picks the dev profile - SQL echo on, a
+    different database - is worse than one that runs strictly.
+    """
+    return get_named_config(os.getenv('FLASK_ENV', 'production'))
+
+
 def db_uri(user, password, host, port, name):
     """Build a Postgres URI, percent-encoding credentials that may contain @ / or :."""
     return f'postgresql://{quote_plus(user or "")}:{quote_plus(password or "")}@{host}:{int(port)}/{name}'
+
+
+def s3_endpoint(host: str) -> str:
+    """Turn the bare host in S3_HOST into the endpoint URL botocore needs.
+
+    BC Gov object storage is S3-compatible rather than S3, so boto3 has to be
+    told where to go instead of resolving an AWS region. The storage team hands
+    out a hostname with no scheme, which is what sample.env carries, so https is
+    assumed - a local minio is reached over http and says so in the value.
+    """
+    host = (host or '').strip().rstrip('/')
+    if not host:
+        return ''
+    return host if '://' in host else f'https://{host}'
 
 
 def get_redis_client(config=None):
@@ -159,6 +188,26 @@ class _Config():  # pylint: disable=too-few-public-methods
     # sample.env supplies REDIS_URL directly; when it is absent the URL is
     # composed from the parts above, the same way SQLALCHEMY_DATABASE_URI is.
     REDIS_URL = os.getenv('REDIS_URL') or f'redis://{REDIS_HOST}:{int(REDIS_PORT)}/{REDIS_DB}'
+
+    # OBJECT STORAGE
+    # Where EAO delivers the hosted-layer extracts. Read by the ingest, which
+    # runs as a scheduled Job rather than inside the app and so reaches these
+    # through get_named_config() instead of an app context - the same way
+    # get_redis_client does below. The object keys are deliberately not here:
+    # they are fixed per layer and live in local_layer_service/ingest_spec.py.
+    S3_BUCKET = os.getenv('S3_BUCKET', '')
+    S3_ACCESS_KEY_ID = os.getenv('S3_ACCESS_KEY_ID', '')
+    S3_SECRET_ACCESS_KEY = os.getenv('S3_SECRET_ACCESS_KEY', '')
+    # A bare host in the environment; the URL botocore wants is derived from it.
+    S3_HOST = os.getenv('S3_HOST', '')
+    S3_ENDPOINT_URL = s3_endpoint(S3_HOST)
+    # SigV4 needs a region string even where the store ignores it, so an unset
+    # S3_REGION is a default rather than an error.
+    S3_REGION = os.getenv('S3_REGION', '') or 'us-east-1'
+    # S3_SERVICE is deliberately absent. It is the SigV4 service name, which is
+    # always 's3' and which botocore supplies itself; it only belongs in
+    # configuration for code that hand-signs requests. sample.env keeps the key
+    # so an existing .env does not look like it is missing something.
 
     # JWT_OIDC Settings
     JWT_OIDC_WELL_KNOWN_CONFIG = os.getenv('JWT_OIDC_WELL_KNOWN_CONFIG')

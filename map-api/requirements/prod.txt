@@ -29,3 +29,6 @@ tenacity==9.0.0
 redis==8.1.0
 GeoAlchemy2==0.20.0
 shapely==2.1.2
+# Reads the hosted-layer deliveries out of BC Gov object storage. Used by the
+# ingest (scripts/ingest_local_layer.py --from-s3), not by the serving path.
+boto3
