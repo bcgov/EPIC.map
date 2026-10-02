@@ -45,14 +45,10 @@ rollout:
 # layer by hand until this has run unattended here for a while. Requires the
 # map-ingest-s3 secret in c8b80a-dev first.
 #
-# The memory request is the thing to watch: this namespace has 244Mi of quota
-# headroom and the API pod already requests 128Mi of it, so the shared default of
-# 256Mi would sit Pending - and a Pending Job is only "loud" an hour later, when
-# activeDeadlineSeconds expires. Check `oc describe quota -n c8b80a-dev` before
-# raising it, and raise the quota rather than this if the load needs more.
+# No resource override. The ingest sets activeDeadlineSeconds, which makes its
+# pod Terminating-scoped, so it is counted by compute-time-bound-quota rather
+# than the compute-long-running-quota the Deployment competes in - and in
+# c8b80a-dev that quota is entirely unused (0 of 6Gi, 0 of 3 cores). The shared
+# defaults in values.yaml schedule with room to spare.
 ingest:
   enabled: true
-  resources:
-    memory:
-      limit: 512Mi
-      request: 96Mi
