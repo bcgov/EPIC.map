@@ -202,6 +202,30 @@ export const wmsTileUrl = (objectName: string): string =>
   "&BBOX={bbox-epsg-3857}";
 
 /**
+ * Deepest zoom map-api generates a vector tile for.
+ *
+ * Above it MapLibre overzooms the tile it already has rather than asking for a
+ * deeper one, which is invisible at these stroke widths and is the single
+ * biggest lever on how much work a pan costs the server: every zoom past this
+ * would otherwise quadruple the tiles in a viewport.
+ */
+export const LOCAL_TILE_MAX_ZOOM = 12;
+
+/**
+ * Tile template for a layer map-api hosts itself.
+ *
+ * `{z}/{x}/{y}` are MapLibre's own placeholders and are filled in by the
+ * renderer, so they must survive unencoded. Unlike `wmsTileUrl` this addresses
+ * our own API rather than openmaps, which is why it needs the base URL: the
+ * request carries the user's token, added by the map's `transformRequest`.
+ */
+export const localTileUrl = (
+  apiBaseUrl: string,
+  objectName: string,
+): string =>
+  `${apiBaseUrl.replace(/\/$/, "")}/local/layers/${objectName}/tiles/{z}/{x}/{y}`;
+
+/**
  * Characters of a dataset description shown in the panel. The panel is 300px
  * wide and the full record is one link away, so a long description costs more
  * scrolling than it repays.

@@ -35,16 +35,26 @@ const carryWidgetLayers: TransformStyleFunction = (previous, next) => {
     layer.id.startsWith(WIDGET_ID_PREFIX),
   );
 
+  // Spliced in before the incoming basemap's first symbol layer, not appended.
+  // Appending puts the widget's layers above the basemap's place names, which
+  // is invisible for a thin outline and very visible once a layer carries a
+  // translucent fill: the labels underneath it stop being readable.
+  const firstSymbol = next.layers.findIndex((layer) => layer.type === "symbol");
+  const at = firstSymbol === -1 ? next.layers.length : firstSymbol;
+
   return {
     ...next,
     sources: { ...next.sources, ...sources },
-    // Appended, so the widget's layers stay above the basemap's.
-    layers: [...next.layers, ...layers],
+    layers: [
+      ...next.layers.slice(0, at),
+      ...layers,
+      ...next.layers.slice(at),
+    ],
   };
 };
 
 export default function MapSurface() {
-  const { config } = useMapWidget();
+  const { config, authorizeTileRequest } = useMapWidget();
   const { initialExtent, basemapStyles, onError } = config;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -74,6 +84,11 @@ export default function MapSurface() {
       dragRotate: false,
       touchZoomRotate: false,
       canvasContextAttributes: { preserveDrawingBuffer: true },
+      // MapLibre fetches tiles itself, so a layer served by map-api needs its
+      // token attached here rather than by the axios instance. Read once, at
+      // construction, which is why authorizeTileRequest has to be stable - an
+      // unstable one would tear down and rebuild the map on every render.
+      transformRequest: (url) => authorizeTileRequest(url),
     });
 
     if (!instance.painter) {
@@ -108,7 +123,7 @@ export default function MapSurface() {
       setMap(null);
       instance.remove();
     };
-  }, [onError]);
+  }, [onError, authorizeTileRequest]);
 
   useEffect(() => {
     if (!map || !initialExtent) return;

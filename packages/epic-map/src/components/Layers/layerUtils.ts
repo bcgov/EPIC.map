@@ -225,6 +225,144 @@ export const hideOutlineLayer = (map: MapLibreMap, layerId: string) => {
   });
 };
 
+// Layers map-api hosts itself, drawn from vector tiles
+
+/**
+ * A catalogue layer is a picture openmaps has already drawn; one of these is
+ * geometry we draw ourselves, from a style translated out of the ArcGIS layer
+ * file that came with the data. That is the whole difference, and it is why
+ * these carry a paint expression while the WMS pair above carry only opacity.
+ */
+const localSourceId = (layerId: string) =>
+  `${WIDGET_ID_PREFIX}local-src-${layerId}`;
+/**
+ * One drawn layer's id. Suffixed with the spec's own id because a hosted layer
+ * is several MapLibre layers: a translucent polygon is a fill under a line, and
+ * points are a circle beside both.
+ */
+const localDrawnId = (layerId: string, specId: string) =>
+  `${WIDGET_ID_PREFIX}local-${layerId}-${specId}`;
+
+/** One MapLibre layer drawn from a hosted layer's tiles. */
+export interface LocalLayerSpec {
+  id: string;
+  type: "fill" | "line" | "circle";
+  sourceLayer: string;
+  minZoom?: number | null;
+  filter?: unknown;
+  layout?: Record<string, unknown>;
+  paint: Record<string, unknown>;
+}
+
+/**
+ * How map-api says a hosted layer should be drawn.
+ *
+ * `layers` is in draw order: the first is at the bottom. That ordering is the
+ * server's to decide, because it follows from the symbology - a fill belongs
+ * under its own outline - and the client only has to preserve it.
+ */
+export interface LocalLayerStyle {
+  source: {
+    minZoom: number | null;
+    maxZoom: number;
+  };
+  layers: LocalLayerSpec[];
+}
+
+/**
+ * The basemap's lowest symbol layer, or undefined if it has none.
+ *
+ * Hosted layers are inserted before it so place names and labels stay legible
+ * on top of a translucent fill rather than under it.
+ */
+const firstSymbolLayerId = (map: MapLibreMap): string | undefined =>
+  map.getStyle()?.layers?.find((layer) => layer.type === "symbol")?.id;
+
+/**
+ * Draw a layer we host, or reveal it if it is already on the map.
+ *
+ * The source is gated at the style's own floor as well as the layer, so no
+ * tile is ever requested for a zoom the layer would not draw at - the server
+ * builds one per request, unlike openmaps which is serving a cache.
+ */
+export const showLocalVectorLayer = (
+  map: MapLibreMap,
+  layerId: string,
+  tileUrl: string,
+  style: LocalLayerStyle,
+) => {
+  whenStyleReady(map, () => {
+    const source = localSourceId(layerId);
+
+    if (!map.getSource(source)) {
+      map.addSource(source, {
+        type: "vector",
+        tiles: [tileUrl],
+        minzoom: style.source.minZoom ?? MIN_ZOOM,
+        maxzoom: style.source.maxZoom,
+      });
+    }
+
+    // Read once rather than per layer: adding a layer before it does not move
+    // it, so every spec in this style goes to the same place, and they keep
+    // their order among themselves.
+    const before = firstSymbolLayerId(map);
+
+    style.layers.forEach((spec) => {
+      const drawn = localDrawnId(layerId, spec.id);
+
+      if (map.getLayer(drawn)) {
+        map.setLayoutProperty(drawn, "visibility", "visible");
+        return;
+      }
+
+      // A layer's own floor where it sets one, the source's otherwise. Gating
+      // both is deliberate: the source floor stops the tile being fetched and
+      // the layer floor stops it being drawn, and a layer that wants to start
+      // deeper than the source - a label, a point at close range - says so
+      // without the source having to move.
+      const minzoom = spec.minZoom ?? style.source.minZoom;
+
+      map.addLayer(
+        {
+          id: drawn,
+          type: spec.type,
+          source,
+          "source-layer": spec.sourceLayer,
+          ...(minzoom == null ? {} : { minzoom }),
+          ...(spec.filter == null ? {} : { filter: spec.filter }),
+          layout: { visibility: "visible", ...(spec.layout ?? {}) },
+          paint: spec.paint,
+          // MapLibre's own types are narrower than the union of what a fill, a
+          // line and a circle layer accept; the server decided this shape.
+        } as Parameters<MapLibreMap["addLayer"]>[0],
+        before,
+      );
+    });
+  });
+};
+
+/**
+ * Take a hosted layer off the map, keeping its parsed tiles.
+ *
+ * Hidden rather than removed, like the WMS pair above: turning it back on then
+ * costs nothing, and the tiles already in the source survive a basemap switch.
+ *
+ * Found by id prefix rather than from the style that drew them, so this works
+ * without the caller holding the style - and cannot leave one layer of a set
+ * behind if the style it is called with has since changed.
+ */
+export const hideLocalVectorLayer = (map: MapLibreMap, layerId: string) => {
+  whenStyleReady(map, () => {
+    const prefix = `${WIDGET_ID_PREFIX}local-${layerId}-`;
+    (map.getStyle()?.layers ?? []).forEach((layer) => {
+      if (layer.id.startsWith(prefix)) {
+        map.setLayoutProperty(layer.id, "visibility", "none");
+      }
+    });
+  });
+};
+
 // Which layers the current zoom cannot draw
 
 /** A visible layer and the zoom below which openmaps will not draw it. */

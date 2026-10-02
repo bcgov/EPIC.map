@@ -4,6 +4,7 @@ import { Box } from "@mui/material";
 import { MapWidgetProvider, type MapWidgetContextValue } from "@/widget/MapWidgetContext";
 import { createApiClient } from "@/utils/apiClient";
 import { createPublicClient } from "@/utils/publicClient";
+import { createTileRequestAuthorizer } from "@/utils/tileAuth";
 import { decodeHostIdentity, type HostIdentity } from "@/utils/identity";
 import MapSearchBar from "@/components/MapSearchBar";
 import MapSurface from "@/components/MapSurface";
@@ -62,6 +63,22 @@ export const MapWidget = ({
     }
   }, []);
 
+  // Built here, and for the same reason as readHostIdentity above: this is one
+  // of the two places that may hold getAccessToken. What it decides - which
+  // URLs may carry the token - is a security control, so it lives in
+  // utils/tileAuth with tests on it rather than inline here.
+  //
+  // useMemo rather than useState: MapLibre reads transformRequest once, when
+  // the map is constructed, so this has to keep its identity or MapSurface
+  // rebuilds the entire map on every render.
+  const authorizeTileRequest = useMemo(
+    () =>
+      createTileRequestAuthorizer(apiBaseUrl, () =>
+        callbacks.current.getAccessToken(),
+      ),
+    [apiBaseUrl],
+  );
+
   const api = useMemo(
     () =>
       createApiClient({
@@ -83,6 +100,7 @@ export const MapWidget = ({
       api,
       publicApi,
       readHostIdentity,
+      authorizeTileRequest,
       config: {
         projectId,
         initialExtent,
@@ -96,6 +114,7 @@ export const MapWidget = ({
       api,
       publicApi,
       readHostIdentity,
+      authorizeTileRequest,
       projectId,
       initialExtent,
       basemapStyles,
