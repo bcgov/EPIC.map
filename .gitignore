@@ -165,3 +165,8 @@ coverage/
 cypress/screenshots/
 cypress/videos/
 .nyc_output/
+
+# Local Claude Code settings, and archives produced while debugging - a 74MB zip
+# in a public repository's history is not undoable.
+.claude/
+*.zip
