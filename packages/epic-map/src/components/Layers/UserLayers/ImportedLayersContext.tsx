@@ -43,7 +43,12 @@ interface ImportedLayersContextValue {
   failedIds: ReadonlySet<string>;
   retryFeatures: (layerId: string) => void;
   /** Save a layer's new name, description and sensitivity. */
-  updateLayer: (layerId: string, changes: ImportedLayerChanges) => Promise<void>;
+  updateLayer: (
+    layerId: string,
+    changes: ImportedLayerChanges,
+  ) => Promise<void>;
+  /** Delete a layer for good, taking it off the map. */
+  deleteLayer: (layerId: string) => Promise<void>;
   uploads: readonly UploadRow[];
   /** Names a new layer may not take: stored layers and ones still uploading. */
   takenNames: readonly string[];
@@ -77,8 +82,15 @@ export function ImportedLayersProvider({
   map: MapLibreMap | null;
   children: ReactNode;
 }) {
-  const { layers, isPending, error, retry, addLayer, updateLayer } =
-    useImportedLayers();
+  const {
+    layers,
+    isPending,
+    error,
+    retry,
+    addLayer,
+    updateLayer,
+    deleteLayer: deleteStoredLayer,
+  } = useImportedLayers();
 
   const [shownIds, setShownIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -145,6 +157,16 @@ export function ImportedLayersProvider({
     [show, fitTo],
   );
 
+  // Off the map follows from leaving `layers`; what the map kept for it goes too.
+  const deleteLayer = useCallback(
+    async (layerId: string) => {
+      await deleteStoredLayer(layerId);
+      setShownIds((current) => withoutShown(current, layerId));
+      setOpacities((current) => withoutOpacity(current, layerId));
+    },
+    [deleteStoredLayer],
+  );
+
   const takenNames = useMemo(
     () => [
       ...layers.map((layer) => layer.name),
@@ -167,6 +189,7 @@ export function ImportedLayersProvider({
       failedIds,
       retryFeatures,
       updateLayer,
+      deleteLayer,
       uploads,
       takenNames,
       startUpload,
@@ -187,6 +210,7 @@ export function ImportedLayersProvider({
       failedIds,
       retryFeatures,
       updateLayer,
+      deleteLayer,
       uploads,
       takenNames,
       startUpload,
@@ -211,6 +235,28 @@ export const useImportedLayersContext = (): ImportedLayersContextValue => {
     );
   }
   return value;
+};
+
+/** `shownIds` less a layer; the same set when it was not there, so nothing re-renders. */
+export const withoutShown = (
+  shownIds: ReadonlySet<string>,
+  layerId: string,
+): ReadonlySet<string> => {
+  if (!shownIds.has(layerId)) return shownIds;
+  const next = new Set(shownIds);
+  next.delete(layerId);
+  return next;
+};
+
+/** `opacities` less a layer; the same object when it was not there. */
+export const withoutOpacity = (
+  opacities: Readonly<Record<string, number>>,
+  layerId: string,
+): Readonly<Record<string, number>> => {
+  if (!(layerId in opacities)) return opacities;
+  const next = { ...opacities };
+  delete next[layerId];
+  return next;
 };
 
 /** A layer's opacity as the slider shows it. */

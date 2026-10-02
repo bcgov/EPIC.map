@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios, { type AxiosInstance } from "axios";
 import type { FeatureCollection } from "geojson";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import type { ImportDraft } from "@/components/Layers/UserLayers/ImportFileDialog";
 import {
   buildImportForm,
@@ -17,7 +21,7 @@ import { useMapWidget } from "@/widget/MapWidgetContext";
 
 export const IMPORTED_LAYERS_PATH = "/users/me/imported-layers";
 
-const IMPORTED_LAYERS_KEY = epicMapQueryKey("users", "me", "imported-layers");
+export const IMPORTED_LAYERS_KEY = epicMapQueryKey("users", "me", "imported-layers");
 
 /** Where a layer's features are cached once fetched; they never change after upload. */
 export const importedFeaturesKey = (layerId: string) =>
@@ -105,6 +109,22 @@ export const formatUploadedDate = (uploadedAt: string): string => {
     });
 };
 
+/**
+ * Delete a layer and its features for good, then drop it and its cached
+ * features here. Rejects with map-api's error, leaving the layer listed.
+ */
+export const deleteImportedLayer = async (
+  api: Pick<AxiosInstance, "delete">,
+  queryClient: QueryClient,
+  layerId: string,
+) => {
+  await api.delete(`${IMPORTED_LAYERS_PATH}/${layerId}`);
+  queryClient.setQueryData<ImportedLayer[]>(IMPORTED_LAYERS_KEY, (current) =>
+    current?.filter((entry) => entry.id !== layerId),
+  );
+  queryClient.removeQueries({ queryKey: importedFeaturesKey(layerId) });
+};
+
 const NO_LAYERS: readonly ImportedLayer[] = [];
 
 /** The layers the signed-in user has imported, newest first. */
@@ -160,9 +180,22 @@ export const useImportedLayers = () => {
     [api, queryClient],
   );
 
+  const deleteLayer = useCallback(
+    (layerId: string) => deleteImportedLayer(api, queryClient, layerId),
+    [api, queryClient],
+  );
+
   const layers = useMemo(() => data ?? NO_LAYERS, [data]);
 
-  return { layers, isPending, error, retry: refetch, addLayer, updateLayer };
+  return {
+    layers,
+    isPending,
+    error,
+    retry: refetch,
+    addLayer,
+    updateLayer,
+    deleteLayer,
+  };
 };
 
 /** What an upload holds between attempts, so Try Again repeats the same one. */

@@ -18,12 +18,14 @@ export default function ImportedLayerMenu({
   anchorEl,
   onClose,
   onEdit,
+  onDelete,
 }: {
   id: string;
   layerName: string;
   anchorEl: HTMLElement | null;
   onClose: () => void;
   onEdit: () => void;
+  onDelete: () => void;
 }) {
   const theme = useTheme();
 
@@ -84,7 +86,10 @@ export default function ImportedLayerMenu({
       </MenuItem>
       <Divider sx={{ "&&": { marginY: 0 } }} />
       <MenuItem
-        onClick={onClose}
+        onClick={() => {
+          onClose();
+          onDelete();
+        }}
         sx={{ ...itemSx, color: theme.palette.error.main }}
       >
         <ListItemIcon sx={iconSx}>
