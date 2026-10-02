@@ -40,3 +40,19 @@ resources:
 rollout:
   maxSurge: 0
   maxUnavailable: 1
+
+# dev is the only environment running the ingest for now; test and prod load the
+# layer by hand until this has run unattended here for a while. Requires the
+# map-ingest-s3 secret in c8b80a-dev first.
+#
+# The memory request is the thing to watch: this namespace has 244Mi of quota
+# headroom and the API pod already requests 128Mi of it, so the shared default of
+# 256Mi would sit Pending - and a Pending Job is only "loud" an hour later, when
+# activeDeadlineSeconds expires. Check `oc describe quota -n c8b80a-dev` before
+# raising it, and raise the quota rather than this if the load needs more.
+ingest:
+  enabled: true
+  resources:
+    memory:
+      limit: 512Mi
+      request: 96Mi

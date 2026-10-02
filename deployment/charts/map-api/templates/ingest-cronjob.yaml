@@ -1,0 +1,144 @@
+{{- if .Values.ingest.enabled }}
+{{/*
+The hosted-layer ingest, on a schedule.
+
+Everything about how this fails is deliberate, because nobody is watching at
+09:00 and only two things can carry a failure: the Job's own status, and the row
+the script writes into cache.local_layer_loads.
+
+  backoffLimit 0 + restartPolicy Never   one attempt, one verdict. A Job that
+                                         retried and eventually succeeded reads
+                                         as green, and an extract that is wrong
+                                         at 09:00 is still wrong at 09:05.
+  no ttlSecondsAfterFinished             it would delete the Job, its pod and its
+                                         log on a timer, which is the opposite of
+                                         a failure being visible.
+  failedJobsHistoryLimit 10              ten days of failures stay on screen.
+  concurrencyPolicy Forbid               a run that overruns does not meet the
+                                         next one. The script's advisory lock
+                                         says the same thing again, for the runs
+                                         a person starts by hand.
+
+It runs a different image from the API - Dockerfile.ingest, which carries GDAL -
+and is off unless an environment opts in, because it needs an object-store secret
+created by hand in the namespace first. See deployment/openshift/README.md.
+*/}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: "{{ .Chart.Name }}-ingest"
+  labels:
+    app: "{{ .Chart.Name }}-ingest"
+spec:
+  schedule: "{{ .Values.ingest.schedule }}"
+  {{- if .Values.ingest.timeZone }}
+  # Needs Kubernetes 1.27+ (OCP 4.14+). Unset it on an older cluster: the control
+  # plane runs UTC, so the schedule means the same thing either way.
+  timeZone: {{ .Values.ingest.timeZone }}
+  {{- end }}
+  concurrencyPolicy: Forbid
+  # A controller outage inside the hour still runs today's load. Past that the run
+  # is skipped, because tomorrow's covers it and a queue of catch-up jobs is
+  # exactly what Forbid exists to prevent.
+  startingDeadlineSeconds: {{ .Values.ingest.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ .Values.ingest.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.ingest.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      # Download, hash, ogr2ogr and transform is single-digit minutes. An hour
+      # bounds a hung socket; with backoffLimit 0 a timed-out Job ends Failed,
+      # which is what we want it to do.
+      activeDeadlineSeconds: {{ .Values.ingest.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            app: "{{ .Chart.Name }}-ingest"
+        spec:
+          restartPolicy: Never
+          volumes:
+            # The delivery is tens of megabytes and lands here rather than on the
+            # pod's writable layer. TMPDIR below is what sends it here.
+            - name: work
+              emptyDir:
+                sizeLimit: {{ .Values.ingest.workDir.sizeLimit }}
+          containers:
+            - name: ingest
+              # Falls back to the API's own tag, so an environment that promotes
+              # map-api:test gets map-api-ingest:test without naming it twice.
+              # Pinning ingest.image.tag overrides that, which is only for
+              # running an ingest image older or newer than the API.
+              image: "{{ .Values.ingest.image.repository }}:{{ .Values.ingest.image.tag | default .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.ingest.image.pullPolicy | default .Values.image.pullPolicy }}
+              # The image's ENTRYPOINT is the script, so these are only its flags.
+              args:
+                - "--layer"
+                - "{{ .Values.ingest.layer }}"
+                - "--from-s3"
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+              env:
+                - name: TMPDIR
+                  value: /work
+                # ogr2ogr is in this image. Explicit so that a PATH which has
+                # lost it fails loudly rather than trying a `docker run`.
+                - name: INGEST_GDAL
+                  value: local
+                - name: DATABASE_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.database.secret }}
+                      key: user
+                - name: DATABASE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.database.secret }}
+                      key: password
+                - name: DATABASE_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.database.secret }}
+                      key: dbname
+                # Straight at the primary, not pgBouncer, which the API uses.
+                # The load holds a session-level advisory lock and one long
+                # transaction, and a transaction-pooled connection is not a
+                # session: the lock would be taken and released on whichever
+                # backend happened to serve each statement. The operator writes
+                # the primary's address into this same secret.
+                - name: DATABASE_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.database.secret }}
+                      key: host
+                - name: DATABASE_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.database.secret }}
+                      key: port
+              envFrom:
+                # FLASK_ENV, so the ingest reads the same profile the API runs
+                # under. It will log the ProdConfig SECRET_KEY warning, which is
+                # expected and harmless: map-api-secrets is deliberately not
+                # mounted here, because the ingest signs nothing.
+                - configMapRef:
+                    name: {{ .Chart.Name }}
+                # Created by hand in the namespace: the bucket, the endpoint and
+                # the keys. See deployment/openshift/README.md.
+                - secretRef:
+                    name: {{ .Values.ingest.s3.secret }}
+              resources:
+                limits:
+                  cpu: {{ .Values.ingest.resources.cpu.limit }}
+                  memory: {{ .Values.ingest.resources.memory.limit }}
+                  ephemeral-storage: {{ .Values.ingest.resources.ephemeralStorage.limit }}
+                requests:
+                  cpu: {{ .Values.ingest.resources.cpu.request }}
+                  memory: {{ .Values.ingest.resources.memory.request }}
+                  ephemeral-storage: {{ .Values.ingest.resources.ephemeralStorage.request }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                capabilities:
+                  drop: ["ALL"]
+{{- end }}

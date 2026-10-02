@@ -71,3 +71,51 @@ auth:
 rollout:
   maxSurge: 25%
   maxUnavailable: 25%
+
+# The hosted-layer ingest, as a CronJob. Off by default: it runs a second image
+# (built from map-api/Dockerfile.ingest, which carries GDAL) and needs an
+# object-store secret created by hand in the namespace, so an environment opts in
+# once both exist. See deployment/openshift/README.md and the template's comment
+# for why its failure settings are what they are.
+ingest:
+  enabled: false
+  # Daily at 09:00 UTC, roughly 02:00 Pacific: after any overnight re-export and
+  # early enough that a failure is found during the working day.
+  schedule: "0 9 * * *"
+  # Kubernetes 1.27+ / OCP 4.14+ only. Blank it for an older cluster.
+  timeZone: Etc/UTC
+  # A key of INGEST_SPECS in local_layer_service/ingest_spec.py.
+  layer: pip
+  image:
+    repository: image-registry.openshift-image-registry.svc:5000/c8b80a-tools/map-api-ingest
+    # Both unset: the template falls back to image.pullPolicy and image.tag, so
+    # the ingest follows whatever tag this environment's API runs. Set tag here
+    # only to pin the ingest to a different build from the API.
+    pullPolicy: ""
+    tag: ""
+  s3:
+    # Created by hand, never by this chart: bucket, endpoint and keys.
+    secret: map-ingest-s3
+  workDir:
+    sizeLimit: 2Gi
+  activeDeadlineSeconds: 3600
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  # Deep on purpose: a failed Job and its log are the alert.
+  failedJobsHistoryLimit: 10
+  resources:
+    cpu:
+      limit: 1000m
+      request: 100m
+    memory:
+      # Burstable. The heavy memory in this pipeline is the database's, not this
+      # pod's - ogr2ogr streams, the sha256 streams, and the transform runs
+      # server-side - so the request stays small enough to schedule.
+      limit: 1Gi
+      request: 256Mi
+    ephemeralStorage:
+      # Matches workDir.sizeLimit: without a request the scheduler does not know
+      # the pod needs room for the download, and an evicted pod is a failure that
+      # reads like a mystery.
+      limit: 2Gi
+      request: 512Mi

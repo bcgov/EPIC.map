@@ -1,0 +1,20 @@
+# The BuildConfig and ImageStream for the hosted-layer ingest image.
+#
+# Same repository and context directory as map-api.bc - the ingest is the same
+# code - and a different Dockerfile, which is what carries GDAL. Kept as its own
+# chart rather than a second template in map-api.bc so that either image can be
+# rebuilt or retired without touching the other.
+#
+# Install with:  helm upgrade --install map-api-ingest-bc . -n c8b80a-tools
+app: map-api-ingest
+githubRepo: https://github.com/bcgov/EPIC.map.git
+githubRef: develop
+githubContextDir: map-api  # subdirectory of the repo, no leading slash
+dockerfilePath: Dockerfile.ingest
+resources:
+  limits:
+    cpu: 1500m
+    memory: 4Gi
+  requests:
+    cpu: 500m
+    memory: 2Gi
