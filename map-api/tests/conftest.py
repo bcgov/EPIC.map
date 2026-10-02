@@ -66,10 +66,14 @@ def db(app):  # pylint: disable=redefined-outer-name, invalid-name
     Drops schema, and recreate.
     """
     with app.app_context():
-        # The app schema is dropped too: migrations create app.audit_events
-        # unconditionally, so leaving it behind makes a second run fail on
-        # "relation already exists" rather than starting from a clean database.
+        # The app and cache schemas are dropped too: migrations create
+        # app.audit_events and the cache tables unconditionally, so leaving
+        # either behind makes a second run fail on "relation already exists"
+        # rather than starting from a clean database. Dropping cache is also
+        # what that schema is for - it holds copies of data owned elsewhere and
+        # is safe to reload.
         drop_schema_sql = """DROP SCHEMA IF EXISTS app CASCADE;
+                             DROP SCHEMA IF EXISTS cache CASCADE;
                              DROP SCHEMA public CASCADE;
                              CREATE SCHEMA public;
                              GRANT ALL ON SCHEMA public TO CURRENT_USER;

@@ -1,0 +1,67 @@
+{
+  "_comment": [
+    "Maria's default-style table for the EAO component layers, as given in MAP-57.",
+    "",
+    "This is the authority, not the .lyrx. Kate applies these colours in ArcGIS and",
+    "the ingest translates the .lyrx she delivers, but it refuses the load if what",
+    "it translated disagrees with this file. The palette is Okabe-Ito, chosen to be",
+    "colourblind-safe: the ticket says not to substitute other hues, which makes",
+    "this an accessibility requirement rather than a preference, and one worth",
+    "enforcing rather than trusting to a file that is re-exported on a schedule.",
+    "",
+    "Default styles only. Selected-state styling is applied entirely on the app",
+    "side and cannot be asserted against a .lyrx, so it does not live here.",
+    "",
+    "Fill and stroke are the same hue for the four EAO categories and the fill is",
+    "simply translucent. Only 'uploaded' uses a darker outline than its fill."
+  ],
+  "geometry": {
+    "_comment": [
+      "Shared across every category: a line feature and a point feature take the",
+      "category's own colour, and differ only in how they are drawn. Widths are",
+      "screen pixels and the ticket calls them a starting point, which is why they",
+      "are compared with a tolerance while the colours are compared exactly."
+    ],
+    "lineWidthPixels": 2.2,
+    "pointRadiusPixels": 5,
+    "pointStrokeWidthPixels": 1.5,
+    "pointStrokeColour": "#FFFFFF"
+  },
+  "categories": {
+    "footprint": {
+      "label": "Footprint",
+      "fill": "#0072B2",
+      "fillOpacity": 0.3,
+      "stroke": "#0072B2",
+      "strokeWidthPixels": 1.6
+    },
+    "project": {
+      "label": "Project components",
+      "fill": "#E69F00",
+      "fillOpacity": 0.35,
+      "stroke": "#E69F00",
+      "strokeWidthPixels": 1.4
+    },
+    "value": {
+      "label": "Value components",
+      "fill": "#009E73",
+      "fillOpacity": 0.35,
+      "stroke": "#009E73",
+      "strokeWidthPixels": 1.4
+    },
+    "amendment": {
+      "label": "Amendments",
+      "fill": "#CC79A7",
+      "fillOpacity": 0.35,
+      "stroke": "#CC79A7",
+      "strokeWidthPixels": 1.4
+    },
+    "uploaded": {
+      "label": "Uploaded shapefiles",
+      "fill": "#6E6E6E",
+      "fillOpacity": 0.3,
+      "stroke": "#4A4A4A",
+      "strokeWidthPixels": 2
+    }
+  }
+}

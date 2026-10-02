@@ -24,7 +24,6 @@ bytes as the question allows.
 """
 
 import json
-import math
 import re
 import threading
 import time
@@ -42,8 +41,8 @@ from map_api.utils.constant import (
     BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_CONNECTION_POOL_SIZE, BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES,
     BCGW_SEARCH_BUDGET_SECONDS, BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_WFS_TIMEOUT_SECONDS,
     LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS,
-    NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES, WMS_MAX_LAYER_MIN_ZOOM,
-    WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO)
+    NEAREST_GEOMETRY_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES)
+from map_api.utils.scale import zoom_for_scale_denominator
 
 
 # A [west, south, east, north] box, which is what the client fits the map to.
@@ -267,12 +266,11 @@ class BcgwService:
         """Lowest map zoom the warehouse draws this layer at.
 
         The first zoom whose scale is at least as fine as the layer's published
-        limit. See WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO for why that figure is
-        the one to divide, and why neither the latitude nor the 256 pixel scale
-        set belongs in here.
+        limit. The arithmetic moved to utils.scale when the layer ingest needed
+        the same answer out of a .lyrx; kept here as the warehouse's way of
+        asking so that this file still reads as one story.
         """
-        zoom = math.ceil(math.log2(WMS_SCALE_DENOMINATOR_AT_MAP_ZOOM_ZERO / denominator))
-        return max(0, min(zoom, WMS_MAX_LAYER_MIN_ZOOM))
+        return zoom_for_scale_denominator(denominator)
 
     @classmethod
     def _search(cls, object_name: str, lon: float, lat: float) -> Optional[Bounds]:
