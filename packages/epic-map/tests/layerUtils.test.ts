@@ -5,6 +5,7 @@ import {
   hideOutlineLayer,
   importedLayerIdOf,
   importedStyleLayerIds,
+  removeImportedLayer,
   setImportedLayerOpacity,
   setImportedLayerVisibility,
   showImportedLayer,
@@ -363,6 +364,9 @@ describe("imported layers on the map", () => {
         layout.push({ id, value }),
       setPaintProperty: (id: string, property: string, value: unknown) =>
         paint.push({ id, property, value }),
+      removeLayer: (id: string) =>
+        layers.splice(layers.findIndex((layer) => layer.id === id), 1),
+      removeSource: (id: string) => sources.delete(id),
     };
     return { map: map as unknown as MapLibreMap, sources, layers, layout, paint };
   };
@@ -411,5 +415,27 @@ describe("imported layers on the map", () => {
       "circle-stroke-opacity",
     ]);
     expect(paint.every(({ value }) => value === 0.4)).toBe(true);
+  });
+
+  it("takes every part of a deleted layer off the map, source and all", () => {
+    const { map, sources, layers } = readyMap();
+    const OTHER_ID = "6f1d2c3b-4a59-4e8f-9b7a-1c2d3e4f5a6b";
+    showImportedLayer(map, LAYER_ID, features, colors, 100);
+    showImportedLayer(map, OTHER_ID, features, colors, 100);
+
+    removeImportedLayer(map, LAYER_ID);
+
+    expect(layers.map((layer) => layer.id)).toEqual(importedStyleLayerIds(OTHER_ID));
+    expect(sources.size).toBe(1);
+  });
+
+  it("removes nothing for a layer that was never drawn", () => {
+    const { map, sources, layers } = readyMap();
+    showImportedLayer(map, LAYER_ID, features, colors, 100);
+
+    removeImportedLayer(map, "6f1d2c3b-4a59-4e8f-9b7a-1c2d3e4f5a6b");
+
+    expect(layers).toHaveLength(3);
+    expect(sources.size).toBe(1);
   });
 });

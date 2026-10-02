@@ -161,18 +161,8 @@ export function ImportedLayersProvider({
   const deleteLayer = useCallback(
     async (layerId: string) => {
       await deleteStoredLayer(layerId);
-      setShownIds((current) => {
-        if (!current.has(layerId)) return current;
-        const next = new Set(current);
-        next.delete(layerId);
-        return next;
-      });
-      setOpacities((current) => {
-        if (!(layerId in current)) return current;
-        const next = { ...current };
-        delete next[layerId];
-        return next;
-      });
+      setShownIds((current) => withoutShown(current, layerId));
+      setOpacities((current) => withoutOpacity(current, layerId));
     },
     [deleteStoredLayer],
   );
@@ -245,6 +235,28 @@ export const useImportedLayersContext = (): ImportedLayersContextValue => {
     );
   }
   return value;
+};
+
+/** `shownIds` less a layer; the same set when it was not there, so nothing re-renders. */
+export const withoutShown = (
+  shownIds: ReadonlySet<string>,
+  layerId: string,
+): ReadonlySet<string> => {
+  if (!shownIds.has(layerId)) return shownIds;
+  const next = new Set(shownIds);
+  next.delete(layerId);
+  return next;
+};
+
+/** `opacities` less a layer; the same object when it was not there. */
+export const withoutOpacity = (
+  opacities: Readonly<Record<string, number>>,
+  layerId: string,
+): Readonly<Record<string, number>> => {
+  if (!(layerId in opacities)) return opacities;
+  const next = { ...opacities };
+  delete next[layerId];
+  return next;
 };
 
 /** A layer's opacity as the slider shows it. */
