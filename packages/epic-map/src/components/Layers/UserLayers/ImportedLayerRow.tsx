@@ -186,7 +186,7 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
           >
             {layer.name}
           </Typography>
-          {layer.isSensitive ? (
+          {layer.isSensitive && (
             <Typography
               component="span"
               sx={{ ...captionSx, color: theme.palette.error.main }}
@@ -194,15 +194,6 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
               <WarningIcon aria-hidden sx={{ fontSize: "0.875rem" }} />
               Sensitive
             </Typography>
-          ) : (
-            uploaded && (
-              <Typography
-                component="span"
-                sx={{ ...captionSx, color: theme.palette.text.secondary }}
-              >
-                Uploaded {uploaded}
-              </Typography>
-            )
           )}
         </Box>
 
