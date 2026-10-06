@@ -110,7 +110,8 @@ The schedule means the same thing either way, because the control plane runs UTC
 `map-api`'s chart creates a `map-api-ingest` CronJob when `ingest.enabled` is true - dev only for
 now. It runs a **second image**, `map-api-ingest`, built from `map-api/Dockerfile.ingest` because
 the load needs GDAL and the API pod has no use for it. `.github/workflows/api-cd.yml` builds and
-pushes both; `charts/map-api-ingest.bc` holds its BuildConfig and ImageStream.
+pushes both with `docker build`; `charts/map-api-ingest.bc` declares only the ImageStream, with
+no BuildConfig, because OpenShift's build system is not in the path for this image.
 
     oc get cronjob map-api-ingest -n c8b80a-dev
     oc get jobs -l app=map-api-ingest -n c8b80a-dev

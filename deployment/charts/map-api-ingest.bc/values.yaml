@@ -1,20 +1,17 @@
-# The BuildConfig and ImageStream for the hosted-layer ingest image.
+# The ImageStream for the hosted-layer ingest image, and nothing else.
 #
-# Same repository and context directory as map-api.bc - the ingest is the same
-# code - and a different Dockerfile, which is what carries GDAL. Kept as its own
-# chart rather than a second template in map-api.bc so that either image can be
-# rebuilt or retired without touching the other.
+# No BuildConfig on purpose. The image is built and pushed by
+# .github/workflows/api-cd.yml with `docker build --file Dockerfile.ingest`, so
+# OpenShift's build system is not in the path at all. The copy of map-api.bc this
+# chart started as did carry one, which was worse than useless: its ConfigChange
+# trigger fired a build on install, that build looked for Dockerfile.ingest on
+# develop where it does not yet exist, and the failed build pod then sat in
+# PodInitializing forever - tripping KubeContainerWaiting at critical severity,
+# because that alert reads container state rather than pod phase.
+#
+# The stream itself is still worth declaring rather than letting the first push
+# create it, so that `oc tag` in deploy.yml has something predictable to move
+# when the ingest is promoted beyond dev.
 #
 # Install with:  helm upgrade --install map-api-ingest-bc . -n c8b80a-tools
 app: map-api-ingest
-githubRepo: https://github.com/bcgov/EPIC.map.git
-githubRef: develop
-githubContextDir: map-api  # subdirectory of the repo, no leading slash
-dockerfilePath: Dockerfile.ingest
-resources:
-  limits:
-    cpu: 1500m
-    memory: 4Gi
-  requests:
-    cpu: 500m
-    memory: 2Gi
