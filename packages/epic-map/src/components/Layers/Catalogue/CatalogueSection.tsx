@@ -48,7 +48,7 @@ export default function CatalogueSection() {
   return (
     <LayersSection
       id="epic-map-layers-catalogue"
-      title="BC Data Catalogue"
+      title="BC Public Layers"
       expanded={expanded}
       onToggle={() => setExpanded((isExpanded) => !isExpanded)}
     >
@@ -83,7 +83,7 @@ export default function CatalogueSection() {
               color: theme.palette.text.primary,
             }}
           >
-            Search the BC Data Catalogue
+            Search BC public layers from the Data Catalogue
             <br />
             Type {MIN_CATALOGUE_QUERY_LENGTH} or more characters to find layers.
           </Typography>
@@ -106,7 +106,7 @@ export default function CatalogueSection() {
               color: theme.palette.text.secondary,
             }}
           >
-            Searching BC Data Catalogue…
+            Searching BC public layers…
           </Typography>
         </Box>
       )}
@@ -123,7 +123,7 @@ export default function CatalogueSection() {
               color: theme.palette.text.primary,
             }}
           >
-            Couldn't reach the BC Data Catalogue
+            Couldn't reach BC public layers
           </Typography>
           <Button
             variant="text"
