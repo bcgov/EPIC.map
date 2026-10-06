@@ -44,17 +44,36 @@ supplies the bucket, host and keys; the object *keys* are not here - they are fi
 `map-api/src/map_api/services/local_layer_service/ingest_spec.py`, so moving a delivery is a
 reviewed change rather than an environment variable.
 
-    oc project c8b80a-dev
-    oc create secret generic map-ingest-s3 \
-      --from-literal=S3_BUCKET=... \
-      --from-literal=S3_HOST=... \
+From the values already in `map-api/.env`, which is the form to prefer - nothing is retyped
+and nothing is left to a placeholder:
+
+    oc create secret generic map-ingest-s3 -n c8b80a-dev \
+      --from-env-file=<(grep '^S3_' map-api/.env)
+
+Check it before trusting it. `--dry-run=client -o yaml` prints the manifest without creating
+anything, and is worth reading once:
+
+    oc create secret generic map-ingest-s3 -n c8b80a-dev \
+      --from-env-file=<(grep '^S3_' map-api/.env) --dry-run=client -o yaml
+
+For an environment whose credentials are not in a local `.env` - test, say, with its own key -
+the keys go in one at a time. The angle brackets are deliberate: bash reads them as a
+redirection and fails immediately, which is better than what the obvious `...` placeholder does.
+That pastes as the literal string `...`, and a secret holding it produces a client that cannot
+be built at all:
+
+    oc create secret generic map-ingest-s3 -n c8b80a-dev \
+      --from-literal=S3_BUCKET=<BUCKET_NAME> \
+      --from-literal=S3_HOST=<OBJECT_STORE_HOST> \
       --from-literal=S3_REGION=us-east-1 \
-      --from-literal=S3_ACCESS_KEY_ID=... \
-      --from-literal=S3_SECRET_ACCESS_KEY=...
+      --from-literal=S3_ACCESS_KEY_ID=<ACCESS_KEY> \
+      --from-literal=S3_SECRET_ACCESS_KEY=<SECRET_KEY>
 
-`S3_HOST` is a hostname with no scheme; `config.s3_endpoint` assumes https. To rotate:
+`S3_HOST` is a hostname with no scheme; `config.s3_endpoint` assumes https. To rotate, replace
+rather than create:
 
-    oc create secret generic map-ingest-s3 --from-literal=... \
+    oc create secret generic map-ingest-s3 -n c8b80a-dev \
+      --from-env-file=<(grep '^S3_' map-api/.env) \
       --dry-run=client -o yaml | oc replace -f -
 
 No rollout is needed - nothing holds these open, and the next scheduled Job reads the new values.

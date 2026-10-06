@@ -131,22 +131,33 @@ def client(config=None):
     """
     conf = config or get_ingest_config()
 
-    return boto3.client(
-        's3',
-        endpoint_url=conf.S3_ENDPOINT_URL,
-        aws_access_key_id=conf.S3_ACCESS_KEY_ID,
-        aws_secret_access_key=conf.S3_SECRET_ACCESS_KEY,
-        region_name=conf.S3_REGION,
-        config=BotoConfig(
-            # Path style: an S3-compatible store is not certified for
-            # <bucket>.<host>, and a bucket name containing a dot breaks TLS
-            # verification under virtual-host addressing.
-            s3={'addressing_style': 'path'},
-            connect_timeout=CONNECT_TIMEOUT,
-            read_timeout=READ_TIMEOUT,
-            retries={'mode': 'standard', 'max_attempts': MAX_ATTEMPTS},
-        ),
-    )
+    try:
+        return boto3.client(
+            's3',
+            endpoint_url=conf.S3_ENDPOINT_URL,
+            aws_access_key_id=conf.S3_ACCESS_KEY_ID,
+            aws_secret_access_key=conf.S3_SECRET_ACCESS_KEY,
+            region_name=conf.S3_REGION,
+            config=BotoConfig(
+                # Path style: an S3-compatible store is not certified for
+                # <bucket>.<host>, and a bucket name containing a dot breaks TLS
+                # verification under virtual-host addressing.
+                s3={'addressing_style': 'path'},
+                connect_timeout=CONNECT_TIMEOUT,
+                read_timeout=READ_TIMEOUT,
+                retries={'mode': 'standard', 'max_attempts': MAX_ATTEMPTS},
+            ),
+        )
+    except ValueError as error:
+        # botocore validates the endpoint while building the client, before any
+        # request, and raises a bare ValueError. Left alone it leaves this
+        # function by a path nothing above catches, which exits 1 - the code that
+        # means a bad extract arrived - and sends whoever reads the Job looking at
+        # the delivery instead of at S3_HOST. This happened for real: a secret
+        # created from a copy-pasted command held the literal string '...'.
+        raise ObjectStoreError(
+            f'S3_HOST does not give a usable endpoint ({conf.S3_ENDPOINT_URL!r}): {error}'
+        ) from error
 
 
 def _download(s3, bucket: str, key: str, destination: Path):

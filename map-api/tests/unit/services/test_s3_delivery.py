@@ -28,7 +28,7 @@ import pytest
 from map_api.config import s3_endpoint
 from map_api.services.local_layer_service.ingest import CannotRunError
 from map_api.services.local_layer_service.s3 import (
-    DENIED_CODES, NOT_FOUND_CODES, ObjectStoreError, describe_client_error, local_name, missing_settings)
+    DENIED_CODES, NOT_FOUND_CODES, ObjectStoreError, client, describe_client_error, local_name, missing_settings)
 
 
 @dataclass
@@ -153,6 +153,34 @@ class TestDescribeClientError:
         message = describe_client_error('SlowDown', 'a-bucket', 'gis_db/pip.gpkg')
         assert 'SlowDown' in message
         assert 'a-bucket/gis_db/pip.gpkg' in message
+
+
+class TestUnusableEndpoint:
+    """A malformed S3_HOST must read as a broken ingest, not a bad delivery."""
+
+    def test_a_nonsense_endpoint_is_an_object_store_error(self):
+        """Botocore raises a bare ValueError while building the client.
+
+        It does so before any request, so it escapes every try/except around the
+        calls themselves. Uncaught it exits 1 - "the extract was refused" - which
+        points whoever reads the failed Job at the delivery rather than at the
+        variable that is actually wrong.
+        """
+        with pytest.raises(ObjectStoreError) as raised:
+            client(StubConfig(S3_ENDPOINT_URL='https://...'))
+
+        # Names the variable to change, and quotes what it was given.
+        assert 'S3_HOST' in str(raised.value)
+        assert 'https://...' in str(raised.value)
+
+    def test_it_is_still_a_cannot_run(self):
+        """Which is what makes it exit 2 rather than 1."""
+        with pytest.raises(CannotRunError):
+            client(StubConfig(S3_ENDPOINT_URL='https://...'))
+
+    def test_a_usable_endpoint_builds_a_client(self):
+        """The guard must not reject the real thing. No request is made here."""
+        assert client(StubConfig()) is not None
 
 
 def test_an_object_store_failure_is_a_system_failure():
