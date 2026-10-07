@@ -425,7 +425,7 @@ export default function FavouritesSection() {
     if (!stale && folders.length === 0 && editing?.kind !== "draft") {
       return (
         <DashedEmptyState>
-          No favourites yet. Star a layer from the BC Data Catalogue to pin it
+          No favourites yet. Star a layer from the BC Public Layers to pin it
           here.
         </DashedEmptyState>
       );

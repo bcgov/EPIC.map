@@ -22,7 +22,7 @@ export default function CatalogueSearchField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Search"
-        inputProps={{ "aria-label": "Search BC Data Catalogue" }}
+        inputProps={{ "aria-label": "Search BC public layers from the Data Catalogue" }}
         sx={{ marginBottom: 0 }}
         InputProps={{
           endAdornment: (
