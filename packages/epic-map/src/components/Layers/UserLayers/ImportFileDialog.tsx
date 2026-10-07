@@ -530,7 +530,6 @@ export default function ImportFileDialog(
 
       <DialogActions
         sx={{
-          gap: "0.5rem",
           padding: "1rem 1.5rem",
           borderTop: `1px solid ${theme.palette.divider}`,
         }}
@@ -538,15 +537,13 @@ export default function ImportFileDialog(
         <Button
           onClick={onClose}
           disabled={saving}
-          color="inherit"
-          sx={{ color: theme.palette.text.secondary }}
+          variant="text"
+          color="primary"
         >
           Cancel
         </Button>
         <Button
           variant="contained"
-          // Only the file blocks Upload; what is wrong with the form is said
-          // on the form, where it can be fixed. An edit needs no preview.
           disabled={layer ? saving : !parsed}
           onClick={submit}
           startIcon={
