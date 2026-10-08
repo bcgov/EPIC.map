@@ -449,3 +449,39 @@ export const MAX_LAYER_DESCRIPTION_LENGTH = 1000;
  * so this is long enough to ride out a blip and short enough to be honest.
  */
 export const UPLOAD_STALL_AFTER_MS = 5000;
+
+/**
+ * How long the project list is worth holding before it is asked for again.
+ *
+ * Projects move on the scale of a workday - a new one is registered, a work
+ * changes state - and the map is a reference rather than a dashboard, so a
+ * refetch per mount is more traffic than the freshness is worth.
+ */
+export const PROJECTS_STALE_MS = 5 * 60 * 1000;
+
+/**
+ * How long the Type and Region code tables are worth holding. Track caches them
+ * for a day at its own end, so asking more often than this cannot return
+ * anything newer.
+ */
+export const FILTER_OPTIONS_STALE_MS = 60 * 60 * 1000;
+
+/**
+ * How long the over-map "no matches" message takes to fade. Long enough to read
+ * as an appearance rather than a flash, short enough not to lag the filter that
+ * caused it. No slide: it sits beside the Layers button, and movement there
+ * reads as the button doing something.
+ */
+export const MAP_MESSAGE_FADE_MS = 150;
+
+/**
+ * Width of the Layers button, which is also what the over-map message starts
+ * after.
+ *
+ * Shared rather than measured because the two are in different parts of the
+ * tree, and shared rather than estimated because an estimate that ran short
+ * would put the message over the button. Applied to the button as a `minWidth`,
+ * so it is the real width whenever the label fits inside it - which is what
+ * makes the offset exact rather than approximate.
+ */
+export const LAYERS_BUTTON_WIDTH = "6.25rem";

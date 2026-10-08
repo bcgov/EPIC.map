@@ -8,6 +8,7 @@ import {
 import { createApiClient } from "@/utils/apiClient";
 import { createPublicClient } from "@/utils/publicClient";
 import { decodeHostIdentity, type HostIdentity } from "@/utils/identity";
+import { FiltersProvider } from "@/components/Filters/FiltersContext";
 import MapSearchBar from "@/components/MapSearchBar";
 import MapSurface from "@/components/MapSurface";
 import { newClientId } from "@/utils/clientId";
@@ -140,10 +141,15 @@ export const MapWidget = ({
             minHeight: 0,
           }}
         >
-          <MapSearchBar />
-          <Box sx={{ flex: 1, minHeight: 0 }}>
-            <MapSurface />
-          </Box>
+          {/* One provider over both: the filter controls are in the bar, and
+              the message saying their combination matches nothing is drawn
+              over the map. */}
+          <FiltersProvider>
+            <MapSearchBar />
+            <Box sx={{ flex: 1, minHeight: 0 }}>
+              <MapSurface />
+            </Box>
+          </FiltersProvider>
         </Box>
       </MapWidgetProvider>
     </QueryClientProvider>

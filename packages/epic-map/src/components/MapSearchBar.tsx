@@ -1,17 +1,35 @@
-import { Box, InputAdornment, TextField } from "@mui/material";
+import { Box, Divider, InputAdornment, TextField } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import { useTheme } from "@mui/material/styles";
-import MapFilterButton from "@/components/MapFilterButton";
+import ClearFiltersLink from "@/components/Filters/ClearFiltersLink";
+import FilterDropdown from "@/components/Filters/FilterDropdown";
+import FilterToggle from "@/components/Filters/FilterToggle";
+import { useFilters } from "@/components/Filters/FiltersContext";
+import { BORDER_DEFAULT } from "@/components/Filters/filterTokens";
 
 /**
- * Search and filter controls that sit above the map.
- * Placeholders for now - none of them are wired up to data yet.
+ * The filter bar above the map.
  *
- * Moved from map-web. Colours come from the host's theme via useTheme(); nothing
- * here reads configuration or a token.
+ * Left to right: search, the two multi-select dropdowns, a divider, the two
+ * toggles, and - only while something is filtering - "Clear filters" directly
+ * after them rather than pushed to the far right, so it reads as belonging to
+ * the controls it undoes.
+ *
+ * The search field is still a placeholder: project and place search is its own
+ * piece of work, so it does not narrow anything here and "Clear filters" leaves
+ * it alone.
  */
 export default function MapSearchBar() {
   const theme = useTheme();
+  const {
+    types,
+    regions,
+    filters,
+    anyFilterActive,
+    toggleCertificateIssued,
+    toggleInProgressWorks,
+    clearFilters,
+  } = useFilters();
 
   return (
     <Box
@@ -44,8 +62,38 @@ export default function MapSearchBar() {
           ),
         }}
       />
-      <MapFilterButton label="Type" />
-      <MapFilterButton label="Region" />
+
+      <FilterDropdown
+        label="Type"
+        allLabel="All Types"
+        group="typeId"
+        options={types}
+      />
+      <FilterDropdown
+        label="Region"
+        allLabel="All Regions"
+        group="regionId"
+        options={regions}
+      />
+
+      <Divider
+        orientation="vertical"
+        flexItem
+        sx={{ borderColor: BORDER_DEFAULT, marginY: "0.5rem" }}
+      />
+
+      <FilterToggle
+        label="Certificate issued"
+        on={filters.certificateIssued}
+        onToggle={toggleCertificateIssued}
+      />
+      <FilterToggle
+        label="In-progress works"
+        on={filters.inProgressWorks}
+        onToggle={toggleInProgressWorks}
+      />
+
+      {anyFilterActive && <ClearFiltersLink onClick={clearFilters} />}
     </Box>
   );
 }
