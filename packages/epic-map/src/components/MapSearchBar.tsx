@@ -1,6 +1,7 @@
-import { Box, Divider, InputAdornment, TextField } from "@mui/material";
-import SearchIcon from "@mui/icons-material/Search";
+import { Box, Divider } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import type { Map as MapLibreMap } from "maplibre-gl";
+import MapSearch from "@/components/Search/MapSearch";
 import ClearFiltersLink from "@/components/Filters/ClearFiltersLink";
 import FilterDropdown from "@/components/Filters/FilterDropdown";
 import FilterToggle from "@/components/Filters/FilterToggle";
@@ -15,11 +16,11 @@ import { BORDER_DEFAULT } from "@/components/Filters/filterTokens";
  * after them rather than pushed to the far right, so it reads as belonging to
  * the controls it undoes.
  *
- * The search field is still a placeholder: project and place search is its own
- * piece of work, so it does not narrow anything here and "Clear filters" leaves
- * it alone.
+ * The search field goes to one project or one place rather than narrowing the
+ * map, so it is independent of the filters either side of it and "Clear filters"
+ * leaves it alone.
  */
-export default function MapSearchBar() {
+export default function MapSearchBar({ map }: { map: MapLibreMap | null }) {
   const theme = useTheme();
   const {
     types,
@@ -42,26 +43,16 @@ export default function MapSearchBar() {
         padding: "0.625rem 1.5rem",
         backgroundColor: theme.palette.background.default,
         borderBottom: `1px solid ${theme.palette.divider}`,
+        // The results menu hangs out of the bar and over the map, and `position`
+        // here makes the bar a stacking context - so this value caps everything
+        // inside it however high the menu asks to be. It has to clear the
+        // controls drawn over the map surface, which is the Layers button at 2
+        // and the over-map message at 3.
+        position: "relative",
+        zIndex: 4,
       }}
     >
-      <TextField
-        placeholder="Search projects and places..."
-        sx={{
-          width: "25rem",
-          flexShrink: 0,
-          marginBottom: 0,
-          "& .MuiInputBase-root": {
-            fontSize: theme.typography.body2.fontSize,
-          },
-        }}
-        InputProps={{
-          endAdornment: (
-            <InputAdornment position="end">
-              <SearchIcon sx={{ color: theme.palette.text.secondary }} />
-            </InputAdornment>
-          ),
-        }}
-      />
+      <MapSearch map={map} />
 
       <FilterDropdown
         label="Type"

@@ -46,13 +46,31 @@ const carryWidgetLayers: TransformStyleFunction = (previous, next) => {
   };
 };
 
-export default function MapSurface() {
+/**
+ * The map itself, and everything drawn over it.
+ *
+ * `onMapReady` hands the MapLibre instance up to the widget root, because one
+ * control that needs it — the search field — lives in the bar above this
+ * component rather than inside it. Called with the instance once it is built and
+ * with null as it is torn down, so a holder above never keeps a removed map.
+ */
+export default function MapSurface({
+  onMapReady,
+}: {
+  onMapReady?: (map: MapLibreMap | null) => void;
+}) {
   const { config } = useMapWidget();
   const { initialExtent, basemapStyles, onError } = config;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const [map, setMap] = useState<MapLibreMap | null>(null);
+
+  // Held in a ref rather than named as an effect dependency: the map is built
+  // once, and a caller passing an inline callback would otherwise tear it down
+  // and rebuild it on every render.
+  const notifyReady = useRef(onMapReady);
+  notifyReady.current = onMapReady;
 
   const [unsupported, setUnsupported] = useState(false);
 
@@ -106,9 +124,11 @@ export default function MapSurface() {
     instance.addControl(new ScaleControl({ unit: "metric" }), "bottom-left");
 
     setMap(instance);
+    notifyReady.current?.(instance);
 
     return () => {
       setMap(null);
+      notifyReady.current?.(null);
       instance.remove();
     };
   }, [onError]);

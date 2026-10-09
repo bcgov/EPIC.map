@@ -18,8 +18,11 @@ export default defineConfig({
     ],
   },
   test: {
-    // Everything under test here is pure - no DOM, so no jsdom to install.
+    // Node by default, because almost everything under test here is pure. The
+    // one file that renders components opts itself into jsdom with a
+    // `@vitest-environment` docblock, so the rest are not slowed by a DOM they
+    // never touch.
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.{ts,tsx}"],
   },
 });

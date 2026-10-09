@@ -485,3 +485,64 @@ export const MAP_MESSAGE_FADE_MS = 150;
  * makes the offset exact rather than approximate.
  */
 export const LAYERS_BUTTON_WIDTH = "6.25rem";
+
+/**
+ * BC Address Geocoder — the province's public address and place lookup.
+ *
+ * Queried straight from the browser for the same reason as the catalogue: the
+ * endpoint is public, takes no key and no credentials, and sends permissive
+ * CORS headers, so routing it through map-api would add a hop and buy nothing.
+ *
+ * `interpolation=adaptive` is what lets a civic number that is not itself in the
+ * address table still resolve, by interpolating along the block it falls in. It
+ * is why a search for "1012 Douglas St" comes back for four cities rather than
+ * only the one that happens to hold that exact address.
+ */
+export const GEOCODER_SEARCH_URL =
+  "https://geocoder.api.gov.bc.ca/addresses.json";
+
+/** Matching the design: six places fill the dropdown without burying projects. */
+export const PLACE_SEARCH_MAX_RESULTS = 6;
+
+/** The same cap on the project half, so neither group crowds out the other. */
+export const PROJECT_SEARCH_MAX_RESULTS = 6;
+
+/**
+ * Two characters before the geocoder is asked anything. A single letter matches
+ * a large share of the province, so the request costs a round trip to say
+ * nothing the user can choose between.
+ */
+export const MIN_PLACE_QUERY_LENGTH = 2;
+
+/** Long enough to skip the keystrokes in the middle of a typed word. */
+export const PLACE_SEARCH_DEBOUNCE_MS = 400;
+
+/** Place names do not move. A query typed again within the session is free. */
+export const PLACE_SEARCH_STALE_MS = 5 * 60 * 1000;
+
+/**
+ * How far the map zooms when a place is chosen, by how precisely it matched.
+ *
+ * A single zoom for every place cannot work: the same number that frames a
+ * building leaves a municipality off the edges of the viewport, and the number
+ * that frames a municipality puts a civic address somewhere in the middle
+ * distance. `matchPrecision` is the geocoder's own statement of how big the
+ * thing it found is, so it is what the camera is driven from.
+ */
+export const PLACE_ZOOM: Record<string, number> = {
+  CIVIC_NUMBER: 16,
+  BLOCK: 15,
+  STREET: 14,
+  LOCALITY: 11,
+};
+
+/** Where a place of unstated precision lands: a neighbourhood, with context. */
+export const DEFAULT_PLACE_ZOOM = 12;
+
+/**
+ * A chosen project is framed at the locality zoom. Track holds one coordinate
+ * per project rather than a boundary, so there is no extent to fit - this is
+ * close enough to place the project in its region and no closer than the single
+ * point can honestly support.
+ */
+export const PROJECT_ZOOM = 11;
