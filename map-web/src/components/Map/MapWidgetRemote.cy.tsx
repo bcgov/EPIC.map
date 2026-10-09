@@ -15,6 +15,13 @@ import MapWidgetRemote from "@/components/Map/MapWidgetRemote";
  * No API is stubbed. The widget's requests fail, which is fine and is not what
  * is under test - the map surface and its controls render either way.
  */
+
+/**
+ * The search field in the map's own bar, as the first thing the remote renders
+ * that the host can see.
+ */
+const SEARCH_FIELD = 'input[role="combobox"]';
+
 describe("the federated map remote", () => {
   const mountMap = () =>
     cy.mount(
@@ -33,9 +40,11 @@ describe("the federated map remote", () => {
     // fetched cross-origin, the exposed module resolved, and the component
     // rendered - which it could not do if React were loaded twice, because
     // every hook in it would have thrown "invalid hook call" first.
-    cy.get('input[placeholder="Search projects and places..."]', {
-      timeout: 30000,
-    }).should("exist");
+    //
+    // Matched on the role rather than on the placeholder's wording: what this
+    // asserts is that the remote mounted, and a copy edit in the map is not a
+    // failure of the seam between the two.
+    cy.get(SEARCH_FIELD, { timeout: 30000 }).should("exist");
   });
 
   it("styles itself without the host importing a stylesheet", () => {
@@ -59,9 +68,7 @@ describe("the federated map remote", () => {
     // both sides resolved to the same @mui/material module. A second copy does
     // not throw - it renders against MUI's default theme - so the observable
     // difference is emotion actually having styled the input at all.
-    cy.get('input[placeholder="Search projects and places..."]', {
-      timeout: 30000,
-    })
+    cy.get(SEARCH_FIELD, { timeout: 30000 })
       .parents(".MuiInputBase-root")
       .should("exist");
   });

@@ -101,6 +101,16 @@ describe("the field", () => {
     expect(screen.queryByLabelText("Clear search")).toBeNull();
   });
 
+  // map-web's federation test reaches for the remote's own chrome with
+  // `input[role="combobox"]`, having previously matched on the placeholder's
+  // wording and broken on a copy edit. Pinned here so that seam cannot be cut
+  // from this side without a failure that says why.
+  it("carries the role map-web's federation test selects on", () => {
+    render(<MapSearch map={null} />);
+
+    expect(field().getAttribute("role")).toBe("combobox");
+  });
+
   it("offers a clear button once it has a value", async () => {
     render(<MapSearch map={null} />);
     await search("car");
