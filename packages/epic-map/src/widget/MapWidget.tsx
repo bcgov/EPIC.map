@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { Map as MapLibreMap } from "maplibre-gl";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Box } from "@mui/material";
 import {
@@ -8,6 +9,7 @@ import {
 import { createApiClient } from "@/utils/apiClient";
 import { createPublicClient } from "@/utils/publicClient";
 import { decodeHostIdentity, type HostIdentity } from "@/utils/identity";
+import { FiltersProvider } from "@/components/Filters/FiltersContext";
 import MapSearchBar from "@/components/MapSearchBar";
 import MapSurface from "@/components/MapSurface";
 import { newClientId } from "@/utils/clientId";
@@ -84,6 +86,11 @@ export const MapWidget = ({
 
   const [clientId] = useState(() => newClientId());
 
+  // The map instance, held here rather than in MapSurface because the search
+  // field in the bar above it has to fly the camera and drop a marker, and the
+  // two are siblings.
+  const [map, setMap] = useState<MapLibreMap | null>(null);
+
   const contextValue = useMemo<MapWidgetContextValue>(
     () => ({
       apiBaseUrl,
@@ -140,10 +147,15 @@ export const MapWidget = ({
             minHeight: 0,
           }}
         >
-          <MapSearchBar />
-          <Box sx={{ flex: 1, minHeight: 0 }}>
-            <MapSurface />
-          </Box>
+          {/* One provider over both: the filter controls are in the bar, and
+              the message saying their combination matches nothing is drawn
+              over the map. */}
+          <FiltersProvider>
+            <MapSearchBar map={map} />
+            <Box sx={{ flex: 1, minHeight: 0 }}>
+              <MapSurface onMapReady={setMap} />
+            </Box>
+          </FiltersProvider>
         </Box>
       </MapWidgetProvider>
     </QueryClientProvider>
