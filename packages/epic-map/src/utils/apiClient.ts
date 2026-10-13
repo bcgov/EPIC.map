@@ -13,6 +13,20 @@ interface RetryableConfig extends InternalAxiosRequestConfig {
   epicMapRetried?: boolean;
 }
 
+declare module "axios" {
+  interface AxiosRequestConfig {
+    /**
+     * Statuses this caller handles itself, so the host is not told about them.
+     *
+     * The request still fails and still throws - this only decides whether the
+     * failure is worth interrupting the host over. It is for a response the
+     * widget reads as an answer rather than a fault, such as an endpoint that
+     * is not built yet; reporting those would train a host to ignore `onError`.
+     */
+    epicMapSilentStatuses?: readonly number[];
+  }
+}
+
 export interface ApiClientOptions {
   apiBaseUrl: string;
   getAccessToken: () => Promise<string>;
@@ -68,7 +82,12 @@ export const createApiClient = ({
       // Report and rethrow. We deliberately do NOT redirect to a login page:
       // this widget renders inside a host tab, and navigating away would destroy
       // the host's page state. Re-authentication is the host's call.
-      onError?.(toMapWidgetError(error));
+      //
+      // Unless the caller asked to handle this status itself, in which case it
+      // still throws but the host is not told.
+      if (!(status !== undefined && config?.epicMapSilentStatuses?.includes(status))) {
+        onError?.(toMapWidgetError(error));
+      }
       throw error;
     },
   );
