@@ -6,7 +6,8 @@ import type {
   MapMouseEvent,
   MapStyleImageMissingEvent,
 } from "maplibre-gl";
-import { useProjects } from "@/api/useProjects";
+import { useProjectFeatures } from "@/api/useProjects";
+import { useFilters } from "@/components/Filters/FiltersContext";
 import ProjectCard from "@/components/Projects/ProjectCard";
 import {
   addMissingProjectImage,
@@ -43,23 +44,27 @@ export default function ProjectsControl({
   selectedId,
   onSelect,
 }: ProjectsControlProps) {
-  const { data } = useProjects();
+  const { data } = useProjectFeatures();
+  const { visibleProjects } = useFilters();
 
   const drawn = useMemo<FeatureCollection<Point, DrawnProjectPoint> | null>(
-    () =>
-      data
-        ? {
-            ...data,
-            features: data.features.map((feature) => ({
-              ...feature,
-              properties: {
-                ...feature.properties,
-                glyph: glyphForType(feature.properties.typeName),
-              },
-            })),
-          }
-        : null,
-    [data],
+    () => {
+      if (!data) return null;
+      const visible = new Set(visibleProjects.map((project) => project.id));
+      return {
+        ...data,
+        features: data.features
+          .filter((feature) => visible.has(feature.properties.id))
+          .map((feature) => ({
+            ...feature,
+            properties: {
+              ...feature.properties,
+              glyph: glyphForType(feature.properties.typeName),
+            },
+          })),
+      };
+    },
+    [data, visibleProjects],
   );
 
   const selectedRef = useRef(selectedId);

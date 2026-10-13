@@ -455,14 +455,6 @@ export const PROJECTS_REFRESH_MS = 5 * 60_000;
 
 /** Width of the project card docked on the map's right edge. */
 export const PROJECT_CARD_WIDTH_PX = 360;
-/**
- * How long the project list is worth holding before it is asked for again.
- *
- * Projects move on the scale of a workday - a new one is registered, a work
- * changes state - and the map is a reference rather than a dashboard, so a
- * refetch per mount is more traffic than the freshness is worth.
- */
-export const PROJECTS_STALE_MS = 5 * 60 * 1000;
 
 /**
  * How long the Type and Region code tables are worth holding. Track caches them

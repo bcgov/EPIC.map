@@ -1,5 +1,7 @@
+import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { FeatureCollection, Point } from "geojson";
+import type { MapProject } from "@/components/Filters/filterUtils";
 import { PROJECTS_REFRESH_MS } from "@/utils/config";
 import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
@@ -30,11 +32,29 @@ export interface Project extends ProjectPoint {
 
 export type ProjectFeatures = FeatureCollection<Point, ProjectPoint>;
 
+const NONE: MapProject[] = [];
+
+// map-api serves open projects only, each with a location.
+const toMapProject = ({
+  geometry,
+  properties,
+}: ProjectFeatures["features"][number]): MapProject => ({
+  id: properties.id,
+  name: properties.name,
+  longitude: geometry.coordinates[0],
+  latitude: geometry.coordinates[1],
+  typeId: properties.typeId,
+  regionId: properties.regionId,
+  certificateIssued: properties.certificateIssued,
+  inProgressWorks: properties.hasWorksInProgress,
+  isClosed: false,
+});
+
 /**
  * Every open EPIC.Track project, as map-api serves them. map-api caches Track
  * for the same period, so refetching sooner would only return the same list.
  */
-export const useProjects = () => {
+export const useProjectFeatures = () => {
   const { api } = useMapWidget();
 
   return useQuery({
@@ -44,6 +64,21 @@ export const useProjects = () => {
     staleTime: PROJECTS_REFRESH_MS,
     refetchInterval: PROJECTS_REFRESH_MS,
   });
+};
+
+/** The same projects as a flat list, for the filter bar and search. */
+export const useProjects = () => {
+  const { data, isPending, error, refetch } = useProjectFeatures();
+
+  const projects = useMemo(
+    () => (data ? data.features.map(toMapProject) : NONE),
+    [data],
+  );
+
+  // Stable across renders: FiltersContext names it in its value memo's deps.
+  const retry = useCallback(() => void refetch(), [refetch]);
+
+  return { projects, isPending, error, retry };
 };
 
 export const useProject = (projectId: number | null) => {
