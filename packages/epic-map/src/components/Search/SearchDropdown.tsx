@@ -17,6 +17,16 @@ import {
 /** The id of one row, so `aria-activedescendant` can name it. */
 export const rowId = (listId: string, index: number) => `${listId}-row-${index}`;
 
+/** The menu's own messages, as distinct from the rows it lists. */
+const MESSAGE_TEXT = {
+  fontSize: "0.875rem",
+  lineHeight: "1.3125rem",
+  color: SECONDARY_TEXT,
+} as const;
+
+/** Said in both the standalone and the beneath-the-rows case, so said once. */
+const PLACES_FAILED = "Places could not be searched";
+
 /**
  * A group's heading. Only ever rendered for a group that has matches — an empty
  * group is absent rather than headed and empty.
@@ -53,18 +63,21 @@ type SearchDropdownProps = {
   activeIndex: number;
   /** Places are still in flight. Projects are local and already listed. */
   loading: boolean;
+  /** The geocoder did not answer. Projects, being local, may still have. */
+  placesFailed: boolean;
   onSelect: (row: SearchRow) => void;
 };
 
 /**
  * The results menu under the search field.
  *
- * Draws two groups and three states, and the states are not exclusive: project
+ * Draws two groups and four states, and the states are not exclusive: project
  * matches are local and arrive instantly, so they are listed above the
- * "Searching" row while the geocoder is still answering. Only a query that has
- * settled with nothing on either side gets the no-results message — showing it
- * while a request is in flight would announce a result the search has not
- * reached yet.
+ * "Searching" row while the geocoder is still answering, and above the notice
+ * that it did not answer at all. Only a query that has settled with nothing on
+ * either side gets the no-results message — showing it while a request is in
+ * flight, or after one failed, would announce a result the search never
+ * reached.
  */
 export default function SearchDropdown({
   listId,
@@ -74,11 +87,16 @@ export default function SearchDropdown({
   rows,
   activeIndex,
   loading,
+  placesFailed,
   onSelect,
 }: SearchDropdownProps) {
   const theme = useTheme();
 
-  const empty = !loading && rows.length === 0;
+  // Projects are matched locally, so a geocoder failure can still sit beneath
+  // rows that did match. Only with nothing to show at all does the failure
+  // replace the menu's message, because "no places match" would then be a
+  // claim about a search that never came back.
+  const noListbox = !loading && rows.length === 0;
 
   return (
     <Box
@@ -102,28 +120,21 @@ export default function SearchDropdown({
         boxShadow: MENU_SHADOW,
       }}
     >
-      {empty ? (
+      {noListbox ? (
         // Not a listbox: there is nothing to choose from, and an empty one
         // would have the field claim a list that does not exist.
         <Box sx={{ padding: "0.5rem 1rem" }} role="status">
-          <Typography
-            sx={{
-              fontSize: "0.875rem",
-              lineHeight: "1.3125rem",
-              fontWeight: 700,
-              color: SECONDARY_TEXT,
-            }}
-          >
-            No projects or places match &ldquo;{query}&rdquo;
+          <Typography sx={{ ...MESSAGE_TEXT, fontWeight: 700 }}>
+            {placesFailed ? (
+              PLACES_FAILED
+            ) : (
+              <>No projects or places match &ldquo;{query}&rdquo;</>
+            )}
           </Typography>
-          <Typography
-            sx={{
-              fontSize: "0.875rem",
-              lineHeight: "1.3125rem",
-              color: SECONDARY_TEXT,
-            }}
-          >
-            Check the spelling or try a shorter term
+          <Typography sx={MESSAGE_TEXT}>
+            {placesFailed
+              ? "The address service did not answer. Please try again."
+              : "Check the spelling or try a shorter term"}
           </Typography>
         </Box>
       ) : (
@@ -167,15 +178,13 @@ export default function SearchDropdown({
               }}
             >
               <CircularProgress size={18} />
-              <Typography
-                sx={{
-                  fontSize: "0.875rem",
-                  lineHeight: "1.3125rem",
-                  color: SECONDARY_TEXT,
-                }}
-              >
-                Searching
-              </Typography>
+              <Typography sx={MESSAGE_TEXT}>Searching</Typography>
+            </Box>
+          )}
+
+          {placesFailed && (
+            <Box role="status" sx={{ padding: "0.5rem 1rem" }}>
+              <Typography sx={MESSAGE_TEXT}>{PLACES_FAILED}</Typography>
             </Box>
           )}
         </Box>

@@ -130,17 +130,28 @@ const passesOtherThan = (
   );
 };
 
-/** What each option in a group would yield, keyed by option id. */
+/**
+ * What each option in a group would yield, keyed by option id.
+ *
+ * Counted against `options` rather than against whatever ids the projects
+ * carry. The two arrive from different endpoints with different cache lives, so
+ * a project can hold a type or region the option list does not offer - a
+ * retired code table row, or simply a newer list than the one in hand. Such a
+ * project is unreachable through this menu, and counting it would put a number
+ * on the "All" row that pressing it cannot deliver.
+ */
 export const facetCounts = (
   projects: readonly MapProject[],
   filters: FilterState,
   group: FilterGroup,
+  options: readonly FilterOption[],
 ): Map<number, number> => {
   const counts = new Map<number, number>();
+  const offered = new Set(options.map((option) => option.id));
 
   projects.forEach((project) => {
     const value = project[group];
-    if (value === null) return;
+    if (value === null || !offered.has(value)) return;
     if (!passesOtherThan(project, filters, group)) return;
     counts.set(value, (counts.get(value) ?? 0) + 1);
   });
@@ -152,10 +163,11 @@ export const facetCounts = (
  * The number beside the "All ..." row.
  *
  * The sum of the option counts rather than every project passing the other
- * filters, and the difference is the projects with no value in this group.
- * Selecting the "All" row selects each option, which under include semantics
- * excludes exactly those - so counting them here would print a number the row
- * does not deliver when pressed.
+ * filters, and the difference is the projects this menu cannot reach: those
+ * with no value in this group, and those whose value is not one of its
+ * options. Selecting the "All" row selects each option, which under include
+ * semantics excludes exactly those - so counting them here would print a
+ * number the row does not deliver when pressed.
  */
 export const facetTotal = (counts: ReadonlyMap<number, number>): number => {
   let total = 0;

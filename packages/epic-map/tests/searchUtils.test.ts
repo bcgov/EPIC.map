@@ -6,10 +6,12 @@ import {
   placeName,
   placePill,
   placeZoom,
+  rowKey,
   steppedIndex,
   toPlaceResults,
   toRows,
   type GeocoderProperties,
+  type SearchRow,
 } from "@/components/Search/searchUtils";
 import { splitOnMatches } from "@/utils/text";
 import { DEFAULT_PLACE_ZOOM, PROJECT_ZOOM } from "@/utils/config";
@@ -278,9 +280,27 @@ describe("matchProjects", () => {
     });
   });
 
-  it("has no coordinates rather than a point at null island", () => {
+  // The row's whole purpose is somewhere to fly to, so one that cannot is left
+  // out rather than listed and inert - the rule toPlaceResult applies too.
+  it("leaves out a project Track holds no usable coordinate for", () => {
     const placeless = [{ ...project(6, "Placeless"), latitude: null }];
-    expect(matchProjects(placeless, types, "placeless")[0].coordinates).toBeNull();
+    expect(matchProjects(placeless, types, "placeless")).toEqual([]);
+
+    const halfPlaced = [{ ...project(7, "Half Placed"), longitude: null }];
+    expect(matchProjects(halfPlaced, types, "half")).toEqual([]);
+  });
+
+  // Dropped before the limit is applied, so the limit counts rows the user can
+  // actually use.
+  it("fills the limit with projects that have somewhere to go", () => {
+    const mixed = [
+      { ...project(8, "Caribou Placeless"), latitude: null },
+      project(9, "Caribou Placed"),
+    ];
+
+    expect(
+      matchProjects(mixed, types, "caribou", 1).map((match) => match.name),
+    ).toEqual(["Caribou Placed"]);
   });
 
   it("matches nothing on an empty query", () => {
@@ -346,6 +366,49 @@ describe("steppedIndex", () => {
   it("has nothing to activate in an empty list", () => {
     expect(steppedIndex(-1, 1, 0)).toBe(-1);
     expect(steppedIndex(-1, -1, 0)).toBe(-1);
+  });
+});
+
+describe("rowKey", () => {
+  const projectRow = (id: number, name: string): SearchRow => ({
+    kind: "project",
+    project: { id, name, type: null, coordinates: [-123, 50], zoom: 11 },
+  });
+
+  const placeRow = (id: string, name: string): SearchRow => ({
+    kind: "place",
+    place: { id, name, pill: null, locality: null, coordinates: [-123, 50], zoom: 12 },
+  });
+
+  it("gives a project the same key wherever it sits in the list", () => {
+    expect(rowKey(projectRow(7, "Caribou Gold Project"))).toBe(
+      rowKey(projectRow(7, "Caribou Gold Project")),
+    );
+  });
+
+  it("tells two projects apart", () => {
+    expect(rowKey(projectRow(7, "A"))).not.toBe(rowKey(projectRow(8, "B")));
+  });
+
+  // The geocoder issues no ids, so toPlaceResult numbers places by position:
+  // `place-0` is a different place for every query. The name is what keeps the
+  // key from following a position into someone else's row.
+  it("tells two places at the same position apart", () => {
+    expect(rowKey(placeRow("place-0", "Victoria"))).not.toBe(
+      rowKey(placeRow("place-0", "Vancouver")),
+    );
+  });
+
+  it("keeps the same place at the same position", () => {
+    expect(rowKey(placeRow("place-0", "Victoria"))).toBe(
+      rowKey(placeRow("place-0", "Victoria")),
+    );
+  });
+
+  it("never collides a project with a place", () => {
+    expect(rowKey(projectRow(1, "Victoria"))).not.toBe(
+      rowKey(placeRow("1", "Victoria")),
+    );
   });
 });
 

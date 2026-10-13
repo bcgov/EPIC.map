@@ -10,6 +10,7 @@ import SearchDropdown, { rowId } from "@/components/Search/SearchDropdown";
 import { useSearchMarker } from "@/components/Search/useSearchMarker";
 import {
   matchProjects,
+  rowKey,
   steppedIndex,
   toRows,
   type SearchRow,
@@ -49,12 +50,15 @@ export default function MapSearch({ map }: { map: MapLibreMap | null }) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(-1);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listId = useId();
 
-  const { showAt } = useSearchMarker(map, theme.palette.primary.main);
+  const { showAt, clear: clearMarker } = useSearchMarker(
+    map,
+    theme.palette.primary.main,
+  );
 
   // Waits for a pause in typing, so the geocoder is not asked per keystroke.
   useEffect(() => {
@@ -65,7 +69,9 @@ export default function MapSearch({ map }: { map: MapLibreMap | null }) {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const { places, isLoading } = usePlaceSearch(debouncedQuery);
+  const { places, isLoading, error: placesError } = usePlaceSearch(
+    debouncedQuery,
+  );
 
   const trimmed = query.trim();
   const projects = useMemo(
@@ -83,9 +89,30 @@ export default function MapSearch({ map }: { map: MapLibreMap | null }) {
   const searchable = trimmed.length >= MIN_PLACE_QUERY_LENGTH;
   const loading = searchable && (!settled || isLoading);
 
-  // An index into a list that just got shorter would highlight nothing, or the
-  // wrong row.
-  useEffect(() => setActiveIndex(-1), [rows.length]);
+  // Only once this query's own request has come back. `error` outlives the
+  // query it belongs to, so without the settled check a failure would be
+  // reported against the next thing typed as well.
+  const placesFailed = searchable && settled && !isLoading && Boolean(placesError);
+
+  /**
+   * The active row, held by identity rather than by position.
+   *
+   * Both sources write into one list at different times: places arrive a
+   * debounce after the projects they are listed under, which renumbers nothing
+   * above them but everything below. Holding an index would drop the highlight
+   * the moment they landed; holding it loosely - resetting only when the row
+   * *count* changes - would leave it on whichever row now sits at that number,
+   * so Enter would take something the user never highlighted. A key does
+   * neither: the row keeps the highlight while it is still in the list, and
+   * loses it when it is not.
+   */
+  const activeIndex = useMemo(
+    () =>
+      activeKey === null
+        ? -1
+        : rows.findIndex((row) => rowKey(row) === activeKey),
+    [rows, activeKey],
+  );
 
   // Nothing is shown below the length the geocoder is asked at. Projects do
   // match on a single character, but a menu open on one would have to either
@@ -93,31 +120,39 @@ export default function MapSearch({ map }: { map: MapLibreMap | null }) {
   // ran — or leave the Places group silently absent, which reads the same way.
   const showDropdown = open && searchable;
 
+  // The dropdown shows a status message instead of a listbox when there is
+  // nothing to choose from, so `aria-controls` must not name an element that is
+  // not rendered. Matches SearchDropdown's own branch.
+  const hasListbox = showDropdown && (rows.length > 0 || loading);
+
   const select = (row: SearchRow | undefined) => {
     if (!row) return;
 
     if (row.kind === "place") {
       showAt(row.place.coordinates, row.place.zoom);
-    } else if (row.project.coordinates) {
+    } else {
       showAt(row.project.coordinates, row.project.zoom);
     }
 
     setOpen(false);
-    setActiveIndex(-1);
+    setActiveKey(null);
   };
 
   const clear = () => {
     setQuery("");
     setDebouncedQuery("");
     setOpen(false);
-    setActiveIndex(-1);
+    setActiveKey(null);
+    // The pin answers the query being cleared. Left behind it would sit on the
+    // map with nothing on screen able to remove it.
+    clearMarker();
     inputRef.current?.focus();
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "Escape") {
       setOpen(false);
-      setActiveIndex(-1);
+      setActiveKey(null);
       return;
     }
 
@@ -128,9 +163,12 @@ export default function MapSearch({ map }: { map: MapLibreMap | null }) {
       }
       // Otherwise the caret jumps to either end of the field as the list moves.
       event.preventDefault();
-      setActiveIndex((current) =>
-        steppedIndex(current, event.key === "ArrowDown" ? 1 : -1, rows.length),
+      const next = steppedIndex(
+        activeIndex,
+        event.key === "ArrowDown" ? 1 : -1,
+        rows.length,
       );
+      setActiveKey(next === -1 ? null : rowKey(rows[next]));
       return;
     }
 
@@ -161,7 +199,7 @@ export default function MapSearch({ map }: { map: MapLibreMap | null }) {
         inputProps={{
           role: "combobox",
           "aria-expanded": showDropdown,
-          "aria-controls": showDropdown ? listId : undefined,
+          "aria-controls": hasListbox ? listId : undefined,
           "aria-activedescendant":
             showDropdown && activeIndex >= 0
               ? rowId(listId, activeIndex)
@@ -230,6 +268,7 @@ export default function MapSearch({ map }: { map: MapLibreMap | null }) {
           rows={rows}
           activeIndex={activeIndex}
           loading={loading}
+          placesFailed={placesFailed}
           onSelect={select}
         />
       )}

@@ -30,11 +30,13 @@ const places: PlaceResult[] = [
   },
 ];
 
+const clearMarker = vi.fn();
+
 // The marker is mocked rather than exercised: it is the one part of this
 // component that reaches for maplibre, which wants a WebGL context jsdom has
 // no way to give it.
 vi.mock("@/components/Search/useSearchMarker", () => ({
-  useSearchMarker: () => ({ showAt, clear: vi.fn() }),
+  useSearchMarker: () => ({ showAt, clear: clearMarker }),
 }));
 
 vi.mock("@/components/Filters/FiltersContext", () => ({
@@ -56,10 +58,24 @@ vi.mock("@/components/Filters/FiltersContext", () => ({
   }),
 }));
 
+/**
+ * What the geocoder answers with, so a test can change it or fail it.
+ *
+ * Still keyed on the query, because the debounce is real here: the hook is
+ * asked with the debounced string, so an empty one is the window in which
+ * projects are listed and places are not.
+ */
+const placeSearch: {
+  results: PlaceResult[];
+  isLoading: boolean;
+  error: unknown;
+} = { results: places, isLoading: false, error: undefined };
+
 vi.mock("@/api/usePlaceSearch", () => ({
   usePlaceSearch: (query: string) => ({
-    places: query.trim() ? places : [],
-    isLoading: false,
+    places: query.trim() ? placeSearch.results : [],
+    isLoading: placeSearch.isLoading,
+    error: placeSearch.error,
   }),
 }));
 
@@ -87,7 +103,13 @@ const search = async (text: string) => {
   return user;
 };
 
-beforeEach(() => showAt.mockClear());
+beforeEach(() => {
+  showAt.mockClear();
+  clearMarker.mockClear();
+  placeSearch.results = places;
+  placeSearch.isLoading = false;
+  placeSearch.error = undefined;
+});
 afterEach(cleanup);
 
 describe("the field", () => {
@@ -248,5 +270,160 @@ describe("selecting", () => {
     await user.click(screen.getAllByRole("option")[0]);
 
     expect(showAt).toHaveBeenCalledWith([-122, 53], expect.any(Number));
+  });
+});
+
+describe("the active row across an update", () => {
+  /**
+   * The bug this pins: the places are debounced, so they land under a list the
+   * user may already be walking. Holding the active row by position lost the
+   * highlight the moment they did, and Enter then did nothing.
+   */
+  it("keeps the highlighted project when the places arrive beneath it", async () => {
+    render(<MapSearch map={null} />);
+    const user = userEvent.setup();
+    await user.click(field());
+    await user.type(field(), "car");
+
+    // The project half only: the geocoder has not been asked yet.
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    await user.keyboard("{ArrowDown}");
+    const highlighted = screen.getByRole("option").getAttribute("id");
+    expect(field().getAttribute("aria-activedescendant")).toBe(highlighted);
+
+    // The places land, adding two rows below the highlighted one.
+    await waitFor(() =>
+      expect(screen.getAllByRole("option")).toHaveLength(ROWS),
+    );
+
+    const [project] = screen.getAllByRole("option");
+    expect(project.getAttribute("aria-selected")).toBe("true");
+    expect(field().getAttribute("aria-activedescendant")).toBe(
+      project.getAttribute("id"),
+    );
+
+    await user.keyboard("{Enter}");
+    expect(showAt).toHaveBeenCalledWith([-122, 53], expect.any(Number));
+  });
+
+  /**
+   * And the other half of it: as many rows as before, but not the same rows.
+   * Keeping the position would leave the highlight on a row the user never
+   * chose, so Enter would take that one.
+   */
+  it("drops the highlight when the row it was on is replaced", async () => {
+    render(<MapSearch map={null} />);
+    const user = await search("car");
+
+    // Past the project match, onto the first place.
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(screen.getAllByRole("option")[1].getAttribute("aria-selected")).toBe(
+      "true",
+    );
+
+    // The next keystroke returns as many places, but different ones.
+    placeSearch.results = [
+      { ...places[0], name: "Cariboo Road" },
+      { ...places[1], name: "Cariboo Lake" },
+    ];
+    await user.type(field(), "i");
+    // Matched against the row's whole text: the query's prefix is drawn in its
+    // own <strong>, so the name is split across elements.
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("option")
+          .some((row) => row.textContent?.startsWith("Cariboo Road")),
+      ).toBe(true),
+    );
+
+    expect(screen.getAllByRole("option")).toHaveLength(ROWS);
+    expect(
+      screen
+        .getAllByRole("option")
+        .some((row) => row.getAttribute("aria-selected") === "true"),
+    ).toBe(false);
+    expect(field().getAttribute("aria-activedescendant")).toBeNull();
+
+    await user.keyboard("{Enter}");
+    expect(showAt).not.toHaveBeenCalled();
+  });
+});
+
+describe("clearing", () => {
+  // The pin answers the query being cleared, and nothing else on screen can
+  // remove it.
+  it("takes the pin off the map", async () => {
+    render(<MapSearch map={null} />);
+    const user = await search("car");
+    await user.click(screen.getAllByRole("option")[0]);
+    expect(showAt).toHaveBeenCalled();
+
+    await user.click(screen.getByLabelText("Clear search"));
+
+    expect(clearMarker).toHaveBeenCalled();
+  });
+});
+
+describe("when the geocoder does not answer", () => {
+  /**
+   * A failed request is not an empty result. Reporting it as one tells the user
+   * their spelling is wrong about a search that never came back.
+   */
+  it("says the places search failed rather than that nothing matched", async () => {
+    placeSearch.results = [];
+    placeSearch.error = new Error("geocoder unreachable");
+    render(<MapSearch map={null} />);
+    const user = userEvent.setup();
+    await user.click(field());
+    await user.type(field(), "zzz");
+
+    await waitFor(() =>
+      expect(screen.getByText("Places could not be searched")).toBeDefined(),
+    );
+    expect(screen.queryByText(/No projects or places match/)).toBeNull();
+  });
+
+  // Projects are matched in the browser, so they are unaffected.
+  it("still lists the projects that matched", async () => {
+    placeSearch.results = [];
+    placeSearch.error = new Error("geocoder unreachable");
+    render(<MapSearch map={null} />);
+    const user = userEvent.setup();
+    await user.click(field());
+    await user.type(field(), "car");
+
+    await waitFor(() =>
+      expect(screen.getByText("Places could not be searched")).toBeDefined(),
+    );
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+  });
+});
+
+describe("the combobox contract", () => {
+  // aria-controls must name an element that exists; the no-results state is a
+  // status message, not a listbox.
+  it("names no listbox when none is rendered", async () => {
+    placeSearch.results = [];
+    render(<MapSearch map={null} />);
+    const user = userEvent.setup();
+    await user.click(field());
+    await user.type(field(), "zzz");
+
+    await waitFor(() =>
+      expect(screen.getByText(/No projects or places match/)).toBeDefined(),
+    );
+
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(field().getAttribute("aria-controls")).toBeNull();
+  });
+
+  it("names the listbox while one is rendered", async () => {
+    render(<MapSearch map={null} />);
+    await search("car");
+
+    expect(field().getAttribute("aria-controls")).toBe(
+      screen.getByRole("listbox").getAttribute("id"),
+    );
   });
 });

@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
 import type { MapProject } from "@/components/Filters/filterUtils";
@@ -48,10 +49,16 @@ export const useProjects = () => {
     staleTime: PROJECTS_STALE_MS,
   });
 
+  // Stable across renders: FiltersContext names this in the dependency list of
+  // the memo it builds its context value with, so a fresh closure here would
+  // make that memo miss every time and re-render both filter menus - each
+  // recounting its facets over the whole project list - on any provider render.
+  const retry = useCallback(() => void refetch(), [refetch]);
+
   return {
     projects: data ?? NONE,
     isPending,
     error,
-    retry: () => void refetch(),
+    retry,
   };
 };

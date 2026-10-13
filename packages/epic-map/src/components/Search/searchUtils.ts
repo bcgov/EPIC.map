@@ -66,8 +66,8 @@ export interface ProjectResult {
   name: string;
   /** Track's name for the project's type, or null when it has none. */
   type: string | null;
-  /** `[lng, lat]`, or null when Track holds no usable coordinate. */
-  coordinates: [number, number] | null;
+  /** `[lng, lat]`, as both the geocoder and MapLibre order it. */
+  coordinates: [number, number];
   zoom: number;
 }
 
@@ -263,16 +263,20 @@ export const matchProjects = (
 
   return projects
     .filter((project) => project.name.toLowerCase().includes(needle))
+    // A project Track holds no coordinate for has nowhere to fly to, and a row
+    // that silently does nothing when clicked is worse than one absent from the
+    // list - the same rule toPlaceResult applies to places. Dropped before the
+    // limit, so a listed row is always a row that goes somewhere.
+    .filter(
+      (project) => project.longitude !== null && project.latitude !== null,
+    )
     .slice(0, limit)
     .map((project) => ({
       id: project.id,
       name: project.name,
       type:
         project.typeId === null ? null : typeNames.get(project.typeId) ?? null,
-      coordinates:
-        project.longitude === null || project.latitude === null
-          ? null
-          : ([project.longitude, project.latitude] as [number, number]),
+      coordinates: [project.longitude, project.latitude] as [number, number],
       zoom: PROJECT_ZOOM,
     }));
 };
@@ -291,6 +295,19 @@ export const toRows = (
   ...projects.map((project): SearchRow => ({ kind: "project", project })),
   ...places.map((place): SearchRow => ({ kind: "place", place })),
 ];
+
+/**
+ * A row's identity, for holding the keyboard's place across an update.
+ *
+ * The place's name is part of its key because the geocoder issues no ids and
+ * `toPlaceResult` numbers places by position: `place-0` is a different place
+ * for every query, so position alone would keep a highlight on a row the user
+ * never chose. Projects carry Track's own id and need nothing more.
+ */
+export const rowKey = (row: SearchRow): string =>
+  row.kind === "project"
+    ? `project:${row.project.id}`
+    : `place:${row.place.id}:${row.place.name}`;
 
 /**
  * Where the active row moves to.

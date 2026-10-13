@@ -90,8 +90,8 @@ export default function FilterDropdown({
   const selected = selectionFor(filters, group);
 
   const counts = useMemo(
-    () => facetCounts(projects, filters, group),
-    [projects, filters, group],
+    () => facetCounts(projects, filters, group, options),
+    [projects, filters, group, options],
   );
   const total = facetTotal(counts);
 

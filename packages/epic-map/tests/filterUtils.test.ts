@@ -18,6 +18,9 @@ const MINES = 1;
 const INDUSTRIAL = 2;
 const TRANSPORT = 3;
 
+/** A type a project can hold but this menu does not offer. */
+const RETIRED = 4;
+
 const SKEENA = 10;
 const CARIBOO = 11;
 
@@ -141,7 +144,7 @@ describe("facetCounts", () => {
       project({ typeId: TRANSPORT }),
     ];
 
-    const counts = facetCounts(projects, NO_FILTERS, "typeId");
+    const counts = facetCounts(projects, NO_FILTERS, "typeId", types);
 
     expect(counts.get(MINES)).toBe(2);
     expect(counts.get(TRANSPORT)).toBe(1);
@@ -159,6 +162,7 @@ describe("facetCounts", () => {
       projects,
       filters({ typeIds: new Set([MINES]) }),
       "typeId",
+      types,
     );
 
     expect(counts.get(MINES)).toBe(1);
@@ -176,6 +180,7 @@ describe("facetCounts", () => {
       projects,
       filters({ regionIds: new Set([SKEENA]) }),
       "typeId",
+      types,
     );
 
     expect(counts.get(MINES)).toBe(1);
@@ -193,6 +198,7 @@ describe("facetCounts", () => {
       projects,
       filters({ certificateIssued: true }),
       "typeId",
+      types,
     );
 
     expect(counts.get(MINES)).toBe(1);
@@ -206,6 +212,7 @@ describe("facetCounts", () => {
       projects,
       filters({ regionIds: new Set([CARIBOO]) }),
       "typeId",
+      types,
     );
 
     expect(counts.get(MINES)).toBeUndefined();
@@ -215,7 +222,19 @@ describe("facetCounts", () => {
   it("does not count a project with no value in the group", () => {
     const projects = [project({ typeId: null }), project({ typeId: MINES })];
 
-    expect(facetTotal(facetCounts(projects, NO_FILTERS, "typeId"))).toBe(1);
+    expect(facetTotal(facetCounts(projects, NO_FILTERS, "typeId", types))).toBe(1);
+  });
+
+  // The project list and the code tables come from different endpoints and are
+  // cached for different lengths of time, so a project can carry a type that is
+  // not on offer in this menu. No option can select it.
+  it("does not count a project whose value is not one of the options", () => {
+    const projects = [project({ typeId: RETIRED }), project({ typeId: MINES })];
+
+    const counts = facetCounts(projects, NO_FILTERS, "typeId", types);
+
+    expect(counts.get(RETIRED)).toBeUndefined();
+    expect(facetTotal(counts)).toBe(1);
   });
 });
 
@@ -227,9 +246,10 @@ describe("facetTotal", () => {
       project({ typeId: MINES }),
       project({ typeId: TRANSPORT }),
       project({ typeId: null }),
+      project({ typeId: RETIRED }),
     ];
 
-    const counts = facetCounts(projects, NO_FILTERS, "typeId");
+    const counts = facetCounts(projects, NO_FILTERS, "typeId", types);
     const all = filters({ typeIds: new Set(types.map((type) => type.id)) });
 
     expect(facetTotal(counts)).toBe(2);
@@ -246,6 +266,7 @@ describe("facetTotal", () => {
       projects,
       filters({ regionIds: new Set([SKEENA]) }),
       "typeId",
+      types,
     );
 
     expect(facetTotal(counts)).toBe(1);

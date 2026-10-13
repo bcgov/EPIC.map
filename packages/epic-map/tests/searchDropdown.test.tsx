@@ -43,6 +43,7 @@ const renderDropdown = ({
   query = "car",
   activeIndex = -1,
   loading = false,
+  placesFailed = false,
   onSelect = vi.fn(),
 } = {}) => {
   const result = render(
@@ -54,6 +55,7 @@ const renderDropdown = ({
       rows={toRows(projects, places)}
       activeIndex={activeIndex}
       loading={loading}
+      placesFailed={placesFailed}
       onSelect={onSelect}
     />,
   );
@@ -179,6 +181,36 @@ describe("states", () => {
 
     expect(screen.queryByText(/No projects or places match/)).toBeNull();
     expect(screen.getByText("Searching")).toBeDefined();
+  });
+
+  // A failed geocoder request is not an answer, so it must not be reported as
+  // one. "No projects or places match" would be a claim about a search that
+  // never came back.
+  it("says places could not be searched rather than that nothing matched", () => {
+    renderDropdown({ query: "victoria", loading: false, placesFailed: true });
+
+    expect(screen.getByText("Places could not be searched")).toBeDefined();
+    expect(
+      screen.getByText("The address service did not answer. Please try again."),
+    ).toBeDefined();
+    expect(screen.queryByText(/No projects or places match/)).toBeNull();
+  });
+
+  // Projects are matched in the browser, so they are unaffected by the
+  // geocoder failing and stay listed with the notice beneath them.
+  it("keeps project matches listed when places could not be searched", () => {
+    renderDropdown({
+      projects: [project("Caribou Gold Project")],
+      query: "car",
+      loading: false,
+      placesFailed: true,
+    });
+
+    expect(screen.getByRole("listbox")).toBeDefined();
+    expect(screen.getByRole("option").textContent).toBe(
+      "Caribou Gold ProjectWater Management",
+    );
+    expect(screen.getByText("Places could not be searched")).toBeDefined();
   });
 });
 
