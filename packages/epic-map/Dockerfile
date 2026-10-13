@@ -7,7 +7,16 @@
 # The package is an npm workspace and resolves its dependencies from the single
 # lockfile at the root, so building with packages/epic-map/ as the context
 # leaves npm with no lockfile to install from.
-FROM node:24-alpine AS build-stage
+#
+# Both base images come from AWS's public mirror of Docker Hub's official
+# library rather than from Docker Hub itself. Hub meters anonymous pulls per
+# source IP over a six-hour window, and GitHub's hosted runners share a pool of
+# them, so the CI build was failing on `429 Too Many Requests` before it had
+# read a line of the Dockerfile - and nothing in this repository authenticates
+# to Hub, so a deploy could have lost the same coin toss. The mirror serves the
+# same images: `docker/library/node:24-alpine` and
+# `docker/library/nginx:1.27-alpine` match Hub's manifests digest for digest.
+FROM public.ecr.aws/docker/library/node:24-alpine AS build-stage
 
 WORKDIR /app
 
@@ -29,7 +38,7 @@ COPY packages/epic-map ./packages/epic-map
 
 RUN npm run build --workspace @bcgov/epic-map
 
-FROM nginx:1.27-alpine AS production-stage
+FROM public.ecr.aws/docker/library/nginx:1.27-alpine AS production-stage
 
 COPY --from=build-stage /app/packages/epic-map/dist /usr/share/nginx/html
 COPY packages/epic-map/nginx/nginx.conf /etc/nginx/nginx.conf

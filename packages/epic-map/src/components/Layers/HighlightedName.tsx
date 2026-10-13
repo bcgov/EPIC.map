@@ -1,27 +1,6 @@
 import { Box } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-
-/** Split `text` into alternating non-matching / matching runs of `query`. */
-const splitOnMatches = (text: string, query: string): string[] => {
-  if (!query) return [text];
-
-  const parts: string[] = [];
-  const haystack = text.toLowerCase();
-  const needle = query.toLowerCase();
-
-  let cursor = 0;
-  for (
-    let at = haystack.indexOf(needle);
-    at !== -1;
-    at = haystack.indexOf(needle, cursor)
-  ) {
-    parts.push(text.slice(cursor, at), text.slice(at, at + needle.length));
-    cursor = at + needle.length;
-  }
-  parts.push(text.slice(cursor));
-
-  return parts;
-};
+import { splitOnMatches } from "@/utils/text";
 
 export default function HighlightedName({
   text,

@@ -4,6 +4,7 @@ import { useTheme } from "@mui/material/styles";
 import CatalogueSection from "@/components/Layers/Catalogue/CatalogueSection";
 import FavouritesSection from "@/components/Layers/Favourites/FavouritesSection";
 import MyLayersSection from "@/components/Layers/UserLayers/MyLayersSection";
+import { LAYERS_BUTTON_WIDTH } from "@/utils/config";
 import { useSessionFlag } from "@/utils/useSessionFlag";
 
 /** Ties the button's `aria-controls` to the panel it opens. */
@@ -33,6 +34,8 @@ export default function LayersControl() {
           top: "1rem",
           zIndex: 2,
           height: "2.25rem",
+          // Shared with the over-map message, which starts after this button.
+          minWidth: LAYERS_BUTTON_WIDTH,
           padding: "0 0.875rem",
           borderRadius: `${theme.shape.borderRadius}px`,
           boxShadow: theme.shadows[2],
