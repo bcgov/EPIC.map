@@ -33,6 +33,7 @@ PROJECT = {
     'region_name': 'Cariboo',
     'ea_certificate': 'M23-01',
     'has_works_in_progress': True,
+    'epic_url': 'https://projects.eao.gov.bc.ca/p/5cd9b4b56a15600025df0cc8/project-details',
 }
 
 
@@ -86,6 +87,7 @@ def test_one_project_is_its_card(app, client, jwt, session):
         'eaCertificate': 'M23-01',
         'longitude': -121.5,
         'latitude': 53.1,
+        'epicUrl': 'https://projects.eao.gov.bc.ca/p/5cd9b4b56a15600025df0cc8/project-details',
     }
 
 

@@ -223,6 +223,9 @@ class _Config():  # pylint: disable=too-few-public-methods
     EPIC_TRACK_CLIENT_ID = os.getenv('EPIC_TRACK_CLIENT_ID')
     EPIC_TRACK_CLIENT_SECRET = os.getenv('EPIC_TRACK_CLIENT_SECRET')
 
+    # The EPIC public site, which a project card's "View on EPIC" opens.
+    EPIC_PUBLIC_URL = (os.getenv('EPIC_PUBLIC_URL') or 'https://projects.eao.gov.bc.ca').rstrip('/')
+
 
 class DevConfig(_Config):  # pylint: disable=too-few-public-methods
     """Dev Config."""

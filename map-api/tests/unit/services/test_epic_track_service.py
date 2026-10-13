@@ -59,6 +59,7 @@ def _project(project_id, **overrides):
         'type': {'id': 8, 'name': 'Water Management'},
         'proponent': {'id': 1, 'name': 'EVR Operations Limited'},
         'region_env': {'id': 2, 'name': 'Cariboo'},
+        'epic_guid': '5cd9b4b56a15600025df0cc8',
     }
     project.update(overrides)
     return project
@@ -122,6 +123,7 @@ def test_open_projects_are_returned_with_their_works_in_progress(app):
         'region_name': 'Cariboo',
         'ea_certificate': 'M23-01',
         'has_works_in_progress': True,
+        'epic_url': 'https://projects.eao.gov.bc.ca/p/5cd9b4b56a15600025df0cc8/project-details',
     }
 
 
@@ -367,3 +369,23 @@ def test_works_of_a_closed_or_unknown_project_are_none(app):
         assert TrackService.project_works(99) is None
 
     assert not [c for c in posted.call_args_list if c.args[0].endswith('/works/listing')]
+
+
+@pytest.mark.parametrize('epic_guid', [None, '', '   ', 'not-a-guid', '5cd9b4b56a15600025df0cc', '../admin', 42])
+def test_a_project_without_a_usable_epic_guid_has_no_epic_url(app, epic_guid):
+    """No link at all rather than a broken one."""
+    with patch(POST, return_value=_token()), \
+            patch(GET, side_effect=_track([_project(1, epic_guid=epic_guid)], [])):
+        project = TrackService.open_project(1)
+
+    assert project['epic_url'] is None
+
+
+def test_the_epic_url_follows_the_configured_site(app, monkeypatch):
+    """Each environment can point at its own EPIC public site."""
+    monkeypatch.setitem(app.config, 'EPIC_PUBLIC_URL', 'https://epic.example')
+    with patch(POST, return_value=_token()), \
+            patch(GET, side_effect=_track([_project(1, epic_guid=' 5cd9b4b56a15600025df0cc8 ')], [])):
+        project = TrackService.open_project(1)
+
+    assert project['epic_url'] == 'https://epic.example/p/5cd9b4b56a15600025df0cc8/project-details'

@@ -80,6 +80,10 @@ epicTrack:
   apiUrl: ""
   clientId: epic-map-api
 
+# The EPIC public site that a project card's "View on EPIC" opens.
+epicPublic:
+  url: https://projects.eao.gov.bc.ca
+
 # A rollout surges a second pod before dropping the old one. Environments with
 # quota headroom keep that; see values.dev.yaml for the namespace that doesn't.
 rollout:

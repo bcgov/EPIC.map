@@ -41,6 +41,11 @@ class ProjectSchema(ProjectPointSchema):
     ea_certificate = fields.Str(allow_none=True, data_key='eaCertificate')
     longitude = fields.Float()
     latitude = fields.Float()
+    epic_url = fields.Str(
+        allow_none=True,
+        data_key='epicUrl',
+        metadata={'description': "The project's page on the EPIC public site"},
+    )
 
 
 class ProjectWorkSchema(Schema):

@@ -20,6 +20,7 @@ export interface Project extends ProjectPoint {
   proponentName: string | null;
   regionName: string | null;
   eaCertificate: string | null;
+  epicUrl: string | null;
   longitude: number;
   latitude: number;
 }

@@ -1,10 +1,11 @@
 import type { ElementType, ReactNode } from "react";
 import axios from "axios";
-import { Box, IconButton, Skeleton, Typography } from "@mui/material";
+import { Box, Button, IconButton, Skeleton, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import BeachAccessIcon from "@mui/icons-material/BeachAccess";
 import CategoryIcon from "@mui/icons-material/Category";
 import CloseIcon from "@mui/icons-material/Close";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import CommuteIcon from "@mui/icons-material/Commute";
 import DeleteIcon from "@mui/icons-material/Delete";
 import FactoryIcon from "@mui/icons-material/Factory";
@@ -128,104 +129,138 @@ export default function ProjectCard({
         maxWidth: "100%",
         backgroundColor: theme.palette.background.paper,
         boxShadow: theme.shadows[4],
-        overflowY: "auto",
       }}
     >
-      <Box
-        sx={{
-          padding: "1rem 1rem 0.75rem",
-          borderBottom: `1px solid ${theme.palette.divider}`,
-        }}
-      >
-        <Box sx={{ display: "flex", alignItems: "flex-start", gap: "1rem" }}>
-          <Typography
-            id="epic-map-project-title"
-            component="h2"
-            sx={{
-              flexGrow: 1,
-              minWidth: 0,
-              fontSize: "1.125rem",
-              fontWeight: 700,
-              lineHeight: 1.5,
-              color: TEXT_COLOR,
-            }}
-          >
-            {name ?? <Skeleton width="70%" />}
-          </Typography>
-          <IconButton
-            onClick={onClose}
-            aria-label="Close project"
-            sx={{ padding: 0, marginTop: "0.125rem", color: TEXT_COLOR }}
-          >
-            <CloseIcon sx={{ fontSize: "1.5rem" }} />
-          </IconButton>
-        </Box>
-
-        {isLoading ? (
-          <>
-            <Skeleton width="50%" />
-            <Skeleton variant="rounded" height="1.5rem" sx={{ my: "0.5rem" }} />
-            <Skeleton />
-            <Skeleton />
-          </>
-        ) : notOpen ? (
-          message("This project is no longer open in EPIC.Track.")
-        ) : error || !project ? (
-          message("This project could not be loaded. Please try again.")
-        ) : (
-          <>
-            {project.proponentName && (
-              <Typography
-                sx={{
-                  marginTop: "0.25rem",
-                  ...BODY_TEXT,
-                  color: SECONDARY_TEXT_COLOR,
-                }}
-              >
-                {project.proponentName}
-              </Typography>
-            )}
-            <Box
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        <Box
+          sx={{
+            padding: "1rem 1rem 0.75rem",
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "flex-start", gap: "1rem" }}>
+            <Typography
+              id="epic-map-project-title"
+              component="h2"
               sx={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "0.5rem",
-                marginTop: "0.5rem",
+                flexGrow: 1,
+                minWidth: 0,
+                fontSize: "1.125rem",
+                fontWeight: 700,
+                lineHeight: 1.5,
+                color: TEXT_COLOR,
               }}
             >
-              {typeName && (
-                <ProjectTag
-                  colors={TAG_COLORS.type}
-                  icon={<TypeIcon aria-hidden />}
+              {name ?? <Skeleton width="70%" />}
+            </Typography>
+            <IconButton
+              onClick={onClose}
+              aria-label="Close project"
+              sx={{ padding: 0, marginTop: "0.125rem", color: TEXT_COLOR }}
+            >
+              <CloseIcon sx={{ fontSize: "1.5rem" }} />
+            </IconButton>
+          </Box>
+
+          {isLoading ? (
+            <>
+              <Skeleton width="50%" />
+              <Skeleton variant="rounded" height="1.5rem" sx={{ my: "0.5rem" }} />
+              <Skeleton />
+              <Skeleton />
+            </>
+          ) : notOpen ? (
+            message("This project is no longer open in EPIC.Track.")
+          ) : error || !project ? (
+            message("This project could not be loaded. Please try again.")
+          ) : (
+            <>
+              {project.proponentName && (
+                <Typography
+                  sx={{
+                    marginTop: "0.25rem",
+                    ...BODY_TEXT,
+                    color: SECONDARY_TEXT_COLOR,
+                  }}
                 >
-                  {typeName}
-                </ProjectTag>
+                  {project.proponentName}
+                </Typography>
               )}
-              {project.regionName && (
-                <ProjectTag
-                  colors={TAG_COLORS.region}
-                  icon={<PlaceOutlinedIcon aria-hidden />}
-                >
-                  {project.regionName}
-                </ProjectTag>
+              <Box
+                sx={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "0.5rem",
+                  marginTop: "0.5rem",
+                }}
+              >
+                {typeName && (
+                  <ProjectTag
+                    colors={TAG_COLORS.type}
+                    icon={<TypeIcon aria-hidden />}
+                  >
+                    {typeName}
+                  </ProjectTag>
+                )}
+                {project.regionName && (
+                  <ProjectTag
+                    colors={TAG_COLORS.region}
+                    icon={<PlaceOutlinedIcon aria-hidden />}
+                  >
+                    {project.regionName}
+                  </ProjectTag>
+                )}
+                {project.eaCertificate && (
+                  <ProjectTag colors={TAG_COLORS.certificate}>
+                    {`Certificate # ${project.eaCertificate}`}
+                  </ProjectTag>
+                )}
+              </Box>
+              {project.description && (
+                <ExpandableText text={project.description} lines={DESCRIPTION_LINES} />
               )}
-              {project.eaCertificate && (
-                <ProjectTag colors={TAG_COLORS.certificate}>
-                  {`Certificate # ${project.eaCertificate}`}
-                </ProjectTag>
-              )}
-            </Box>
-            {project.description && (
-              <ExpandableText text={project.description} lines={DESCRIPTION_LINES} />
-            )}
+            </>
+          )}
+        </Box>
+        {project && !error && (
+          <>
+            <MapLayersSection />
+            <WorksSection projectId={projectId} />
           </>
         )}
       </Box>
-      {project && !error && (
-        <>
-          <MapLayersSection />
-          <WorksSection projectId={projectId} />
-        </>
+      {project?.epicUrl && !error && (
+        <Box
+          sx={{
+            flexShrink: 0,
+            padding: "1rem",
+            borderTop: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Button
+            component="a"
+            href={project.epicUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="outlined"
+            fullWidth
+            startIcon={<OpenInNewIcon aria-hidden />}
+            aria-label="View on EPIC (opens in a new tab)"
+            sx={{
+              height: "2.5rem",
+              borderRadius: "0.25rem",
+              borderColor: TEXT_COLOR,
+              color: TEXT_COLOR,
+              fontSize: "1rem",
+              fontWeight: 400,
+              textTransform: "none",
+              "&:hover": { borderColor: TEXT_COLOR, backgroundColor: "#f3f2f1" },
+              "& .MuiButton-startIcon > *:nth-of-type(1)": { fontSize: "1.25rem" },
+            }}
+          >
+            View on EPIC
+          </Button>
+        </Box>
       )}
     </Box>
   );

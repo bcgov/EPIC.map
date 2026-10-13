@@ -16,6 +16,7 @@
 Track is read live and cached briefly rather than copied: see claude-docs/06.
 """
 
+import re
 import threading
 from datetime import datetime, timezone
 from typing import Optional
@@ -39,6 +40,9 @@ TOKEN_KEY = 'epic-track:token'
 WORKS_KEY_PREFIX = 'epic-track:works:'
 
 WORK_IN_PROGRESS = 'IN_PROGRESS'
+
+# EPIC public project ids are Mongo ObjectIds; Track stores them as free text.
+EPIC_GUID = re.compile(r'^[0-9a-fA-F]{24}$')
 
 # One refresh per process at a time; other requests wait for its answer.
 REFRESH_LOCK = threading.Lock()
@@ -249,7 +253,17 @@ def _to_project(project: dict, location: tuple, has_works_in_progress: bool) -> 
         'region_name': _name_of(project.get('region_env')),
         'ea_certificate': project.get('ea_certificate'),
         'has_works_in_progress': has_works_in_progress,
+        'epic_url': _epic_url(project.get('epic_guid')),
     }
+
+
+def _epic_url(epic_guid) -> Optional[str]:
+    """Return the project's page on the EPIC public site, or None rather than a broken link."""
+    guid = (epic_guid or '').strip() if isinstance(epic_guid, str) else ''
+    base = current_app.config.get('EPIC_PUBLIC_URL')
+    if not base or not EPIC_GUID.match(guid):
+        return None
+    return f'{base}/p/{guid}/project-details'
 
 
 def _to_work(work: dict) -> dict:
