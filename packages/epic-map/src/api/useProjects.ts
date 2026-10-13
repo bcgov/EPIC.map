@@ -10,7 +10,10 @@ const PROJECTS_PATH = "/projects";
 export interface ProjectPoint {
   id: number;
   name: string;
+  typeId: number | null;
   typeName: string | null;
+  regionId: number | null;
+  certificateIssued: boolean;
   hasWorksInProgress: boolean;
 }
 

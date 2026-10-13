@@ -240,6 +240,10 @@ def _name_of(value) -> Optional[str]:
     return value.get('name') if isinstance(value, dict) else None
 
 
+def _id_of(value) -> Optional[int]:
+    return value.get('id') if isinstance(value, dict) else None
+
+
 def _to_project(project: dict, location: tuple, has_works_in_progress: bool) -> dict:
     longitude, latitude = location
     return {
@@ -248,10 +252,13 @@ def _to_project(project: dict, location: tuple, has_works_in_progress: bool) -> 
         'description': project.get('description'),
         'longitude': longitude,
         'latitude': latitude,
+        'type_id': _id_of(project.get('type')),
         'type_name': _name_of(project.get('type')),
         'proponent_name': _name_of(project.get('proponent')),
+        'region_id': _id_of(project.get('region_env')),
         'region_name': _name_of(project.get('region_env')),
         'ea_certificate': project.get('ea_certificate'),
+        'certificate_issued': bool((project.get('ea_certificate') or '').strip()),
         'has_works_in_progress': has_works_in_progress,
         'epic_url': _epic_url(project.get('epic_guid')),
     }

@@ -118,10 +118,13 @@ def test_open_projects_are_returned_with_their_works_in_progress(app):
         'description': 'A project',
         'longitude': -122.5,
         'latitude': 53.0,
+        'type_id': 8,
         'type_name': 'Water Management',
         'proponent_name': 'EVR Operations Limited',
+        'region_id': 2,
         'region_name': 'Cariboo',
         'ea_certificate': 'M23-01',
+        'certificate_issued': True,
         'has_works_in_progress': True,
         'epic_url': 'https://projects.eao.gov.bc.ca/p/5cd9b4b56a15600025df0cc8/project-details',
     }
@@ -389,3 +392,23 @@ def test_the_epic_url_follows_the_configured_site(app, monkeypatch):
         project = TrackService.open_project(1)
 
     assert project['epic_url'] == 'https://epic.example/p/5cd9b4b56a15600025df0cc8/project-details'
+
+
+@pytest.mark.parametrize('ea_certificate', [None, '', '   '])
+def test_a_project_without_an_ea_certificate_has_none_issued(app, ea_certificate):
+    """Track holds the certificate number as free text; blank means none."""
+    with patch(POST, return_value=_token()), \
+            patch(GET, side_effect=_track([_project(1, ea_certificate=ea_certificate)], [])):
+        project = TrackService.open_project(1)
+
+    assert project['certificate_issued'] is False
+
+
+def test_a_project_without_a_type_or_region_has_no_ids(app):
+    """The filter bar treats a missing id as matching no option."""
+    with patch(POST, return_value=_token()), \
+            patch(GET, side_effect=_track([_project(1, type=None, region_env=None)], [])):
+        project = TrackService.open_project(1)
+
+    assert project['type_id'] is None
+    assert project['region_id'] is None

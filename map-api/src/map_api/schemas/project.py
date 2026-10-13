@@ -21,12 +21,22 @@ class ProjectPointSchema(Schema):
 
     id = fields.Int(metadata={'description': 'EPIC.Track project id'})
     name = fields.Str()
+    type_id = fields.Int(
+        allow_none=True, data_key='typeId', metadata={'description': 'EPIC.Track project type id'}
+    )
     type_name = fields.Str(
         allow_none=True, data_key='typeName', metadata={'description': 'EPIC.Track project type'}
     )
     has_works_in_progress = fields.Bool(
         data_key='hasWorksInProgress',
         metadata={'description': 'Whether any active work on the project is in progress'},
+    )
+    region_id = fields.Int(
+        allow_none=True, data_key='regionId', metadata={'description': 'ENV region id'}
+    )
+    certificate_issued = fields.Bool(
+        data_key='certificateIssued',
+        metadata={'description': 'Whether the project holds an EA certificate'},
     )
 
 

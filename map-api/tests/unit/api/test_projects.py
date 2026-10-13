@@ -28,10 +28,13 @@ PROJECT = {
     'description': 'An underground mine',
     'longitude': -121.5,
     'latitude': 53.1,
+    'type_id': 1,
     'type_name': 'Mines',
     'proponent_name': 'EVR Operations Limited',
+    'region_id': 2,
     'region_name': 'Cariboo',
     'ea_certificate': 'M23-01',
+    'certificate_issued': True,
     'has_works_in_progress': True,
     'epic_url': 'https://projects.eao.gov.bc.ca/p/5cd9b4b56a15600025df0cc8/project-details',
 }
@@ -60,8 +63,11 @@ def test_projects_are_geojson_points(app, client, jwt, session):
                 'properties': {
                     'id': 7,
                     'name': 'Cariboo Gold Project',
+                    'typeId': 1,
                     'typeName': 'Mines',
                     'hasWorksInProgress': True,
+                    'regionId': 2,
+                    'certificateIssued': True,
                 },
             }
         ],
@@ -79,8 +85,11 @@ def test_one_project_is_its_card(app, client, jwt, session):
     assert response.json == {
         'id': 7,
         'name': 'Cariboo Gold Project',
+        'typeId': 1,
         'typeName': 'Mines',
         'hasWorksInProgress': True,
+        'regionId': 2,
+        'certificateIssued': True,
         'description': 'An underground mine',
         'proponentName': 'EVR Operations Limited',
         'regionName': 'Cariboo',
