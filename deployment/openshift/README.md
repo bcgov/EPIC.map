@@ -9,7 +9,7 @@ its `openshift/*.secret.yml`.
 
 | Secret | Created by | Holds |
 |---|---|---|
-| `map-api-secrets` | **you, by hand** - see below | `SECRET_KEY` |
+| `map-api-secrets` | **you, by hand** - see below | `SECRET_KEY`, `EPIC_TRACK_CLIENT_SECRET` |
 | `map-db-pguser-map-db` | the Crunchy operator, on install | `user`, `password`, `dbname`, `host`, `port`, `uri` |
 | `map-redis` | the `map-redis` chart, on first install | `REDIS_PASSWORD`, `REDIS_URL` |
 
@@ -34,6 +34,14 @@ the deployment - a running pod holds the old value until it restarts:
     oc create secret generic map-api-secrets \
       --from-literal=SECRET_KEY="$(openssl rand -hex 32)" \
       --dry-run=client -o yaml | oc replace -f -
+    oc rollout restart deployment/map-api
+
+### Adding the EPIC.Track client secret
+
+The secret of the `epic-map-api` Keycloak client that map-api reads EPIC.Track with (see
+`claude-docs/06_epic-track-projects.md`). Added to the existing secret, per environment:
+
+    oc set data secret/map-api-secrets EPIC_TRACK_CLIENT_SECRET='<client secret from Keycloak>'
     oc rollout restart deployment/map-api
 
 ## Image pulling

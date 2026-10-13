@@ -32,7 +32,7 @@ import {
 // Style readiness
 
 /** Runs `work` once the style is ready to accept sources and layers. */
-const whenStyleReady = (map: MapLibreMap, work: () => void) => {
+export const whenStyleReady = (map: MapLibreMap, work: () => void) => {
   if (map.isStyleLoaded()) {
     work();
     return;

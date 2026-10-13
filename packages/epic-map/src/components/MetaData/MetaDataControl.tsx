@@ -28,6 +28,7 @@ import {
   showHighlight,
 } from "@/components/Layers/layerUtils";
 import { useImportedLayersContext } from "@/components/Layers/UserLayers/ImportedLayersContext";
+import { projectIdAt } from "@/components/Projects/projectUtils";
 import type { MapExtent } from "@/types";
 import {
   FOCUS_FLY_MS,
@@ -83,6 +84,12 @@ export default function MetaDataControl() {
     if (!map) return undefined;
 
     const onClick = (event: MapMouseEvent) => {
+      // A project dot opens its own card instead.
+      if (projectIdAt(map, event.point) !== null) {
+        setClick(null);
+        return;
+      }
+
       const layers = appliedRef.current
         .filter((layer) => layer.objectName)
         .reverse();

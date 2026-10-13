@@ -302,3 +302,18 @@ USER_LAYER_STREAM_BATCH_ROWS = 500
 # Bytes gathered before a piece of the features response is written, so a large
 # layer goes out in a few hundred writes rather than one per feature.
 USER_LAYER_STREAM_CHUNK_BYTES = 64 * 1024
+
+# EPIC.Track's API, per call. /works is the slow one: it serialises every active
+# work with its project.
+EPIC_TRACK_TIMEOUT_SECONDS = 20
+
+# How stale the project dots may be, and so how often Track is asked: two calls
+# per pod per period, whatever the number of users.
+EPIC_TRACK_PROJECTS_CACHE_TTL_SECONDS = 5 * 60
+
+# A request waiting on another thread's refresh gives up after this, falling back
+# to the last list it had. Covers the token and both Track calls.
+EPIC_TRACK_REFRESH_WAIT_SECONDS = 3 * EPIC_TRACK_TIMEOUT_SECONDS
+
+# The service account token is dropped this long before Keycloak says it expires.
+EPIC_TRACK_TOKEN_EXPIRY_MARGIN_SECONDS = 30

@@ -5,11 +5,14 @@ import { BASEMAPS, otherBasemap, type BasemapId } from "@/utils/config";
 type BasemapSwitchProps = {
   current: BasemapId;
   onSelect: (basemap: BasemapId) => void;
+  /** Pixels covered on the map's right edge, e.g. by the project card. */
+  insetRight?: number;
 };
 
 export default function BasemapSwitch({
   current,
   onSelect,
+  insetRight = 0,
 }: BasemapSwitchProps) {
   const theme = useTheme();
 
@@ -23,7 +26,7 @@ export default function BasemapSwitch({
       title={label}
       sx={{
         position: "absolute",
-        right: "3rem",
+        right: `calc(3rem + ${insetRight}px)`,
         bottom: "1.875rem",
         padding: "3px",
         backgroundColor: theme.palette.common.white,

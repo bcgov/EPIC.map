@@ -30,6 +30,7 @@ from map_api.config import PRODUCTION_LIKE_ENVIRONMENTS
 from .apihelper import Api
 from .catalogue_layer import API as CATALOGUE_LAYER_API
 from .ops import API as OPS_API
+from .project import API as PROJECT_API
 from .user import API as USER_API
 from .user_applied_layer import API as APPLIED_LAYER_API
 from .user_favourite_folder import API as FAVOURITE_FOLDER_API
@@ -97,3 +98,4 @@ API.add_namespace(FAVOURITE_API, path='/users/me/favourites')
 # be confused with /users/me/favourites/<favourite_id>.
 API.add_namespace(FAVOURITE_FOLDER_API, path='/users/me/favourites/folders')
 API.add_namespace(IMPORTED_LAYER_API, path='/users/me/imported-layers')
+API.add_namespace(PROJECT_API, path='/projects')

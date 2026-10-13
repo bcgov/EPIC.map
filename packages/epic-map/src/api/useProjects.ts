@@ -1,64 +1,119 @@
-import { useCallback } from "react";
-import axios from "axios";
+import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { FeatureCollection, Point } from "geojson";
 import type { MapProject } from "@/components/Filters/filterUtils";
+import { PROJECTS_REFRESH_MS } from "@/utils/config";
 import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
-import { PROJECTS_STALE_MS } from "@/utils/config";
 
 const PROJECTS_PATH = "/projects";
 
-interface ProjectListResponse {
-  projects: MapProject[];
+/** What a project's dot is drawn from. */
+export interface ProjectPoint {
+  id: number;
+  name: string;
+  typeId: number | null;
+  typeName: string | null;
+  regionId: number | null;
+  certificateIssued: boolean;
+  hasWorksInProgress: boolean;
 }
+
+/** What the project card shows. */
+export interface Project extends ProjectPoint {
+  description: string | null;
+  proponentName: string | null;
+  regionName: string | null;
+  eaCertificate: string | null;
+  epicUrl: string | null;
+  longitude: number;
+  latitude: number;
+}
+
+export type ProjectFeatures = FeatureCollection<Point, ProjectPoint>;
 
 const NONE: MapProject[] = [];
 
+// map-api serves open projects only, each with a location.
+const toMapProject = ({
+  geometry,
+  properties,
+}: ProjectFeatures["features"][number]): MapProject => ({
+  id: properties.id,
+  name: properties.name,
+  longitude: geometry.coordinates[0],
+  latitude: geometry.coordinates[1],
+  typeId: properties.typeId,
+  regionId: properties.regionId,
+  certificateIssued: properties.certificateIssued,
+  inProgressWorks: properties.hasWorksInProgress,
+  isClosed: false,
+});
+
 /**
- * Every EAO project, as map-api reduces EPIC.track's records for the map.
- *
- * The whole list in one request, unpaged: the filter bar's counts are faceted,
- * so what each option would yield depends on every other filter, which cannot be
- * answered from a page of the data.
- *
- * A 404 is read as "no projects yet" rather than as a failure. The service
- * behind this endpoint is a separate ticket, so until it lands the bar should
- * render empty rather than put an error in front of the user or in the host's
- * `onError`. Remove the tolerance once the endpoint is real - a 404 then means
- * something is genuinely wrong.
+ * Every open EPIC.Track project, as map-api serves them. map-api caches Track
+ * for the same period, so refetching sooner would only return the same list.
  */
-export const useProjects = () => {
+export const useProjectFeatures = () => {
   const { api } = useMapWidget();
 
-  const { data, isPending, error, refetch } = useQuery({
+  return useQuery({
     queryKey: epicMapQueryKey("projects"),
-    queryFn: async ({ signal }) => {
-      try {
-        const response = await api.get<ProjectListResponse>(PROJECTS_PATH, {
-          signal,
-          epicMapSilentStatuses: [404],
-        });
-        return response.data.projects;
-      } catch (cause) {
-        if (axios.isAxiosError(cause) && cause.response?.status === 404) {
-          return NONE;
-        }
-        throw cause;
-      }
-    },
-    staleTime: PROJECTS_STALE_MS,
+    queryFn: async ({ signal }) =>
+      (await api.get<ProjectFeatures>(PROJECTS_PATH, { signal })).data,
+    staleTime: PROJECTS_REFRESH_MS,
+    refetchInterval: PROJECTS_REFRESH_MS,
   });
+};
 
-  // Stable across renders: FiltersContext names this in the dependency list of
-  // the memo it builds its context value with, so a fresh closure here would
-  // make that memo miss every time and re-render both filter menus - each
-  // recounting its facets over the whole project list - on any provider render.
+/** The same projects as a flat list, for the filter bar and search. */
+export const useProjects = () => {
+  const { data, isPending, error, refetch } = useProjectFeatures();
+
+  const projects = useMemo(
+    () => (data ? data.features.map(toMapProject) : NONE),
+    [data],
+  );
+
+  // Stable across renders: FiltersContext names it in its value memo's deps.
   const retry = useCallback(() => void refetch(), [refetch]);
 
-  return {
-    projects: data ?? NONE,
-    isPending,
-    error,
-    retry,
-  };
+  return { projects, isPending, error, retry };
+};
+
+export const useProject = (projectId: number | null) => {
+  const { api } = useMapWidget();
+
+  return useQuery({
+    queryKey: epicMapQueryKey("projects", projectId),
+    queryFn: async ({ signal }) =>
+      (await api.get<Project>(`${PROJECTS_PATH}/${projectId}`, { signal })).data,
+    enabled: projectId !== null,
+    staleTime: PROJECTS_REFRESH_MS,
+  });
+};
+
+/** One work on a project's card, as map-api orders them. */
+export interface ProjectWork {
+  id: number;
+  title: string | null;
+  state: string | null;
+  phaseName: string | null;
+  decisionDate: string | null;
+  description: string | null;
+}
+
+export const useProjectWorks = (projectId: number) => {
+  const { api } = useMapWidget();
+
+  return useQuery({
+    queryKey: epicMapQueryKey("projects", projectId, "works"),
+    queryFn: async ({ signal }) =>
+      (
+        await api.get<ProjectWork[]>(`${PROJECTS_PATH}/${projectId}/works`, {
+          signal,
+        })
+      ).data,
+    staleTime: PROJECTS_REFRESH_MS,
+  });
 };

@@ -18,5 +18,9 @@ data:
   KEYCLOAK_BASE_URL: {{ .Values.auth.keycloak.uri }}
   # config.py reads KEYCLOAK_REALMNAME, not KEYCLOAK_REALM_NAME.
   KEYCLOAK_REALMNAME: {{ .Values.auth.keycloak.realm }}
+  # EPIC_TRACK_CLIENT_SECRET comes from map-api-secrets.
+  EPIC_TRACK_API_URL: {{ .Values.epicTrack.apiUrl | quote }}
+  EPIC_TRACK_CLIENT_ID: {{ .Values.epicTrack.clientId | quote }}
+  EPIC_PUBLIC_URL: {{ .Values.epicPublic.url | quote }}
   PYTHONBUFFERED: "{{ .Values.python.pythonBuffered }}"
   CONNECT_TIMEOUT: "{{ .Values.python.connectTimeout }}"

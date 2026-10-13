@@ -74,6 +74,16 @@ auth:
     cacheEnabled: true
     cacheTimeout: "300"
 
+# EPIC.Track, read with this API's own service account. apiUrl is set per
+# environment; the client secret is EPIC_TRACK_CLIENT_SECRET in map-api-secrets.
+epicTrack:
+  apiUrl: ""
+  clientId: epic-map-api
+
+# The EPIC public site that a project card's "View on EPIC" opens.
+epicPublic:
+  url: https://projects.eao.gov.bc.ca
+
 # A rollout surges a second pod before dropping the old one. Environments with
 # quota headroom keep that; see values.dev.yaml for the namespace that doesn't.
 rollout:

@@ -23,6 +23,10 @@ allowedClientIds: "compliance-web,submit-web,track-web,epic-map"
 # valid IDIR token from the shared realm is accepted.
 authRequiredGroup: ""
 
+# EPIC.Track's API base URL for this environment, without /api/v1.
+epicTrack:
+  apiUrl: "https://epictrack-api-c8b80a-dev.apps.gold.devops.gov.bc.ca"
+
 # Limits unchanged; the request is what the quota counts, and dev serves one
 # person at a time.
 resources:

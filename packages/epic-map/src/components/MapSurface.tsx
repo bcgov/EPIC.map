@@ -12,12 +12,14 @@ import BasemapSwitch from "@/components/BasemapSwitch";
 import MapMessage from "@/components/Filters/MapMessage";
 import MetaDataControl from "@/components/MetaData/MetaDataControl";
 import LayersControl from "@/components/Layers/LayersControl";
+import ProjectsControl from "@/components/Projects/ProjectsControl";
 import { LayersProvider } from "@/components/Layers/LayersContext";
 import {
   DEFAULT_BASEMAP,
   DEFAULT_EXTENT,
   MAX_ZOOM,
   MIN_ZOOM,
+  PROJECT_CARD_WIDTH_PX,
   WIDGET_ID_PREFIX,
   resolveBasemap,
   type BasemapId,
@@ -75,6 +77,12 @@ export default function MapSurface({
   const [unsupported, setUnsupported] = useState(false);
 
   const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP);
+
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(
+    null,
+  );
+  // The card docks over the right edge, so the controls there move beside it.
+  const cardInset = selectedProjectId === null ? 0 : PROJECT_CARD_WIDTH_PX;
   const activeStyle = resolveBasemap(basemap, basemapStyles).style;
 
   // What the map is actually showing. Tracking the style rather than the id
@@ -154,6 +162,7 @@ export default function MapSurface({
         height: "100%",
         minWidth: 0,
         minHeight: 0,
+        "& .maplibregl-ctrl-bottom-right": { right: `${cardInset}px` },
       }}
     >
       {unsupported ? (
@@ -184,7 +193,16 @@ export default function MapSurface({
             <LayersControl />
             <MetaDataControl />
           </LayersProvider>
-          <BasemapSwitch current={basemap} onSelect={setBasemap} />
+          <ProjectsControl
+            map={map}
+            selectedId={selectedProjectId}
+            onSelect={setSelectedProjectId}
+          />
+          <BasemapSwitch
+            current={basemap}
+            onSelect={setBasemap}
+            insetRight={cardInset}
+          />
           <MapMessage />
         </>
       )}
