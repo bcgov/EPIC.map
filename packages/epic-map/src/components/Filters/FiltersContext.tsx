@@ -42,6 +42,13 @@ interface FiltersContextValue {
    * project list, which "No projects match these filters" would misdescribe.
    */
   noMatches: boolean;
+  /**
+   * The project list could not be loaded and there is nothing to show. Kept
+   * apart from `noMatches` for the same reason: an empty map has two causes and
+   * they need different words, and a list that failed to refresh while the last
+   * one is still on screen is not an empty map at all.
+   */
+  loadFailed: boolean;
 }
 
 const FiltersContext = createContext<FiltersContextValue | null>(null);
@@ -122,6 +129,7 @@ export const FiltersProvider = ({ children }: { children: ReactNode }) => {
         anyFilterActive &&
         projects.length > 0 &&
         visibleProjects.length === 0,
+      loadFailed: Boolean(projectsError) && projects.length === 0,
     }),
     [
       projects,

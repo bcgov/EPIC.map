@@ -2,7 +2,7 @@ import { Box, Divider } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapSearch from "@/components/Search/MapSearch";
-import ClearFiltersLink from "@/components/Filters/ClearFiltersLink";
+import TertiaryLink from "@/components/Filters/TertiaryLink";
 import FilterDropdown from "@/components/Filters/FilterDropdown";
 import FilterToggle from "@/components/Filters/FilterToggle";
 import { useFilters } from "@/components/Filters/FiltersContext";
@@ -84,7 +84,7 @@ export default function MapSearchBar({ map }: { map: MapLibreMap | null }) {
         onToggle={toggleInProgressWorks}
       />
 
-      {anyFilterActive && <ClearFiltersLink onClick={clearFilters} />}
+      {anyFilterActive && <TertiaryLink onClick={clearFilters}>Clear filters</TertiaryLink>}
     </Box>
   );
 }
