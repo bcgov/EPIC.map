@@ -263,20 +263,13 @@ export const matchProjects = (
 
   return projects
     .filter((project) => project.name.toLowerCase().includes(needle))
-    // A project Track holds no coordinate for has nowhere to fly to, and a row
-    // that silently does nothing when clicked is worse than one absent from the
-    // list - the same rule toPlaceResult applies to places. Dropped before the
-    // limit, so a listed row is always a row that goes somewhere.
-    .filter(
-      (project) => project.longitude !== null && project.latitude !== null,
-    )
     .slice(0, limit)
     .map((project) => ({
       id: project.id,
       name: project.name,
       type:
         project.typeId === null ? null : typeNames.get(project.typeId) ?? null,
-      coordinates: [project.longitude, project.latitude] as [number, number],
+      coordinates: [project.longitude, project.latitude],
       zoom: PROJECT_ZOOM,
     }));
 };
