@@ -58,6 +58,22 @@ class ProjectSchema(ProjectPointSchema):
     )
 
 
+class FilterOptionSchema(Schema):
+    """One row of a code table, as a filter menu lists it."""
+
+    id = fields.Int()
+    name = fields.Str()
+
+
+class ProjectFilterOptionsSchema(Schema):
+    """The code tables behind the map's Type and Region menus."""
+
+    types = fields.List(fields.Nested(FilterOptionSchema))
+    regions = fields.List(
+        fields.Nested(FilterOptionSchema), metadata={'description': 'ENV regions'}
+    )
+
+
 class ProjectWorkSchema(Schema):
     """One work on a project's card."""
 

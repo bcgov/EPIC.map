@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
 import type { FilterOption } from "@/components/Filters/filterUtils";
 import { epicMapQueryKey } from "@/utils/queryKeys";
@@ -13,7 +12,6 @@ interface FilterOptionsResponse {
 }
 
 const NONE: FilterOption[] = [];
-const EMPTY: FilterOptionsResponse = { types: NONE, regions: NONE };
 
 /**
  * The Type and Region code tables the dropdowns list.
@@ -26,28 +24,17 @@ const EMPTY: FilterOptionsResponse = { types: NONE, regions: NONE };
  * These are the code tables rather than the values present in the data, which
  * is what lets an option with no projects still be offered, dimmed at 0.
  *
- * A 404 is read as "no options yet" for the same reason as the project list -
- * see useProjects.
+ * map-api serves these from Track's own tables, so a failure here is a failure
+ * rather than an empty menu: the dropdowns show nothing either way, but the
+ * host hears about it.
  */
 export const useProjectFilterOptions = () => {
   const { api } = useMapWidget();
 
   const { data, isPending, error } = useQuery({
     queryKey: epicMapQueryKey("projects", "filter-options"),
-    queryFn: async ({ signal }) => {
-      try {
-        const response = await api.get<FilterOptionsResponse>(
-          FILTER_OPTIONS_PATH,
-          { signal, epicMapSilentStatuses: [404] },
-        );
-        return response.data;
-      } catch (cause) {
-        if (axios.isAxiosError(cause) && cause.response?.status === 404) {
-          return EMPTY;
-        }
-        throw cause;
-      }
-    },
+    queryFn: async ({ signal }) =>
+      (await api.get<FilterOptionsResponse>(FILTER_OPTIONS_PATH, { signal })).data,
     staleTime: FILTER_OPTIONS_STALE_MS,
   });
 

@@ -11,9 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""EPIC.Track client. Open projects for the map, read with this API's own service account.
+"""EPIC.Track client, read with this API's own service account.
 
-Track is read live and cached briefly rather than copied: see claude-docs/06.
+Open projects for the map, and the code tables its filter menus list. Track is
+read live and cached briefly rather than copied: see claude-docs/06.
 """
 
 import re
@@ -27,8 +28,8 @@ from flask import current_app
 from map_api.exceptions import ServiceUnavailableError
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
-    EPIC_TRACK_PROJECTS_CACHE_TTL_SECONDS, EPIC_TRACK_REFRESH_WAIT_SECONDS, EPIC_TRACK_TIMEOUT_SECONDS,
-    EPIC_TRACK_TOKEN_EXPIRY_MARGIN_SECONDS)
+    EPIC_TRACK_CODE_TABLE_CACHE_TTL_SECONDS, EPIC_TRACK_PROJECTS_CACHE_TTL_SECONDS, EPIC_TRACK_REFRESH_WAIT_SECONDS,
+    EPIC_TRACK_TIMEOUT_SECONDS, EPIC_TRACK_TOKEN_EXPIRY_MARGIN_SECONDS)
 
 
 UNAVAILABLE_MESSAGE = 'EPIC.Track did not answer. Please try again.'
@@ -38,8 +39,13 @@ PROJECTS_KEY = 'epic-track:projects'
 LAST_GOOD_PROJECTS_KEY = 'epic-track:projects:last-good'
 TOKEN_KEY = 'epic-track:token'
 WORKS_KEY_PREFIX = 'epic-track:works:'
+FILTER_OPTIONS_KEY = 'epic-track:filter-options'
 
 WORK_IN_PROGRESS = 'IN_PROGRESS'
+
+# Track keeps a region table per ministry. A project's `region_env` is the ENV
+# one, and that is the id the map's Region menu filters on.
+ENV_REGION_ENTITY = 'ENV'
 
 # EPIC public project ids are Mongo ObjectIds; Track stores them as free text.
 EPIC_GUID = re.compile(r'^[0-9a-fA-F]{24}$')
@@ -49,7 +55,7 @@ REFRESH_LOCK = threading.Lock()
 
 
 class TrackService:
-    """Reads projects and works out of EPIC.Track's API."""
+    """Reads projects, works and code tables out of EPIC.Track's API."""
 
     @classmethod
     def open_projects(cls) -> list:
@@ -111,6 +117,26 @@ class TrackService:
         ])
         cache.set(key, works, timeout=EPIC_TRACK_PROJECTS_CACHE_TTL_SECONDS)
         return works
+
+    @classmethod
+    def filter_options(cls) -> dict:
+        """Return the project type and ENV region code tables the menus list.
+
+        No refresh lock and no last-good fallback, unlike the project list: a
+        day-long cache means this is fetched about once per pod, so there is no
+        repeated stampede to serialise, and a menu with no options is visibly
+        broken in a way a stale dot is not - better reported than papered over.
+        """
+        options = cache.get(FILTER_OPTIONS_KEY)
+        if options is not None:
+            return options
+
+        options = {
+            'types': _code_table(cls._get('project-types', {})),
+            'regions': _code_table(cls._get('regions', {'type': ENV_REGION_ENTITY})),
+        }
+        cache.set(FILTER_OPTIONS_KEY, options, timeout=EPIC_TRACK_CODE_TABLE_CACHE_TTL_SECONDS)
+        return options
 
     @staticmethod
     def _last_good() -> list:
@@ -234,6 +260,33 @@ def _location(project: dict) -> Optional[tuple]:
     if latitude == 0 and longitude == 0:
         return None
     return longitude, latitude
+
+
+def _offered(row) -> bool:
+    """Whether Track still offers this code table row."""
+    return (
+        isinstance(row, dict) and
+        row.get('is_active', True) and
+        not row.get('is_deleted', False)
+    )
+
+
+def _code_table(rows) -> list:
+    """One of Track's code tables as the menus list it: live rows, by name.
+
+    Retired rows are left out rather than offered permanently at 0. A project
+    can still carry a retired type or region, which is why the menu counts only
+    the ids it actually offers - otherwise its "All" row would promise projects
+    that selecting every option cannot reach.
+    """
+    options = [
+        {'id': row.get('id'), 'name': (row.get('name') or '').strip()}
+        for row in (rows or []) if _offered(row)
+    ]
+    return sorted(
+        (option for option in options if option['id'] is not None and option['name']),
+        key=lambda option: option['name'].casefold(),
+    )
 
 
 def _name_of(value) -> Optional[str]:
