@@ -45,7 +45,7 @@ import {
  */
 export default function MapSearch({ map }: { map: MapLibreMap | null }) {
   const theme = useTheme();
-  const { projects: allProjects, types } = useFilters();
+  const { projects: allProjects, visibleProjects, types } = useFilters();
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -55,10 +55,11 @@ export default function MapSearch({ map }: { map: MapLibreMap | null }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listId = useId();
 
-  const { showAt, clear: clearMarker } = useSearchMarker(
-    map,
-    theme.palette.primary.main,
-  );
+  const {
+    showAt,
+    goTo,
+    clear: clearMarker,
+  } = useSearchMarker(map, theme.palette.primary.main);
 
   // Waits for a pause in typing, so the geocoder is not asked per keystroke.
   useEffect(() => {
@@ -125,12 +126,23 @@ export default function MapSearch({ map }: { map: MapLibreMap | null }) {
   // not rendered. Matches SearchDropdown's own branch.
   const hasListbox = showDropdown && (rows.length > 0 || loading);
 
+  /** Whether the map is currently drawing this project's dot. */
+  const isDrawn = (projectId: number) =>
+    visibleProjects.some((project) => project.id === projectId);
+
   const select = (row: SearchRow | undefined) => {
     if (!row) return;
 
     if (row.kind === "place") {
+      // The geocoder's results belong to no layer, so a place is always pinned.
       showAt(row.place.coordinates, row.place.zoom);
+    } else if (isDrawn(row.project.id)) {
+      // Its own dot already says where it is.
+      goTo(row.project.coordinates, row.project.zoom);
     } else {
+      // A filter is hiding it. Projects are searched over the whole list on
+      // purpose - being unable to find something a forgotten filter hid is the
+      // worst case - so without a pin this would fly to an empty patch of map.
       showAt(row.project.coordinates, row.project.zoom);
     }
 
