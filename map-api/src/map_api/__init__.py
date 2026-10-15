@@ -197,7 +197,19 @@ def create_app(run_mode=os.getenv('FLASK_ENV', 'development')):
     @app.after_request
     def set_secure_headers(response):
         """Set CORS headers for security."""
+        # The secure defaults include `no-store`, which is right for everything
+        # that carries a user's own data and wrong for the few responses that
+        # are a copy of something public and expensive to rebuild - a vector
+        # tile being the case in hand, refetched on every pan without this. A
+        # view that has deliberately chosen a cache policy keeps the one it set;
+        # a view that has said nothing still gets `no-store`.
+        chosen_cache_control = response.headers.get('Cache-Control')
+
         secure_headers.set_headers(response)
+
+        if chosen_cache_control:
+            response.headers['Cache-Control'] = chosen_cache_control
+
         response.headers.add('Cross-Origin-Resource-Policy', '*')
         response.headers['Cross-Origin-Opener-Policy'] = '*'
         response.headers['Cross-Origin-Embedder-Policy'] = 'unsafe-none'

@@ -38,6 +38,18 @@ GROUP_MAP = {
 # Where an applied layer came from. Only the bc catalogue is written currently.
 LAYER_SOURCE_BCDC = 'bcdc'
 
+# A layer we host ourselves, loaded into the cache schema from an extract rather
+# than drawn from the warehouse. Not yet written to user_applied_layers: the
+# widget toggles these outside the applied set while the approach is proven.
+LAYER_SOURCE_LOCAL = 'local'
+
+# How long the browser may reuse one of our vector tiles. The rows behind it
+# change when someone reloads the extract, which is on the order of months, so
+# this is short only because a stale tile is invisible until someone notices a
+# boundary has not moved. Without it the application's no-store default has the
+# browser refetch every tile on every pan.
+LOCAL_TILE_CACHE_SECONDS = 300
+
 # Opacity is stored as a percentage rather than a fraction.
 DEFAULT_LAYER_OPACITY = 100
 MIN_LAYER_OPACITY = 0
