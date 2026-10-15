@@ -1,0 +1,56 @@
+# The image the hosted-layer ingest runs on, as a scheduled Job.
+#
+# Built FROM the same tag a developer's `docker run` uses, so the load rehearsed
+# on a laptop and the load performed at 09:00 go through the same ogr2ogr. That
+# tag is named once, in local_layer_service/ogr.py as GDAL_IMAGE, and a unit test
+# reads the FROM line below back and asserts they agree - otherwise the two
+# quietly drift and only the pod's load is wrong.
+#
+# Separate from the API image on purpose. The API pod runs on a quarter core and
+# 384Mi and has no use for 400MB of GDAL; this one needs GDAL and never serves a
+# request. They share requirements.txt, so the dependency set stays single.
+FROM ghcr.io/osgeo/gdal:ubuntu-small-3.9.2
+
+USER root
+
+# python3-venv because the venv below needs ensurepip, which Ubuntu ships
+# separately from python3 - without it `python3 -m venv` fails on pip.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3-venv \
+ && rm -rf /var/lib/apt/lists/*
+
+# A venv rather than the system interpreter: Ubuntu 24.04 marks its Python
+# externally managed (PEP 668) and pip refuses to install into it. The image's
+# own GDAL bindings live there and stay none of our business - this ingest shells
+# out to the ogr2ogr binary rather than importing osgeo.
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+RUN mkdir -p /opt/app-root && chmod 755 /opt/app-root
+WORKDIR /opt/app-root
+
+# The same pinned set the API image installs. Base image is Python 3.12, which is
+# what those pins were frozen on.
+COPY ./requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
+
+# Only what the ingest reads. No `pip install .`: the script puts src/ on
+# sys.path itself, and installing would tie this image to setup.py for no gain.
+COPY ./src ./src
+COPY ./scripts ./scripts
+
+ENV PYTHONPATH=/opt/app-root/src
+# Unbuffered: a Job's log is the only place an unattended failure is legible, and
+# buffered output on a pod that gets killed is no output at all.
+ENV PYTHONUNBUFFERED=1
+# Explicit rather than auto. ogr2ogr is right here, so a PATH that has lost it
+# should fail loudly instead of quietly trying a `docker run` no pod can make.
+ENV INGEST_GDAL=local
+
+USER 1001
+
+# The CronJob passes only flags. No shell, so an unparseable argument is
+# argparse's own exit 2 - which is already the code for "could not run".
+ENTRYPOINT ["python", "scripts/ingest_local_layer.py"]
