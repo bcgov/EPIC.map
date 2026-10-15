@@ -35,11 +35,15 @@ from map_api.utils.constant import (
 UNAVAILABLE_MESSAGE = 'EPIC.Track did not answer. Please try again.'
 
 PROJECTS_KEY = 'epic-track:projects'
-# No expiry: during a Track outage the map keeps the last list it had.
-LAST_GOOD_PROJECTS_KEY = 'epic-track:projects:last-good'
 TOKEN_KEY = 'epic-track:token'
 WORKS_KEY_PREFIX = 'epic-track:works:'
 FILTER_OPTIONS_KEY = 'epic-track:filter-options'
+
+# No expiry: during a Track outage the map keeps the last answer it had. Both of
+# the map's own two reads have one, so an outage degrades them together - dots
+# beside menus with nothing in them would be the map contradicting itself.
+LAST_GOOD_PROJECTS_KEY = 'epic-track:projects:last-good'
+LAST_GOOD_FILTER_OPTIONS_KEY = 'epic-track:filter-options:last-good'
 
 WORK_IN_PROGRESS = 'IN_PROGRESS'
 
@@ -66,7 +70,7 @@ class TrackService:
 
         # pylint: disable-next=consider-using-with; `with` cannot time out
         if not REFRESH_LOCK.acquire(timeout=EPIC_TRACK_REFRESH_WAIT_SECONDS):
-            return cls._last_good()
+            return cls._last_good(LAST_GOOD_PROJECTS_KEY, 'project list')
         try:
             projects = cache.get(PROJECTS_KEY)
             if projects is not None:
@@ -74,7 +78,7 @@ class TrackService:
             try:
                 projects = cls._fetch_open_projects()
             except ServiceUnavailableError:
-                return cls._last_good()
+                return cls._last_good(LAST_GOOD_PROJECTS_KEY, 'project list')
             cache.set(PROJECTS_KEY, projects, timeout=EPIC_TRACK_PROJECTS_CACHE_TTL_SECONDS)
             cache.set(LAST_GOOD_PROJECTS_KEY, projects, timeout=0)
             return projects
@@ -122,29 +126,36 @@ class TrackService:
     def filter_options(cls) -> dict:
         """Return the project type and ENV region code tables the menus list.
 
-        No refresh lock and no last-good fallback, unlike the project list: a
-        day-long cache means this is fetched about once per pod, so there is no
-        repeated stampede to serialise, and a menu with no options is visibly
-        broken in a way a stale dot is not - better reported than papered over.
+        No refresh lock, unlike the project list: a day-long cache means this is
+        fetched about once per pod, so there is no repeated stampede to
+        serialise. The last-good fallback it does share, and code tables earn one
+        more easily than projects do - Track revises them rarely, so yesterday's
+        menu is almost certainly still today's, and a menu is the one control the
+        user has no way around when it is empty.
         """
         options = cache.get(FILTER_OPTIONS_KEY)
         if options is not None:
             return options
 
-        options = {
-            'types': _code_table(cls._get('project-types', {})),
-            'regions': _code_table(cls._get('regions', {'type': ENV_REGION_ENTITY})),
-        }
+        try:
+            options = {
+                'types': _code_table(cls._get('project-types', {})),
+                'regions': _code_table(cls._get('regions', {'type': ENV_REGION_ENTITY})),
+            }
+        except ServiceUnavailableError:
+            return cls._last_good(LAST_GOOD_FILTER_OPTIONS_KEY, 'filter options')
         cache.set(FILTER_OPTIONS_KEY, options, timeout=EPIC_TRACK_CODE_TABLE_CACHE_TTL_SECONDS)
+        cache.set(LAST_GOOD_FILTER_OPTIONS_KEY, options, timeout=0)
         return options
 
     @staticmethod
-    def _last_good() -> list:
-        projects = cache.get(LAST_GOOD_PROJECTS_KEY)
-        if projects is None:
+    def _last_good(key: str, what: str):
+        """Serve the last answer Track gave, or report it unavailable."""
+        last_good = cache.get(key)
+        if last_good is None:
             raise ServiceUnavailableError(UNAVAILABLE_MESSAGE)
-        current_app.logger.warning('Serving the last EPIC.Track project list.')
-        return projects
+        current_app.logger.warning('Serving the last EPIC.Track %s.', what)
+        return last_good
 
     @classmethod
     def _fetch_open_projects(cls) -> list:

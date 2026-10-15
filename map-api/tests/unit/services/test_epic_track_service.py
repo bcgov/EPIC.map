@@ -18,7 +18,7 @@ import pytest
 import requests
 
 from map_api.exceptions import ServiceUnavailableError
-from map_api.services.epic_track_service import PROJECTS_KEY, TrackService
+from map_api.services.epic_track_service import FILTER_OPTIONS_KEY, PROJECTS_KEY, TrackService
 from map_api.utils.cache import cache
 
 
@@ -475,9 +475,49 @@ def test_filter_options_are_cached(app):
     assert get.call_count == 2
 
 
-def test_filter_options_failing_is_unavailable(app):
-    """No code tables is a 503, not two empty menus the user cannot use."""
+def test_filter_options_failing_with_nothing_cached_is_unavailable(app):
+    """No code tables to fall back on is a 503, not two empty menus."""
     with patch(POST, return_value=_token()), patch(GET, return_value=_Response(None, 500)):
         with app.app_context():
             with pytest.raises(ServiceUnavailableError):
                 TrackService.filter_options()
+
+
+def test_filter_options_failing_serves_the_last_tables(app):
+    """An outage after a good fetch keeps the menus populated.
+
+    The gap this closes: the project list has its own last-good copy, so an
+    outage used to leave dots on the map beside menus with nothing in them.
+    """
+    types = [{'id': 1, 'name': 'Mines'}]
+    regions = [{'id': 5, 'name': 'Cariboo'}]
+    with patch(POST, return_value=_token()), patch(GET, _code_tables(types, regions)):
+        with app.app_context():
+            TrackService.filter_options()
+
+    with app.app_context():
+        cache.delete(FILTER_OPTIONS_KEY)
+        with patch(POST, return_value=_token()), patch(GET, return_value=_Response(None, 500)):
+            options = TrackService.filter_options()
+
+    assert options == {'types': [{'id': 1, 'name': 'Mines'}], 'regions': [{'id': 5, 'name': 'Cariboo'}]}
+
+
+def test_the_second_code_table_failing_serves_the_last_tables(app):
+    """Half an answer is not an answer: both tables come from the same fetch."""
+    with patch(POST, return_value=_token()), \
+            patch(GET, _code_tables([{'id': 1, 'name': 'Mines'}], [{'id': 5, 'name': 'Cariboo'}])):
+        with app.app_context():
+            TrackService.filter_options()
+
+    def half(url, params=None, headers=None, timeout=None):  # pylint: disable=unused-argument
+        if url == f'{TRACK_URL}/api/v1/project-types':
+            return _Response([{'id': 2, 'name': 'Water Management'}])
+        return _Response(None, 500)
+
+    with app.app_context():
+        cache.delete(FILTER_OPTIONS_KEY)
+        with patch(POST, return_value=_token()), patch(GET, half):
+            options = TrackService.filter_options()
+
+    assert options == {'types': [{'id': 1, 'name': 'Mines'}], 'regions': [{'id': 5, 'name': 'Cariboo'}]}

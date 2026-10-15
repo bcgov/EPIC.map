@@ -29,6 +29,14 @@ interface FiltersContextValue {
   types: readonly FilterOption[];
   regions: readonly FilterOption[];
   optionsPending: boolean;
+  /**
+   * The code tables could not be loaded and there are no options to list. Kept
+   * apart from the project list's failure because the two are independent: the
+   * dots can arrive from map-api's last-good copy while the menus behind them
+   * do not, and an empty menu needs its own words where the dots need none.
+   */
+  optionsFailed: boolean;
+  retryOptions: () => void;
   filters: FilterState;
   anyFilterActive: boolean;
   /** Replace one group's selection outright - the menus compute the next set. */
@@ -64,7 +72,13 @@ const FiltersContext = createContext<FiltersContextValue | null>(null);
 export const FiltersProvider = ({ children }: { children: ReactNode }) => {
   const { projects, isPending: projectsPending, error: projectsError, retry } =
     useProjects();
-  const { types, regions, isPending: optionsPending } = useProjectFilterOptions();
+  const {
+    types,
+    regions,
+    isPending: optionsPending,
+    error: optionsError,
+    retry: retryOptions,
+  } = useProjectFilterOptions();
 
   const [filters, setFilters] = useState<FilterState>(NO_FILTERS);
 
@@ -115,6 +129,11 @@ export const FiltersProvider = ({ children }: { children: ReactNode }) => {
       types,
       regions,
       optionsPending,
+      // Only with nothing to list: a refresh that failed while the last menu is
+      // still on screen is a menu that works, not one that could not be loaded.
+      optionsFailed:
+        Boolean(optionsError) && types.length === 0 && regions.length === 0,
+      retryOptions,
       filters,
       anyFilterActive,
       setGroupSelection,
@@ -140,6 +159,8 @@ export const FiltersProvider = ({ children }: { children: ReactNode }) => {
       types,
       regions,
       optionsPending,
+      optionsError,
+      retryOptions,
       filters,
       anyFilterActive,
       setGroupSelection,

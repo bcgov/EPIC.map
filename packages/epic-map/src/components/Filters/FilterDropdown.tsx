@@ -3,6 +3,7 @@ import { Box, Button, Checkbox, Divider, Menu, MenuItem, Typography } from "@mui
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import { useTheme } from "@mui/material/styles";
+import TertiaryLink from "@/components/Filters/TertiaryLink";
 import { useFilters } from "@/components/Filters/FiltersContext";
 import {
   allRowState,
@@ -28,6 +29,7 @@ import {
   MENU_SEPARATOR,
   MENU_SHADOW,
   MENU_WIDTH,
+  SECONDARY_TEXT,
 } from "@/components/Filters/filterTokens";
 
 type FilterDropdownProps = {
@@ -74,6 +76,13 @@ const checkboxProps = {
  * No option is ever hidden or disabled. One worth nothing is dimmed and shows
  * its 0, which tells the user the combination is empty without taking away the
  * control that would let them out of it.
+ *
+ * A menu with nothing to list says why and offers a retry, in place of its rows
+ * rather than beneath them: an "All Types" row above no types reads as a working
+ * menu for a project list that happens to be empty, which is the one thing this
+ * is not. The dots can be on the map meanwhile - map-api serves the project list
+ * from its own last-good copy - so this is the only place the user can learn
+ * that the code tables behind the menus did not arrive.
  */
 export default function FilterDropdown({
   label,
@@ -82,7 +91,8 @@ export default function FilterDropdown({
   options,
 }: FilterDropdownProps) {
   const theme = useTheme();
-  const { projects, filters, setGroupSelection } = useFilters();
+  const { projects, filters, setGroupSelection, optionsFailed, retryOptions } =
+    useFilters();
 
   const anchorRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -97,6 +107,9 @@ export default function FilterDropdown({
 
   const allState = allRowState(selected, options);
   const active = selected.size > 0;
+  // Only with no rows of its own: options that did arrive are worth listing
+  // whatever a later refresh did.
+  const failed = optionsFailed && options.length === 0;
 
   return (
     <>
@@ -189,43 +202,74 @@ export default function FilterDropdown({
             },
           },
         }}
-        MenuListProps={{ dense: true, sx: { paddingY: 0 } }}
+        MenuListProps={{
+          dense: true,
+          // A list holding a message and a button is not a menu, and inside one
+          // an assistive technology expects menu items and may skip what is not
+          // one. Only the rows make it a menu.
+          ...(failed && { role: "presentation" }),
+          sx: { paddingY: 0 },
+        }}
       >
-        <MenuItem
-          onClick={() => setGroupSelection(group, toggleAll(selected, options))}
-          role="menuitemcheckbox"
-          aria-checked={allState === "all" ? true : allState === "some" ? "mixed" : false}
-          sx={{
-            height: MENU_ROW_HEIGHT,
-            minHeight: MENU_ROW_HEIGHT,
-            padding: "0 1rem",
-            "&:hover": { backgroundColor: MENU_ROW_HOVER_FILL },
-          }}
-        >
-          <Checkbox
-            checked={allState === "all"}
-            indeterminate={allState === "some"}
-            {...checkboxProps}
-            sx={checkboxSx}
-          />
-          <Typography
+        {failed ? (
+          <Box
+            role="status"
             sx={{
-              flex: 1,
-              fontSize: "0.75rem",
-              fontWeight: theme.typography.fontWeightBold,
-              color: theme.palette.text.primary,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "0.5rem",
+              padding: "0.5rem 0.5rem 0.5rem 1rem",
             }}
           >
-            {allLabel}
-          </Typography>
-          <Typography
-            sx={{ fontSize: "0.75rem", color: theme.palette.text.primary }}
+            <Typography
+              sx={{
+                fontSize: "0.875rem",
+                lineHeight: "1.3125rem",
+                color: SECONDARY_TEXT,
+              }}
+            >
+              {label} options could not be loaded
+            </Typography>
+            <TertiaryLink onClick={retryOptions}>Try again</TertiaryLink>
+          </Box>
+        ) : (
+          <MenuItem
+            onClick={() => setGroupSelection(group, toggleAll(selected, options))}
+            role="menuitemcheckbox"
+            aria-checked={allState === "all" ? true : allState === "some" ? "mixed" : false}
+            sx={{
+              height: MENU_ROW_HEIGHT,
+              minHeight: MENU_ROW_HEIGHT,
+              padding: "0 1rem",
+              "&:hover": { backgroundColor: MENU_ROW_HOVER_FILL },
+            }}
           >
-            {total}
-          </Typography>
-        </MenuItem>
+            <Checkbox
+              checked={allState === "all"}
+              indeterminate={allState === "some"}
+              {...checkboxProps}
+              sx={checkboxSx}
+            />
+            <Typography
+              sx={{
+                flex: 1,
+                fontSize: "0.75rem",
+                fontWeight: theme.typography.fontWeightBold,
+                color: theme.palette.text.primary,
+              }}
+            >
+              {allLabel}
+            </Typography>
+            <Typography
+              sx={{ fontSize: "0.75rem", color: theme.palette.text.primary }}
+            >
+              {total}
+            </Typography>
+          </MenuItem>
+        )}
 
-        <Divider sx={{ margin: 0, borderColor: MENU_SEPARATOR }} />
+        {!failed && <Divider sx={{ margin: 0, borderColor: MENU_SEPARATOR }} />}
 
         {options.map((option) => {
           const count = counts.get(option.id) ?? 0;
