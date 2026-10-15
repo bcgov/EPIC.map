@@ -239,7 +239,6 @@ describe("matchProjects", () => {
     regionId: null,
     certificateIssued: false,
     inProgressWorks: false,
-    isClosed: false,
   });
 
   const types: FilterOption[] = [
@@ -280,29 +279,6 @@ describe("matchProjects", () => {
     });
   });
 
-  // The row's whole purpose is somewhere to fly to, so one that cannot is left
-  // out rather than listed and inert - the rule toPlaceResult applies too.
-  it("leaves out a project Track holds no usable coordinate for", () => {
-    const placeless = [{ ...project(6, "Placeless"), latitude: null }];
-    expect(matchProjects(placeless, types, "placeless")).toEqual([]);
-
-    const halfPlaced = [{ ...project(7, "Half Placed"), longitude: null }];
-    expect(matchProjects(halfPlaced, types, "half")).toEqual([]);
-  });
-
-  // Dropped before the limit is applied, so the limit counts rows the user can
-  // actually use.
-  it("fills the limit with projects that have somewhere to go", () => {
-    const mixed = [
-      { ...project(8, "Caribou Placeless"), latitude: null },
-      project(9, "Caribou Placed"),
-    ];
-
-    expect(
-      matchProjects(mixed, types, "caribou", 1).map((match) => match.name),
-    ).toEqual(["Caribou Placed"]);
-  });
-
   it("matches nothing on an empty query", () => {
     expect(matchProjects(projects, types, "   ")).toEqual([]);
   });
@@ -328,7 +304,6 @@ describe("toRows", () => {
           regionId: null,
           certificateIssued: false,
           inProgressWorks: false,
-          isClosed: false,
         },
       ],
       [],

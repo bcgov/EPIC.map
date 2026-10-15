@@ -152,3 +152,45 @@ def test_works_of_a_closed_project_are_a_404(app, client, jwt, session):
         response = client.get(f'{ENDPOINT}/8/works', headers=factory_auth_header(jwt))
 
     assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_filter_options_require_a_token(app, client, session):
+    """The code tables are not open to anonymous callers either."""
+    assert client.get(f'{ENDPOINT}/filter-options').status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_filter_options_are_the_two_code_tables(app, client, jwt, session):
+    """Camel cased like the rest, in the order the service returned them."""
+    with patch(SERVICE) as service:
+        service.filter_options.return_value = {
+            'types': [{'id': 1, 'name': 'Mines'}],
+            'regions': [{'id': 2, 'name': 'Cariboo'}],
+        }
+        response = client.get(f'{ENDPOINT}/filter-options', headers=factory_auth_header(jwt))
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json == {
+        'types': [{'id': 1, 'name': 'Mines'}],
+        'regions': [{'id': 2, 'name': 'Cariboo'}],
+    }
+
+
+# 'filter-options' is not an int, so it reaches its own route rather than the
+# project-by-id one.
+def test_filter_options_are_not_read_as_a_project_id(app, client, jwt, session):
+    """The literal path wins over the <int:project_id> route."""
+    with patch(SERVICE) as service:
+        service.filter_options.return_value = {'types': [], 'regions': []}
+        response = client.get(f'{ENDPOINT}/filter-options', headers=factory_auth_header(jwt))
+
+    assert response.status_code == HTTPStatus.OK
+    service.open_project.assert_not_called()
+
+
+def test_filter_options_unavailable_is_a_503(app, client, jwt, session):
+    """Track being down is reported, not served as empty menus."""
+    with patch(SERVICE) as service:
+        service.filter_options.side_effect = ServiceUnavailableError('EPIC.Track did not answer.')
+        response = client.get(f'{ENDPOINT}/filter-options', headers=factory_auth_header(jwt))
+
+    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE

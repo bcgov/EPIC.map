@@ -17,16 +17,19 @@
 export interface MapProject {
   id: number;
   name: string;
-  /** Decimal degrees, or null when Track holds no usable coordinate. */
-  latitude: number | null;
-  longitude: number | null;
+  /**
+   * Decimal degrees. Never null: map-api returns open projects only, and drops
+   * any whose coordinates Track does not hold or cannot parse, so a project
+   * that reaches the browser is one the map can place.
+   */
+  latitude: number;
+  longitude: number;
   /** Track type id, or null when the project has no type. */
   typeId: number | null;
   /** Track ENV region id, or null when the project has no region. */
   regionId: number | null;
   certificateIssued: boolean;
   inProgressWorks: boolean;
-  isClosed: boolean;
 }
 
 /** One row of a code table, as a dropdown lists it. */

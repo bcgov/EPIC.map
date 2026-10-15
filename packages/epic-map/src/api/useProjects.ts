@@ -47,7 +47,6 @@ const toMapProject = ({
   regionId: properties.regionId,
   certificateIssued: properties.certificateIssued,
   inProgressWorks: properties.hasWorksInProgress,
-  isClosed: false,
 });
 
 /**

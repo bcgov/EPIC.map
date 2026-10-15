@@ -1,7 +1,8 @@
+import type { ReactNode } from "react";
 import { Box, Fade, Typography } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useTheme } from "@mui/material/styles";
-import ClearFiltersLink from "@/components/Filters/ClearFiltersLink";
+import TertiaryLink from "@/components/Filters/TertiaryLink";
 import { useFilters } from "@/components/Filters/FiltersContext";
 import {
   BORDER_DEFAULT,
@@ -11,12 +12,19 @@ import {
 import { LAYERS_BUTTON_WIDTH, MAP_MESSAGE_FADE_MS } from "@/utils/config";
 
 /**
- * The one message that explains an empty map.
+ * The message that explains an empty map, for either reason it can be empty.
  *
- * Deliberately a single rule rather than a state on each control: any
- * combination of Type, Region and the two toggles that matches nothing is the
- * same situation to the user, and saying so once beats dimming four controls and
- * leaving them to work out which one did it.
+ * A combination that matches nothing is deliberately a single rule rather than a
+ * state on each control: any empty combination is the same situation to the
+ * user, and saying so once beats dimming four controls and leaving them to work
+ * out which one did it.
+ *
+ * A project list that could not be loaded is the other reason, and it gets its
+ * own words and a retry rather than the filter message or silence. It takes
+ * precedence: the filters cannot be said to match nothing when there is nothing
+ * for them to have matched. The context's rules already make the two exclusive,
+ * but the precedence is stated here too - two cards in one live region would
+ * announce twice and give contradictory reasons for the same empty map.
  *
  * Sits in the Layers button's row and is centred in what is left to the right of
  * it, so the two never collide. Above the map and its markers, and below an open
@@ -30,7 +38,46 @@ import { LAYERS_BUTTON_WIDTH, MAP_MESSAGE_FADE_MS } from "@/utils/config";
  */
 export default function MapMessage() {
   const theme = useTheme();
-  const { noMatches, clearFilters } = useFilters();
+  const { noMatches, loadFailed, clearFilters, retryProjects } = useFilters();
+
+  // Both cards are the same card but for their contents, and they sit inside
+  // one live region so that either arriving is announced as a change to it.
+  const card = (message: string, action: ReactNode) => (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+        height: "2.75rem",
+        // Bounded by the row it sits in, so a long message is clipped at
+        // the gutter instead of spilling back over the Layers button.
+        maxWidth: "100%",
+        minWidth: 0,
+        overflow: "hidden",
+        padding: "0.25rem 0.25rem 0.25rem 1rem",
+        backgroundColor: theme.palette.common.white,
+        border: `1px solid ${BORDER_DEFAULT}`,
+        borderRadius: `${theme.shape.borderRadius}px`,
+        boxShadow: MENU_SHADOW,
+        pointerEvents: "auto",
+      }}
+    >
+      <InfoOutlinedIcon
+        sx={{ flexShrink: 0, fontSize: "1.25rem", color: INFO_ICON }}
+      />
+      <Typography
+        sx={{
+          fontSize: theme.typography.body2.fontSize,
+          lineHeight: "1.313rem",
+          color: theme.palette.text.primary,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {message}
+      </Typography>
+      {action}
+    </Box>
+  );
 
   return (
     <Box
@@ -52,41 +99,22 @@ export default function MapMessage() {
         pointerEvents: "none",
       }}
     >
-      <Fade in={noMatches} timeout={MAP_MESSAGE_FADE_MS} unmountOnExit>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.75rem",
-            height: "2.75rem",
-            // Bounded by the row it sits in, so a long message is clipped at
-            // the gutter instead of spilling back over the Layers button.
-            maxWidth: "100%",
-            minWidth: 0,
-            overflow: "hidden",
-            padding: "0.25rem 0.25rem 0.25rem 1rem",
-            backgroundColor: theme.palette.common.white,
-            border: `1px solid ${BORDER_DEFAULT}`,
-            borderRadius: `${theme.shape.borderRadius}px`,
-            boxShadow: MENU_SHADOW,
-            pointerEvents: "auto",
-          }}
-        >
-          <InfoOutlinedIcon
-            sx={{ flexShrink: 0, fontSize: "1.25rem", color: INFO_ICON }}
-          />
-          <Typography
-            sx={{
-              fontSize: theme.typography.body2.fontSize,
-              lineHeight: "1.313rem",
-              color: theme.palette.text.primary,
-              whiteSpace: "nowrap",
-            }}
-          >
-            No projects match these filters
-          </Typography>
-          <ClearFiltersLink onClick={clearFilters} />
-        </Box>
+      <Fade
+        in={noMatches && !loadFailed}
+        timeout={MAP_MESSAGE_FADE_MS}
+        unmountOnExit
+      >
+        {card(
+          "No projects match these filters",
+          <TertiaryLink onClick={clearFilters}>Clear filters</TertiaryLink>,
+        )}
+      </Fade>
+
+      <Fade in={loadFailed} timeout={MAP_MESSAGE_FADE_MS} unmountOnExit>
+        {card(
+          "Projects could not be loaded",
+          <TertiaryLink onClick={retryProjects}>Try again</TertiaryLink>,
+        )}
       </Fade>
     </Box>
   );

@@ -30,30 +30,34 @@ const places: PlaceResult[] = [
   },
 ];
 
+const goTo = vi.fn();
 const clearMarker = vi.fn();
 
 // The marker is mocked rather than exercised: it is the one part of this
 // component that reaches for maplibre, which wants a WebGL context jsdom has
 // no way to give it.
 vi.mock("@/components/Search/useSearchMarker", () => ({
-  useSearchMarker: () => ({ showAt, clear: clearMarker }),
+  useSearchMarker: () => ({ showAt, goTo, clear: clearMarker }),
 }));
+
+const caribou = {
+  id: 1,
+  name: "Caribou Gold Project",
+  latitude: 53,
+  longitude: -122,
+  typeId: 1,
+  regionId: null,
+  certificateIssued: false,
+  inProgressWorks: false,
+};
+
+/** Whether the filters are currently letting the project through to the map. */
+const filterState = { visible: [caribou] as (typeof caribou)[] };
 
 vi.mock("@/components/Filters/FiltersContext", () => ({
   useFilters: () => ({
-    projects: [
-      {
-        id: 1,
-        name: "Caribou Gold Project",
-        latitude: 53,
-        longitude: -122,
-        typeId: 1,
-        regionId: null,
-        certificateIssued: false,
-        inProgressWorks: false,
-        isClosed: false,
-      },
-    ],
+    projects: [caribou],
+    visibleProjects: filterState.visible,
     types: [{ id: 1, name: "Mines" }],
   }),
 }));
@@ -105,7 +109,9 @@ const search = async (text: string) => {
 
 beforeEach(() => {
   showAt.mockClear();
+  goTo.mockClear();
   clearMarker.mockClear();
+  filterState.visible = [caribou];
   placeSearch.results = places;
   placeSearch.isLoading = false;
   placeSearch.error = undefined;
@@ -218,6 +224,7 @@ describe("the keyboard", () => {
     await user.keyboard("{Enter}");
 
     expect(showAt).not.toHaveBeenCalled();
+    expect(goTo).not.toHaveBeenCalled();
     expect(screen.getByRole("listbox")).toBeDefined();
   });
 
@@ -263,13 +270,52 @@ describe("selecting", () => {
     expect(showAt).toHaveBeenCalledWith([-124.7, 48.7], 14);
   });
 
-  it("flies to a project's own coordinate", async () => {
+  // A project is already a dot carrying its own glyph and colour, so a pin
+  // beside it would be a second symbol for one thing.
+  it("flies to a project's own coordinate without pinning it", async () => {
+    render(<MapSearch map={null} />);
+    const user = await search("car");
+
+    await user.click(screen.getAllByRole("option")[0]);
+
+    expect(goTo).toHaveBeenCalledWith([-122, 53], expect.any(Number));
+    expect(showAt).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Projects are searched over the whole list, not the filtered subset, so a
+   * chosen project may be one the map is not drawing. Then there is no dot to
+   * identify it and the pin is all there is.
+   */
+  it("pins a project the filters are hiding", async () => {
+    filterState.visible = [];
     render(<MapSearch map={null} />);
     const user = await search("car");
 
     await user.click(screen.getAllByRole("option")[0]);
 
     expect(showAt).toHaveBeenCalledWith([-122, 53], expect.any(Number));
+    expect(goTo).not.toHaveBeenCalled();
+  });
+
+  // Otherwise the field would be showing two answers at once: a pin on the
+  // place picked before, and the project it has just flown to.
+  it("takes down a place's pin when a project is picked next", async () => {
+    render(<MapSearch map={null} />);
+    const user = await search("car");
+
+    await user.click(screen.getAllByRole("option")[1]);
+    expect(showAt).toHaveBeenCalled();
+
+    // Reopened with a key rather than a click: the menu keeps focus in the
+    // field, so clicking it again fires no onFocus to open it with.
+    await user.keyboard("{ArrowDown}");
+    await waitFor(() =>
+      expect(screen.getAllByRole("option")).toHaveLength(ROWS),
+    );
+    await user.click(screen.getAllByRole("option")[0]);
+
+    expect(goTo).toHaveBeenCalledWith([-122, 53], expect.any(Number));
   });
 });
 
@@ -303,7 +349,7 @@ describe("the active row across an update", () => {
     );
 
     await user.keyboard("{Enter}");
-    expect(showAt).toHaveBeenCalledWith([-122, 53], expect.any(Number));
+    expect(goTo).toHaveBeenCalledWith([-122, 53], expect.any(Number));
   });
 
   /**
@@ -347,6 +393,7 @@ describe("the active row across an update", () => {
 
     await user.keyboard("{Enter}");
     expect(showAt).not.toHaveBeenCalled();
+    expect(goTo).not.toHaveBeenCalled();
   });
 });
 
@@ -356,7 +403,8 @@ describe("clearing", () => {
   it("takes the pin off the map", async () => {
     render(<MapSearch map={null} />);
     const user = await search("car");
-    await user.click(screen.getAllByRole("option")[0]);
+    // A place, so that there is a pin to take off.
+    await user.click(screen.getAllByRole("option")[1]);
     expect(showAt).toHaveBeenCalled();
 
     await user.click(screen.getByLabelText("Clear search"));
