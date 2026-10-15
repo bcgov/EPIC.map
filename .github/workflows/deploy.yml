@@ -76,6 +76,10 @@ jobs:
           oc tag map-api:$SOURCE_TAG map-api:$ENV
           oc tag map-web:$SOURCE_TAG map-web:$ENV
           oc tag map-widget:$SOURCE_TAG map-widget:$ENV
+          # map-api-ingest joins this list when the ingest CronJob is enabled
+          # beyond dev (ingest.enabled in values.test.yaml / values.prod.yaml).
+          # Left out deliberately until then: `oc tag` against an ImageStream that
+          # no environment consumes would fail the whole promote.
 
           # Deployments carry no ImageChange trigger: moving the tag changes what
           # the registry serves, and the restart is what makes the pods pull it.
