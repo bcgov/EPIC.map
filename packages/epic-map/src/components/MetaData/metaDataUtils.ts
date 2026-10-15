@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
-import type { Feature } from "geojson";
+import type { Feature, Geometry } from "geojson";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { AppliedLayer } from "@/api/useAppliedLayers";
-import type { MetaDataByLayer, MetaDataFeature } from "@/api/useMetaData";
+import type {
+  FeatureAttribute,
+  MetaDataByLayer,
+  MetaDataFeature,
+} from "@/api/useMetaData";
 import type { MapExtent } from "@/types";
 import { MIN_FEATURE_PIXELS } from "@/utils/config";
 import { geoBounds } from "@/utils/geo";
@@ -47,13 +51,13 @@ export const clickBox = (
   ];
 };
 
-// Rows
+// Rows: layer, feature, record
 
 export type MetaDataRowStatus = "pending" | "found" | "empty" | "error";
 
 /**
  * A layer as the popup lists it. A catalogue layer is asked by object name;
- * an imported one has none, since its features are already on the map.
+ * an imported or hosted one has its features already on the map.
  */
 export interface MetaDataLayer {
   id: string;
@@ -61,12 +65,100 @@ export interface MetaDataLayer {
   objectName?: string | null;
 }
 
+/** One label and value within a record, with the label already in prose. */
+export interface MetaDataAttribute {
+  label: string;
+  value: unknown;
+}
+
+/**
+ * One set of attributes attached to a feature.
+ *
+ * Most features have exactly one, and for those the distinction between the
+ * feature and its record never shows. Some carry several over the one geometry
+ * - a consultation area covering twelve nations, each with its own contact -
+ * and those are what the pager in the detail is for.
+ */
+export interface MetaDataRecord {
+  /** Unique within its feature, for React keys and the pager. */
+  id: string;
+  attributes: MetaDataAttribute[];
+}
+
+/**
+ * One geometry in a layer, with everything recorded against it.
+ *
+ * A click can land on several of these in one layer where shapes overlap,
+ * which is why the popup lists features under their layer rather than listing
+ * one thing per layer.
+ */
+export interface MetaDataFeatureEntry {
+  /** Unique within its layer: what the selection and the highlight address. */
+  key: string;
+  name: string;
+  records: MetaDataRecord[];
+  /** The source's own id, where it has one stable enough to draw by. */
+  id: string | null;
+  /** Its shape, where we hold one. */
+  geometry: Geometry | null;
+  /** Null where nothing carried an extent, which is what the zoom needs. */
+  bounds: MapExtent | null;
+  /** The records are still being fetched, so the detail has nothing to show. */
+  pending?: boolean;
+  /** The records could not be fetched, which the detail offers to retry. */
+  failed?: boolean;
+}
+
 export interface MetaDataRow {
   layer: MetaDataLayer;
   status: MetaDataRowStatus;
-  feature: MetaDataFeature | null;
+  features: MetaDataFeatureEntry[];
   retrying: boolean;
 }
+
+/** One record from a warehouse feature's columns, labelled for reading. */
+const recordFromProperties = (
+  properties: readonly FeatureAttribute[],
+): MetaDataRecord => ({
+  id: "0",
+  attributes: properties.map(({ name, value }) => ({
+    label: attributeLabel(name),
+    value,
+  })),
+});
+
+/**
+ * The row a layer that could not answer stands in the list with.
+ *
+ * A feature with no records rather than a row with no features: it is listed,
+ * counted and selectable like anything else at the point, and selecting it is
+ * what shows the Retry. Nothing else about it is known - that is the problem it
+ * is reporting.
+ */
+const errorFeature = (layer: MetaDataLayer): MetaDataFeatureEntry => ({
+  key: `${layer.id}-error`,
+  name: layer.name,
+  records: [],
+  id: null,
+  geometry: null,
+  bounds: null,
+  failed: true,
+});
+
+/** The one feature a warehouse layer answers a click with. */
+const warehouseFeature = (
+  layer: MetaDataLayer,
+  feature: MetaDataFeature,
+): MetaDataFeatureEntry => ({
+  // The warehouse's id where it has one: a layer without one answers with a
+  // single feature anyway, so the layer's own id keeps it addressable.
+  key: feature.id ?? layer.id,
+  name: feature.name || layer.name,
+  records: [recordFromProperties(feature.properties)],
+  id: feature.id,
+  geometry: feature.geometry,
+  bounds: feature.bounds,
+});
 
 /**
  * Pairs each queried layer with its answer, in the order they were asked.
@@ -86,10 +178,16 @@ export const toRows = (
   layers.map((layer) => {
     const { objectName } = layer;
     const answer = objectName ? byLayer[objectName] : undefined;
+    const status = answer?.status ?? (failed ? "error" : "pending");
+    const feature = answer?.feature;
     return {
       layer,
-      status: answer?.status ?? (failed ? "error" : "pending"),
-      feature: answer?.feature ?? null,
+      status,
+      features: feature
+        ? [warehouseFeature(layer, feature)]
+        : status === "error"
+        ? [errorFeature(layer)]
+        : [],
       retrying: Boolean(objectName && retrying.has(objectName)),
     };
   });
@@ -106,10 +204,11 @@ export interface ImportedHit {
  * Rows for the imported layers under a click, answered on the spot: their
  * features are already in the browser, so nothing is asked of map-api.
  *
- * `hits` comes topmost first, and only a layer's topmost feature is kept - the
- * one the user can see they clicked. The feature is read back from the layer's
- * own data rather than the map's copy, which clips geometry to a tile and
- * flattens nested attributes to strings.
+ * `hits` comes topmost first, and every one of them is listed: overlapping
+ * shapes in one layer are several features, and dropping all but the topmost
+ * would hide what the click actually landed on. The feature is read back from
+ * the layer's own data rather than the map's copy, which clips geometry to a
+ * tile and flattens nested attributes to strings.
  */
 export const importedRows = (
   hits: readonly ImportedHit[],
@@ -117,65 +216,133 @@ export const importedRows = (
   findFeature: (layerId: string, featureId: ImportedHit["featureId"]) => Feature | null,
 ): MetaDataRow[] => {
   const byId = new Map(layers.map((layer) => [layer.id, layer]));
-  const rows: MetaDataRow[] = [];
-  const seen = new Set<string>();
+  const rows = new Map<string, MetaDataRow>();
 
-  for (const { layerId, featureId, rendered } of hits) {
+  hits.forEach(({ layerId, featureId, rendered }, index) => {
     const layer = byId.get(layerId);
-    if (!layer || seen.has(layerId)) continue;
-    seen.add(layerId);
+    if (!layer) return;
 
     const feature = findFeature(layerId, featureId) ?? rendered ?? null;
-    rows.push({
+    // One tile's worth of a shape at a time, so the same feature can be
+    // reported more than once over a seam.
+    const key = featureId === undefined ? `hit-${index}` : String(featureId);
+
+    const row = rows.get(layerId) ?? {
       layer,
-      status: "found",
-      feature: {
-        id: null,
-        name: null,
-        properties: Object.entries(feature?.properties ?? {}).map(
-          ([name, value]) => ({ name, value }),
-        ),
-        geometry: feature?.geometry ?? null,
-        bounds: feature ? geoBounds([feature]) : null,
-      },
+      status: "found" as const,
+      features: [],
       retrying: false,
+    };
+    if (row.features.some((entry) => entry.key === key)) return;
+
+    const properties = Object.entries(feature?.properties ?? {}).map(
+      ([name, value]) => ({ name, value }),
+    );
+    row.features.push({
+      key,
+      // Imported features carry whatever columns the file had, so there is no
+      // one of them that names a feature. The layer does.
+      name: layer.name,
+      records: [recordFromProperties(properties)],
+      id: null,
+      geometry: feature?.geometry ?? null,
+      bounds: feature ? geoBounds([feature]) : null,
     });
-  }
-  return rows;
+    rows.set(layerId, row);
+  });
+
+  return [...rows.values()];
 };
 
 /** Still waiting on the first answer from at least one layer. */
 export const isLoading = (rows: readonly MetaDataRow[]): boolean =>
   rows.some((row) => row.status === "pending");
 
-/**
- * The rows worth a line in the popup: layers with something here, and layers
- * that could not say. A layer with nothing at the point is left out.
- */
-export const visibleRows = (rows: readonly MetaDataRow[]): MetaDataRow[] =>
-  rows.filter((row) => row.status === "found" || row.status === "error");
+/** Nothing has answered yet, so there is not even a partial list to show. */
+export const isEmptySoFar = (rows: readonly MetaDataRow[]): boolean =>
+  rows.every((row) => row.status === "pending");
 
 /**
- * The row the detail shows: the user's pick while it is still listed, else the
- * first layer that answered, else the first row at all - which is a failure,
- * so its Retry is what the user sees.
+ * The rows worth a line in the popup: layers with something here, and layers
+ * that could not say. A layer with nothing at the point is left out, as is one
+ * still being waited on - it joins the list when it answers.
  */
-export const selectedRow = (
+export const visibleRows = (rows: readonly MetaDataRow[]): MetaDataRow[] =>
+  rows.filter((row) => row.features.length > 0);
+
+/** Every feature the popup lists, which is what the header counts. */
+export const featureCount = (rows: readonly MetaDataRow[]): number =>
+  rows.reduce((total, row) => total + row.features.length, 0);
+
+/** Which feature the detail is showing, across layers. */
+export interface MetaDataSelection {
+  layerId: string;
+  featureKey: string;
+}
+
+export const sameSelection = (
+  one: MetaDataSelection | null,
+  two: MetaDataSelection | null,
+): boolean =>
+  one?.layerId === two?.layerId && one?.featureKey === two?.featureKey;
+
+/** A row paired with one of its features, as the list renders them. */
+export interface MetaDataOption {
+  row: MetaDataRow;
+  feature: MetaDataFeatureEntry;
+}
+
+/**
+ * Everything in the list that can be selected, in the order it is shown.
+ *
+ * A layer with one feature is selected by its own row; a layer with several is
+ * a heading over its features. Either way this is what the arrow keys step
+ * through, so a heading that selects nothing is not in it.
+ */
+export const selectableOptions = (
   rows: readonly MetaDataRow[],
-  chosenLayerId: string | null,
-): MetaDataRow | null =>
-  rows.find((row) => row.layer.id === chosenLayerId) ??
-  rows.find((row) => row.status === "found") ??
-  rows[0] ??
-  null;
+): MetaDataOption[] =>
+  rows.flatMap((row) => row.features.map((feature) => ({ row, feature })));
+
+/**
+ * The feature the detail shows: the user's pick while it is still listed, else
+ * the first feature that answered.
+ *
+ * A layer that failed is skipped when something else answered - the user came
+ * to read what is here, and a failure above it in the list should not be the
+ * first thing they are shown. It is still selectable, and it is all there is
+ * when nothing else answered.
+ */
+export const selectedOption = (
+  rows: readonly MetaDataRow[],
+  chosen: MetaDataSelection | null,
+): MetaDataOption | null => {
+  const options = selectableOptions(rows);
+  return (
+    options.find(
+      (option) =>
+        option.row.layer.id === chosen?.layerId &&
+        option.feature.key === chosen?.featureKey,
+    ) ??
+    options.find((option) => option.row.status !== "error") ??
+    options[0] ??
+    null
+  );
+};
 
 /** What the popup says when no enabled layer has anything at the point. */
 export const NOTHING_HERE_TITLE = "No features here";
 
-export const popupTitle = (loading: boolean, rowCount: number): string => {
-  if (loading) return "Identifying…";
-  if (rowCount === 0) return NOTHING_HERE_TITLE;
-  return `${rowCount} ${rowCount === 1 ? "layer" : "layers"} at this point`;
+/**
+ * The header: how many things the click landed on, counted across layers.
+ *
+ * Features rather than layers, because that is what the list underneath has a
+ * line for, and it grows as slower layers answer rather than waiting for the
+ * last of them.
+ */
+export const popupTitle = (loading: boolean, features: number): string => {
+  if (features === 0) return loading ? "Identifying…" : NOTHING_HERE_TITLE;
+  return `${features} ${features === 1 ? "feature" : "features"} at this point`;
 };
 
 /** Up, Down, Home and End through a list, stopping at either end. */
@@ -200,11 +367,11 @@ export const steppedIndex = (
 };
 
 /**
- * The one heading the detail shows: what the layer's own map labels this
- * feature, and the layer's name when its style labels nothing.
+ * The heading the detail shows: what the layer's own map labels this feature,
+ * and the layer's name when its style labels nothing.
  */
-export const featureHeading = (row: MetaDataRow): string =>
-  row.feature?.name || row.layer.name;
+export const featureHeading = (option: MetaDataOption): string =>
+  option.feature.name || option.row.layer.name;
 
 // Whether a feature can actually be seen where the map is now
 
@@ -240,6 +407,30 @@ export const isOutOfView = (
   return offScreen || tooSmall;
 };
 
+/** Whether `bounds` is out of sight at the camera the map is on right now. */
+export const boundsOutOfView = (
+  map: MapLibreMap | null,
+  bounds: MapExtent | null,
+): boolean => {
+  if (!map || !bounds) return false;
+
+  const [west, south, east, north] = bounds;
+  const southWest = map.project([west, south]);
+  const northEast = map.project([east, north]);
+  const container = map.getContainer();
+
+  return isOutOfView(
+    {
+      left: Math.min(southWest.x, northEast.x),
+      top: Math.min(southWest.y, northEast.y),
+      right: Math.max(southWest.x, northEast.x),
+      bottom: Math.max(southWest.y, northEast.y),
+    },
+    { width: container.clientWidth, height: container.clientHeight },
+    MIN_FEATURE_PIXELS,
+  );
+};
+
 /**
  * Whether the feature at `bounds` is out of sight where the map is now.
  *
@@ -259,27 +450,9 @@ export const useFeatureOutOfView = (
       return undefined;
     }
 
-    const sync = () => {
-      const [west, south, east, north] = bounds;
-      const southWest = map.project([west, south]);
-      const northEast = map.project([east, north]);
-      const container = map.getContainer();
-
-      // Set to the same boolean, React re-renders nothing - which is what makes
-      // this safe on `move`, an event that fires every frame of a gesture.
-      setOutOfView(
-        isOutOfView(
-          {
-            left: Math.min(southWest.x, northEast.x),
-            top: Math.min(southWest.y, northEast.y),
-            right: Math.max(southWest.x, northEast.x),
-            bottom: Math.max(southWest.y, northEast.y),
-          },
-          { width: container.clientWidth, height: container.clientHeight },
-          MIN_FEATURE_PIXELS,
-        ),
-      );
-    };
+    // Set to the same boolean, React re-renders nothing - which is what makes
+    // this safe on `move`, an event that fires every frame of a gesture.
+    const sync = () => setOutOfView(boundsOutOfView(map, bounds));
 
     sync();
     map.on("move", sync);

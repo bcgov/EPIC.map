@@ -80,15 +80,18 @@ def test_reorder_favourites_applies_the_new_order(app, session):
     user = factory_user()
     first = factory_favourite_layer(user.id)
     second = factory_favourite_layer(user.id, object_name=OTHER_OBJECT)
+    listed = UserFavouriteLayerService.list_favourites(user.id)
     # Newest first, so the starting order is the reverse of the starring order.
-    assert [row.id for row in UserFavouriteLayerService.list_favourites(user.id)] == [
-        second.id, first.id,
-    ]
+    assert [row.id for row in listed if not row.restricted] == [second.id, first.id]
+    # The seeded favourite shares the top level, so a reorder of it names it too.
+    given = [row.id for row in listed if row.restricted]
 
-    reordered = UserFavouriteLayerService.reorder_favourites(user.id, [first.id, second.id])
+    reordered = UserFavouriteLayerService.reorder_favourites(
+        user.id, [first.id, second.id] + given
+    )
 
-    assert [row.id for row in reordered] == [first.id, second.id]
-    assert [row.sort_order for row in reordered] == [1, 2]
+    assert [row.id for row in reordered] == [first.id, second.id] + given
+    assert [row.sort_order for row in reordered] == [1, 2, 3]
 
 
 def test_reorder_favourites_rejects_a_missing_id(app, session):

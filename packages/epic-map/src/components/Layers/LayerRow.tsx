@@ -16,6 +16,7 @@ import {
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import CircularProgress from "@mui/material/CircularProgress";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import StarIcon from "@mui/icons-material/Star";
 import StarBorderIcon from "@mui/icons-material/StarBorder";
@@ -84,6 +85,13 @@ type LayerRowProps = {
   query?: string;
   /** Favourites only: a catalogue result is filed nowhere, so it has no grip. */
   draggable?: boolean;
+  /**
+   * A favourite the user was given rather than starred.
+   *
+   * It is flagged as restricted and its star is held, since there is no
+   * starring of theirs to undo. Everything else on the row is theirs as usual.
+   */
+  restricted?: boolean;
   /** The kebab's menu. Without one the kebab opens nothing yet. */
   menu?: (controls: {
     id: string;
@@ -106,6 +114,7 @@ export default function LayerRow({
   layer,
   query = "",
   draggable = false,
+  restricted = false,
   menu,
   focusMenuButton = false,
   onMenuButtonFocused,
@@ -159,6 +168,8 @@ export default function LayerRow({
   // The API stores an object name, so a dataset with none cannot be starred.
   const starNote = unmappable
     ? "This dataset publishes no mappable layer"
+    : restricted
+    ? "This layer is always in your favourites"
     : starred
     ? "Remove from favourites"
     : "Add to favourites";
@@ -318,6 +329,29 @@ export default function LayerRow({
     zoomInButton
   );
 
+  /**
+   * The flag under a restricted layer's name.
+   *
+   * A statement about the data rather than a state of the row, so it reads as
+   * text with an icon and not as a badge: it is true whatever the user does
+   * here, and nothing about it is actionable.
+   */
+  const restrictedNote = (
+    <Typography
+      component="span"
+      sx={{
+        ...hintSx,
+        color: theme.palette.text.secondary,
+        cursor: "default",
+      }}
+    >
+      <LockOutlinedIcon aria-hidden sx={{ ...hintIconSx, fontSize: "1rem" }} />
+      <Box component="span" sx={{ minWidth: 0 }}>
+        Restricted
+      </Box>
+    </Typography>
+  );
+
   const unreachableNote = (
     <Tooltip title="This layer only draws closer in than this map can zoom">
       <Typography
@@ -386,6 +420,8 @@ export default function LayerRow({
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           {clamped ? <Tooltip title={layer.name}>{name}</Tooltip> : name}
 
+          {restricted && restrictedNote}
+
           {visible && belowFloor && (beyondReach ? unreachableNote : zoomIn)}
         </Box>
 
@@ -394,10 +430,12 @@ export default function LayerRow({
             <IconButton
               size="small"
               onClick={() => toggleFavourite(layer)}
-              disabled={unmappable || starSaving}
+              disabled={unmappable || starSaving || restricted}
               aria-pressed={starred}
               aria-label={
-                starred
+                restricted
+                  ? `${layer.name} is always in your favourites`
+                  : starred
                   ? `Remove ${layer.name} from favourites`
                   : `Add ${layer.name} to favourites`
               }
@@ -405,6 +443,10 @@ export default function LayerRow({
                 flexShrink: 0,
                 padding: "0.125rem",
                 color: theme.palette.secondary.main,
+                // Grey rather than a dimmed gold: a star nobody can press is
+                // not a favourite half-set, so it should not read as one. At
+                // full strength, so it does not read as faded either.
+                "&.Mui-disabled": { color: theme.palette.text.disabled },
                 ...focusRing(theme),
               }}
             >

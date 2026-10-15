@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
-import { stripMarkdown, truncate } from "@/utils/text";
+import { formatDate, stripMarkdown, truncate } from "@/utils/text";
 import {
   CATALOGUE_DATASET_URL,
   CATALOGUE_DESCRIPTION_LIMIT,
@@ -18,7 +18,8 @@ export interface CatalogueLayer {
   name: string;
   lastUpdated: string;
   description: string | null;
-  metadataUrl: string;
+  /** Null for a layer we host, which has no catalogue dataset page. */
+  metadataUrl: string | null;
 }
 
 /** The slice of CKAN's package_search response this package relies on. */
@@ -40,19 +41,6 @@ interface CkanSearchResponse {
   success: boolean;
   result?: { results?: CkanPackage[] };
 }
-
-const formatDate = (value?: string): string => {
-  if (!value) return "";
-  // Midday avoids the date shifting a day backwards west of UTC.
-  const date = new Date(`${value}T12:00:00`);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : date.toLocaleDateString("en-CA", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-};
 
 const toCatalogueLayer = (pkg: CkanPackage): CatalogueLayer => {
   const wms = pkg.resources?.find(
