@@ -22,7 +22,7 @@ from marshmallow import EXCLUDE, Schema, fields, validate
 
 from map_api.utils.constant import DEFAULT_LAYER_OPACITY, MAX_LAYER_OPACITY, MIN_LAYER_OPACITY
 
-from .layer_identity import MAX_DESCRIPTION_LENGTH, MAX_DISPLAY_NAME_LENGTH, OBJECT_NAME_PATTERN, PACKAGE_ID_PATTERN
+from .layer_identity import CatalogueLayerRequestSchema
 
 # A CKAN dataset uuid. Not a slug: a slug changes when a dataset is retitled
 # and the uuid does not, and the metadata link is built from what is stored.
@@ -53,38 +53,9 @@ class UserAppliedLayerSchema(Schema):
     updated_date = fields.DateTime(data_key='updated_date')
 
 
-class UserAppliedLayerRequestSchema(Schema):
-    """What a client may say when applying a layer.
+class UserAppliedLayerRequestSchema(CatalogueLayerRequestSchema):
+    """What a client may say when applying a layer: the shared fields, plus opacity."""
 
-    No `source`, `sort_order`, `id` or `user_id`: the server decides those, and
-    EXCLUDE drops them if sent.
-    """
-
-    class Meta:  # pylint: disable=too-few-public-methods
-        """Exclude unknown fields in the deserialized output."""
-
-        unknown = EXCLUDE
-
-    package_id = fields.Str(
-        data_key='package_id', required=True,
-        validate=validate.Regexp(PACKAGE_ID_PATTERN),
-    )
-    object_name = fields.Str(
-        data_key='object_name', required=True,
-        validate=validate.Regexp(OBJECT_NAME_PATTERN),
-    )
-    display_name = fields.Str(
-        data_key='display_name', required=True,
-        validate=validate.Length(min=1, max=MAX_DISPLAY_NAME_LENGTH),
-    )
-    # Optional: not every catalogue record has a description or a date.
-    description = fields.Str(
-        data_key='description', load_default=None, allow_none=True,
-        validate=validate.Length(max=MAX_DESCRIPTION_LENGTH),
-    )
-    last_updated = fields.Date(
-        data_key='last_updated', load_default=None, allow_none=True
-    )
     opacity = fields.Int(
         data_key='opacity', load_default=DEFAULT_LAYER_OPACITY,
         validate=validate.Range(min=MIN_LAYER_OPACITY, max=MAX_LAYER_OPACITY),
