@@ -19,7 +19,7 @@ addresses from them.
 
 from marshmallow import EXCLUDE, Schema, fields, validate
 
-from .layer_identity import MAX_DISPLAY_NAME_LENGTH, OBJECT_NAME_PATTERN, PACKAGE_ID_PATTERN
+from .layer_identity import CatalogueLayerRequestSchema
 
 
 class UserFavouriteLayerSchema(Schema):
@@ -35,32 +35,16 @@ class UserFavouriteLayerSchema(Schema):
     package_id = fields.Str(data_key='package_id')
     object_name = fields.Str(data_key='object_name')
     display_name = fields.Str(data_key='display_name')
+    description = fields.Str(data_key='description', allow_none=True)
+    last_updated = fields.Date(data_key='last_updated', allow_none=True)
     folder_id = fields.Int(data_key='folder_id', allow_none=True)
     sort_order = fields.Int(data_key='sort_order')
     created_date = fields.DateTime(data_key='created_date')
     updated_date = fields.DateTime(data_key='updated_date')
 
 
-class UserFavouriteLayerRequestSchema(Schema):
+class UserFavouriteLayerRequestSchema(CatalogueLayerRequestSchema):
     """What a client may send when starring a layer."""
-
-    class Meta:  # pylint: disable=too-few-public-methods
-        """Exclude unknown fields in the deserialized output."""
-
-        unknown = EXCLUDE
-
-    package_id = fields.Str(
-        data_key='package_id', required=True,
-        validate=validate.Regexp(PACKAGE_ID_PATTERN),
-    )
-    object_name = fields.Str(
-        data_key='object_name', required=True,
-        validate=validate.Regexp(OBJECT_NAME_PATTERN),
-    )
-    display_name = fields.Str(
-        data_key='display_name', required=True,
-        validate=validate.Length(min=1, max=MAX_DISPLAY_NAME_LENGTH),
-    )
 
 
 class UserFavouriteLayerUpdateSchema(Schema):
