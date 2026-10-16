@@ -12,6 +12,10 @@ import UploadProgressRow from "@/components/Layers/UserLayers/UploadProgressRow"
 
 /**
  * Layers the user imports themselves.
+ *
+ * The layers map-api hosts are not here: they reach the panel as favourites
+ * map-api puts in every user's list, so Favourites is where they are switched
+ * on and organised.
  */
 export default function MyLayersSection() {
   const theme = useTheme();

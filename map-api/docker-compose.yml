@@ -1,4 +1,3 @@
-version: "3.9"
 
 services:
   map-api-db:
@@ -56,6 +55,43 @@ services:
       retries: 10
     volumes:
       - ./setup:/tmp/keycloak/test/
+
+  # A local stand-in for object storage, so the hosted-layer ingest's --from-s3
+  # path can be rehearsed - including its failure paths - without touching the
+  # shared bucket. Deleting a key or truncating an object to watch the guard
+  # refuse is fine here; the dev bucket is shared with Compliance and Submit.
+  #
+  # Behind a profile, so it never starts with a plain `docker compose up` and
+  # cannot block the database on a registry it fails to reach:
+  #
+  #   docker compose --profile s3 up -d s3mock
+  #   aws --endpoint-url http://localhost:9090 s3 mb s3://local-delivery
+  #
+  # and in .env:
+  #
+  #   S3_HOST=http://localhost:9090
+  #   S3_BUCKET=local-delivery
+  #   S3_ACCESS_KEY_ID=local          # not checked: the mock accepts anything
+  #   S3_SECRET_ACCESS_KEY=local
+  #
+  # Two things it does not do. It ignores credentials, so the "wrong key" path
+  # has to be rehearsed against the real store. And it rejects the CRC32 part
+  # checksums newer botocore sends by default, which a multipart upload trips
+  # and a small one does not - so uploading a delivery to it needs:
+  #
+  #   AWS_REQUEST_CHECKSUM_CALCULATION=when_required aws --endpoint-url ... s3 cp ...
+  #
+  # minio used to be here. Its images are no longer publicly pullable from
+  # Docker Hub or quay, which broke `docker compose up` outright.
+  s3mock:
+    image: adobe/s3mock:latest
+    profiles: ["s3"]
+    environment:
+      - initialBuckets=local-delivery
+      - retainFilesOnExit=false
+    ports:
+      - 9090:9090/tcp
+    restart: unless-stopped
 
 volumes:
   db-data:

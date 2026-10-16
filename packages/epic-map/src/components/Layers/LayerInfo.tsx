@@ -1,8 +1,11 @@
 import { Box, Link, Slider, Typography } from "@mui/material";
 import { useTheme, type Theme } from "@mui/material/styles";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
+import { useLocalLayerInfo } from "@/api/useLocalLayerInfo";
 import { useLayers } from "@/components/Layers/LayersContext";
 import { DEFAULT_LAYER_OPACITY } from "@/utils/config";
+import { isLocalLayer } from "@/utils/localLayers";
+import { formatDate } from "@/utils/text";
 
 /**
  * A filled navy track with a solid thumb, plus the states the design calls for:
@@ -55,6 +58,16 @@ export default function LayerInfo({ layer }: { layer: CatalogueLayer }) {
   const { opacities, setOpacity } = useLayers();
 
   const opacity = opacities[layer.id] ?? DEFAULT_LAYER_OPACITY;
+
+  // A hosted layer carries no catalogue record, so its date is the day map-api
+  // last loaded the extract it is serving - asked for only for those layers.
+  const hosted = isLocalLayer(layer.objectName);
+  const { data: hostedInfo } = useLocalLayerInfo(
+    hosted ? (layer.objectName as string) : null,
+  );
+  const lastUpdated = hosted
+    ? formatDate(hostedInfo?.loadedDate)
+    : layer.lastUpdated;
 
   const labelSx = {
     fontSize: theme.typography.body2.fontSize,
@@ -129,25 +142,28 @@ export default function LayerInfo({ layer }: { layer: CatalogueLayer }) {
             margin: "0.375rem 0 0",
           }}
         >
-          {layer.lastUpdated && detail("Last updated", layer.lastUpdated)}
+          {lastUpdated && detail("Last updated", lastUpdated)}
           {layer.description && detail("Description", layer.description)}
         </Box>
 
-        <Link
-          href={layer.metadataUrl}
-          target="_blank"
-          // noopener keeps the new tab from reaching back through window.opener.
-          rel="noopener noreferrer"
-          sx={{
-            display: "inline-block",
-            marginTop: "0.75rem",
-            fontSize: theme.typography.body2.fontSize,
-            color: theme.palette.primary.dark,
-            textDecorationColor: "currentcolor",
-          }}
-        >
-          View full metadata
-        </Link>
+        {/* A layer we host has no catalogue page, so there is nothing to open. */}
+        {layer.metadataUrl && (
+          <Link
+            href={layer.metadataUrl}
+            target="_blank"
+            // noopener keeps the new tab from reaching back through window.opener.
+            rel="noopener noreferrer"
+            sx={{
+              display: "inline-block",
+              marginTop: "0.75rem",
+              fontSize: theme.typography.body2.fontSize,
+              color: theme.palette.primary.dark,
+              textDecorationColor: "currentcolor",
+            }}
+          >
+            View full metadata
+          </Link>
+        )}
       </Box>
     </Box>
   );

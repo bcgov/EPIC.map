@@ -4,7 +4,27 @@ from typing import Optional
 from map_api.exceptions import BadRequestError, UnprocessableEntityError
 from map_api.models.user_favourite_folder import UserFavouriteFolder as UserFavouriteFolderModel
 from map_api.models.user_favourite_layer import UserFavouriteLayer as UserFavouriteLayerModel
+from map_api.services.local_layer_service import LOCAL_LAYERS
 from map_api.utils.constant import MAX_FAVOURITE_LAYERS
+
+# Hosted layers every user gets a favourite of, and the name it is listed under.
+#
+# These are not starred, they are given: the layer has no catalogue record, so
+# there is no search result to star it from, and it is one EAO staff are meant
+# to have to hand rather than one they opt into. The display name is here rather
+# than read from the layer because it is what a reader of the panel should see,
+# which is not the warehouse's title for the table.
+SEEDED_LOCAL_FAVOURITES = {
+    'WHSE_ADMIN_BOUNDARIES.PIP_CONSULTATION_AREAS_SP':
+        'Profiles of Indigenous People (PIP) - First Nation Consultation Areas',
+}
+
+# A seed for a layer nothing serves would put a row in every user's panel that
+# draws nothing and answers no click, so it fails at import instead.
+for _object_name in SEEDED_LOCAL_FAVOURITES:
+    assert _object_name in LOCAL_LAYERS, (
+        f'{_object_name} is seeded as a favourite but is not a hosted layer.'
+    )
 
 
 class UserFavouriteLayerService:
@@ -12,7 +32,14 @@ class UserFavouriteLayerService:
 
     @classmethod
     def list_favourites(cls, user_id: int) -> list:
-        """Return this user's favourites, in the order they chose."""
+        """Return this user's favourites, in the order they chose.
+
+        The hosted layers are seeded here rather than when the user is
+        provisioned: this is the one call every client makes before showing the
+        panel, so a layer added to the set later reaches users who already exist.
+        """
+        for object_name, display_name in SEEDED_LOCAL_FAVOURITES.items():
+            UserFavouriteLayerModel.ensure_local(user_id, object_name, display_name)
         return UserFavouriteLayerModel.find_by_user(user_id)
 
     @classmethod
@@ -29,10 +56,18 @@ class UserFavouriteLayerService:
 
     @classmethod
     def remove_favourite(cls, favourite_id: int, user_id: int) -> Optional[object]:
-        """Unstar a layer, or return None if it is not this user's. Hard delete."""
+        """Unstar a layer, or return None if it is not this user's. Hard delete.
+
+        A seeded favourite is refused: the next GET would put it straight back,
+        so deleting it is not something that can be made to hold.
+        """
         favourite = UserFavouriteLayerModel.find_one_for_user(favourite_id, user_id)
         if favourite is None:
             return None
+        if favourite.restricted:
+            raise BadRequestError(
+                f'{favourite.display_name} cannot be removed from favourites.'
+            )
         favourite.delete()
         return favourite
 

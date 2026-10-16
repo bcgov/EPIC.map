@@ -205,6 +205,7 @@ export default function FavouritesSection() {
         key={layer.id}
         layer={layer}
         draggable
+        restricted={layer.restricted}
         menu={(controls) => (
           <MoveToGroupMenu
             {...controls}
@@ -276,7 +277,9 @@ export default function FavouritesSection() {
         onDropLayer={() => undefined}
       >
         {/* No menu or drag: the folder it is in does not exist yet. */}
-        {draftLayer && <LayerRow layer={draftLayer} />}
+        {draftLayer && (
+          <LayerRow layer={draftLayer} restricted={draftLayer.restricted} />
+        )}
       </FolderRow>
     ) : null;
 

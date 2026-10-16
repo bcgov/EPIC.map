@@ -59,6 +59,24 @@ jobs:
           docker tag image $IMAGE_ID:latest
           docker push $IMAGE_ID:latest
 
+      # The hosted-layer ingest runs on its own image, because the load needs GDAL
+      # and the API pod has no use for 400MB of it. Same code, same requirements,
+      # different base - see map-api/Dockerfile.ingest.
+      - name: Build ingest image
+        run: |
+          docker build . --file Dockerfile.ingest --tag ingest-image
+
+      - name: Push ingest image
+        run: |
+          IMAGE_ID=${{ secrets.OPENSHIFT_IMAGE_REGISTRY }}/"${{ secrets.OPENSHIFT_REPOSITORY}}-tools"/$APP_NAME-ingest
+          docker tag ingest-image $IMAGE_ID:latest
+          docker push $IMAGE_ID:latest
+
+      # Only the Deployment is rolled. The ingest CronJob has nothing running to
+      # restart, and imagePullPolicy: Always means its next scheduled run - or the
+      # next `oc create job --from=cronjob/map-api-ingest` - picks up what was just
+      # pushed.
+      #
       # A Deployment has no ImageChange trigger, and the image reference in the
       # chart does not change when the tag is re-pushed, so the restart is what
       # actually pulls the new image.

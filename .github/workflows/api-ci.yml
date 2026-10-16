@@ -115,3 +115,9 @@ jobs:
       - name: Build
         run: |
           docker build . -t reports-api
+
+      # Built here too, so a Dockerfile.ingest that no longer builds fails the PR
+      # rather than the next scheduled load.
+      - name: Build ingest image
+        run: |
+          docker build . --file Dockerfile.ingest -t map-api-ingest

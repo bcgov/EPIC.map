@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useRef,
   useState,
   type KeyboardEvent,
@@ -12,24 +13,46 @@ import {
   Skeleton,
   Typography,
 } from "@mui/material";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import CloseIcon from "@mui/icons-material/Close";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import { useTheme, type Theme } from "@mui/material/styles";
 import {
-  attributeLabel,
   attributeValue,
   clampToContainer,
   featureHeading,
   NO_ATTRIBUTES,
+  selectableOptions,
   stepFor,
   steppedIndex,
+  type MetaDataFeatureEntry,
+  type MetaDataOption,
+  type MetaDataRecord,
   type MetaDataRow,
   type PopupPlacement,
 } from "@/components/MetaData/metaDataUtils";
+import { recordNoun } from "@/utils/localLayers";
 
 const ZOOM_HINT_COLOR = "#8A6A01";
+
+/**
+ * The feature's name in the detail, which the design calls info blue.
+ *
+ * A BC design token (support/borderColor/info) rather than anything on the
+ * MUI palette: this package is themed by its host and carries no theme of its
+ * own, so the few colours the design names outright are written down here.
+ */
+const DETAIL_TITLE_COLOR = "#053662";
+
+/** How far a layer's name sits in, and how much further its features do. */
+const LAYER_INDENT = "1rem";
+const FEATURE_INDENT = "1.5rem";
+
+/** The label column of a record, which the design fixes rather than shares out. */
+const RECORD_LABEL_WIDTH = "6.5rem";
 
 const focusRing = (theme: Theme) => ({
   "&:focus-visible": {
@@ -38,24 +61,34 @@ const focusRing = (theme: Theme) => ({
   },
 });
 
+/** Identifies one option in the list, for the roving focus. */
+const optionKey = (option: MetaDataOption) =>
+  `${option.row.layer.id}::${option.feature.key}`;
+
 type MetaDataPopupProps = {
   placement: PopupPlacement;
   title: string;
   loading: boolean;
   rows: readonly MetaDataRow[];
-  selected: MetaDataRow | null;
+  selected: MetaDataOption | null;
   /** Whether the selected feature is worth offering to zoom to from here. */
   canZoom: boolean;
-  onSelect: (row: MetaDataRow) => void;
-  onRetry: (row: MetaDataRow) => void;
-  onZoom: (row: MetaDataRow) => void;
+  onSelect: (option: MetaDataOption) => void;
+  /** Ask again for what the selected row could not fetch. */
+  onRetry: (option: MetaDataOption) => void;
+  onZoom: (option: MetaDataOption) => void;
   onClose: () => void;
 };
 
 /**
- * The floating "what is here" panel a metadata click opens.
+ * The floating "what is here" panel a click opens.
  *
- * Presentational: which layers were asked, what they said and which one is
+ * Three levels, because that is what a click lands on: the layer, the features
+ * of it under the pointer, and the records attached to a feature. Most features
+ * carry one record and the third level never shows; a consultation area carries
+ * one per nation, and the pager is how they are read.
+ *
+ * Presentational: which layers were asked, what they said and which feature is
  * selected all come in as props.
  */
 export default function MetaDataPopup({
@@ -158,8 +191,6 @@ export default function MetaDataPopup({
     }
   };
 
-  const listed = rows.length > 1;
-
   return (
     <Box
       ref={popupRef}
@@ -250,31 +281,31 @@ export default function MetaDataPopup({
       </Box>
 
       <Box sx={{ overflowY: "auto", minHeight: 0 }}>
-        {loading ? (
-          <LoadingSkeleton />
-        ) : rows.length === 0 ? (
-          <Typography
-            sx={{
-              padding: "1rem",
-              fontSize: theme.typography.body2.fontSize,
-              lineHeight: 1.5,
-              color: theme.palette.text.secondary,
-            }}
-          >
-            No feature at this point in the enabled layers. Click inside a
-            coloured area, or zoom in for finer detail.
-          </Typography>
+        {rows.length === 0 ? (
+          loading ? (
+            <LoadingSkeleton />
+          ) : (
+            <Typography
+              sx={{
+                padding: "1rem",
+                fontSize: theme.typography.body2.fontSize,
+                lineHeight: 1.5,
+                color: theme.palette.text.secondary,
+              }}
+            >
+              No feature at this point in the enabled layers. Click inside a
+              coloured area, or zoom in for finer detail.
+            </Typography>
+          )
         ) : (
           <>
-            {listed && (
-              <LayerList rows={rows} selected={selected} onSelect={onSelect} />
-            )}
+            <FeatureList rows={rows} selected={selected} onSelect={onSelect} />
             {selected && (
-              <Detail
-                row={selected}
+              <FeatureDetail
+                option={selected}
                 canZoom={canZoom}
-                onRetry={onRetry}
                 onZoom={onZoom}
+                onRetry={onRetry}
               />
             )}
           </>
@@ -300,205 +331,279 @@ function LoadingSkeleton() {
 }
 
 /**
- * The layers that answered, as a single-select listbox: click a row, or focus
- * the list and step through it with the arrow keys. Selecting is the only thing
- * a row does, so it has no chevron.
+ * What the click landed on: a row per layer, and under a layer with more than
+ * one feature here, a row per feature.
+ *
+ * A single-select listbox over the features: click a row, or focus the list and
+ * step through it with the arrow keys. A layer that has several features is a
+ * heading rather than an option - selecting "the layer" would not say which of
+ * its shapes was meant.
  */
-function LayerList({
+function FeatureList({
   rows,
   selected,
   onSelect,
 }: {
   rows: readonly MetaDataRow[];
-  selected: MetaDataRow | null;
-  onSelect: (row: MetaDataRow) => void;
+  selected: MetaDataOption | null;
+  onSelect: (option: MetaDataOption) => void;
 }) {
   const theme = useTheme();
-  const optionRefs = useRef(new Map<string, HTMLLIElement>());
+  const optionRefs = useRef(new Map<string, HTMLElement>());
 
-  const selectedIndex = rows.findIndex(
-    (row) => row.layer.id === selected?.layer.id,
-  );
+  const options = selectableOptions(rows);
+  const selectedIndex = selected
+    ? options.findIndex((option) => optionKey(option) === optionKey(selected))
+    : -1;
 
   const onKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
-    const next = steppedIndex(event.key, Math.max(selectedIndex, 0), rows.length);
+    const next = steppedIndex(
+      event.key,
+      Math.max(selectedIndex, 0),
+      options.length,
+    );
     if (next === null) return;
     event.preventDefault();
-    const row = rows[next];
-    if (next !== selectedIndex) onSelect(row);
-    optionRefs.current.get(row.layer.id)?.focus();
+    const option = options[next];
+    if (next !== selectedIndex) onSelect(option);
+    optionRefs.current.get(optionKey(option))?.focus();
+  };
+
+  const register = (key: string) => (element: HTMLElement | null) => {
+    if (element) optionRefs.current.set(key, element);
+    else optionRefs.current.delete(key);
   };
 
   return (
     <Box
       component="ul"
       role="listbox"
-      aria-label="Layers at this point"
+      aria-label="Features at this point"
       onKeyDown={onKeyDown}
       sx={{
         // Pinned to the top of the scrolling body, so a long attribute list
         // scrolls under the layers rather than taking them off screen: the
-        // user can switch layers without first scrolling back up.
+        // user can switch features without first scrolling back up.
         position: "sticky",
         top: 0,
         zIndex: 1,
         margin: 0,
-        padding: "0.25rem 0",
-        backgroundColor: theme.palette.background.paper,
-        borderBottom: `1px solid ${theme.palette.divider}`,
+        padding: 0,
+        backgroundColor: theme.palette.grey[50],
       }}
     >
       {rows.map((row) => {
-        const isSelected = row.layer.id === selected?.layer.id;
-        const failed = row.status === "error";
+        // One feature, so the layer's own row is what selects it: a row of its
+        // own underneath would say the same thing twice.
+        const lone = row.features.length === 1 ? row.features[0] : null;
+        const option = lone ? { row, feature: lone } : null;
+        const key = option ? optionKey(option) : row.layer.id;
+
         return (
-          <Box
-            component="li"
-            key={row.layer.id}
-            ref={(element: HTMLLIElement | null) => {
-              if (element) optionRefs.current.set(row.layer.id, element);
-              else optionRefs.current.delete(row.layer.id);
-            }}
-            role="option"
-            aria-selected={isSelected}
-            // Roving: Tab lands on the selection, the arrows do the rest.
-            tabIndex={isSelected ? 0 : -1}
-            onClick={() => {
-              if (!isSelected) onSelect(row);
-            }}
-            sx={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "0.5rem",
-              padding: "0.5rem 1rem 0.5rem 0.75rem",
-              listStyle: "none",
-              cursor: "pointer",
-              borderLeft: `4px solid ${
-                isSelected ? theme.palette.primary.main : "transparent"
-              }`,
-              backgroundColor: isSelected
-                ? theme.palette.grey[50]
-                : "transparent",
-              "&:hover": { backgroundColor: theme.palette.grey[100] },
-              ...focusRing(theme),
-            }}
-          >
-            <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-              <Typography
-                component="span"
-                sx={{
-                  display: "block",
-                  // A long layer name wraps; it is never cut short.
-                  overflowWrap: "anywhere",
-                  fontSize: theme.typography.body2.fontSize,
-                  lineHeight: 1.4,
-                  fontWeight: isSelected
-                    ? theme.typography.fontWeightBold
-                    : theme.typography.fontWeightRegular,
-                  color: theme.palette.primary.dark,
-                }}
-              >
-                {row.layer.name}
-              </Typography>
-              {failed && (
-                <Typography
-                  component="span"
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.25rem",
-                    marginTop: "0.125rem",
-                    fontSize: theme.typography.caption.fontSize,
-                    color: theme.palette.error.main,
-                  }}
-                >
-                  {row.retrying ? (
-                    <CircularProgress size="0.75rem" color="inherit" aria-hidden />
-                  ) : (
-                    <ErrorOutlineIcon aria-hidden sx={{ fontSize: "0.875rem" }} />
-                  )}
-                  {row.retrying ? "Retrying…" : "Did not respond"}
-                </Typography>
+          <Fragment key={row.layer.id}>
+            <LayerRow
+              row={row}
+              option={option}
+              selected={Boolean(
+                option && selected && optionKey(option) === optionKey(selected),
               )}
-            </Box>
-          </Box>
+              innerRef={register(key)}
+              onSelect={onSelect}
+            />
+
+            {row.features.length > 1 &&
+              row.features.map((feature) => {
+                const featureOption = { row, feature };
+                return (
+                  <FeatureRow
+                    key={feature.key}
+                    option={featureOption}
+                    selected={Boolean(
+                      selected &&
+                        optionKey(featureOption) === optionKey(selected),
+                    )}
+                    innerRef={register(optionKey(featureOption))}
+                    onSelect={onSelect}
+                  />
+                );
+              })}
+          </Fragment>
         );
       })}
     </Box>
   );
 }
 
-function Detail({
+/** The shared look of a row in the list, selected or not. */
+const rowSx = (theme: Theme, indent: string, selected: boolean) => ({
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: "0.5rem",
+  padding: `0.5rem 0.5rem 0.5rem ${indent}`,
+  listStyle: "none",
+  borderTop: `1px solid ${theme.palette.divider}`,
+  // Inset rather than a border, so the selected row's text does not step
+  // sideways by the width of its own accent.
+  boxShadow: selected
+    ? `inset 2px 0 0 0 ${theme.palette.primary.main}`
+    : "none",
+  backgroundColor: selected
+    ? theme.palette.background.paper
+    : theme.palette.grey[50],
+  ...focusRing(theme),
+});
+
+const nameSx = (theme: Theme, selected: boolean) => ({
+  display: "block",
+  // A long name wraps; it is never cut short.
+  overflowWrap: "anywhere" as const,
+  fontSize: theme.typography.body2.fontSize,
+  lineHeight: 1.5,
+  fontWeight: selected
+    ? theme.typography.fontWeightBold
+    : theme.typography.fontWeightRegular,
+  color: theme.palette.text.secondary,
+});
+
+/**
+ * One layer at the click point.
+ *
+ * Three jobs in one row, which is the point of it: it selects the feature where
+ * the layer has exactly one, it heads the list where the layer has several, and
+ * it carries the Retry where the layer could not answer at all.
+ */
+function LayerRow({
   row,
-  canZoom,
-  onRetry,
-  onZoom,
+  option,
+  selected,
+  innerRef,
+  onSelect,
 }: {
   row: MetaDataRow;
-  canZoom: boolean;
-  onRetry: (row: MetaDataRow) => void;
-  onZoom: (row: MetaDataRow) => void;
+  /** The one feature this row selects, or null for a heading. */
+  option: MetaDataOption | null;
+  selected: boolean;
+  innerRef: (element: HTMLElement | null) => void;
+  onSelect: (option: MetaDataOption) => void;
+}) {
+  const theme = useTheme();
+  const failed = row.status === "error";
+
+  return (
+    <Box
+      component="li"
+      ref={innerRef}
+      {...(option
+        ? {
+            role: "option",
+            "aria-selected": selected,
+            // Roving: Tab lands on the selection, the arrows do the rest.
+            tabIndex: selected ? 0 : -1,
+            onClick: () => {
+              if (!selected) onSelect(option);
+            },
+          }
+        : // A heading is not an option, so it is not in the listbox's tab order
+          // and reads as the group label it is.
+          { role: "presentation" })}
+      sx={{
+        ...rowSx(theme, LAYER_INDENT, selected),
+        cursor: option ? "pointer" : "default",
+        ...(option && {
+          "&:hover": { backgroundColor: theme.palette.grey[100] },
+        }),
+      }}
+    >
+      <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+        <Typography component="span" sx={nameSx(theme, selected)}>
+          {row.layer.name}
+        </Typography>
+      </Box>
+
+      {/* The row says only that this layer could not answer; selecting it is
+          what shows why, and the Retry. */}
+      {failed && (
+        <Box
+          component="span"
+          aria-label={row.retrying ? "Retrying" : "Did not respond"}
+          sx={{
+            display: "inline-flex",
+            flexShrink: 0,
+            color: theme.palette.error.main,
+          }}
+        >
+          {row.retrying ? (
+            <CircularProgress size="1rem" color="inherit" aria-hidden />
+          ) : (
+            <ErrorOutlineIcon aria-hidden sx={{ fontSize: "1rem" }} />
+          )}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/**
+ * One feature of a layer that has several here.
+ *
+ * Indented past its layer, because what it belongs to is the only thing that
+ * tells two overlapping areas apart in a list of their names.
+ */
+function FeatureRow({
+  option,
+  selected,
+  innerRef,
+  onSelect,
+}: {
+  option: MetaDataOption;
+  selected: boolean;
+  innerRef: (element: HTMLElement | null) => void;
+  onSelect: (option: MetaDataOption) => void;
 }) {
   const theme = useTheme();
 
-  if (row.status === "error") {
-    return (
-      <Box sx={{ padding: "0.75rem 1rem 1rem" }} role="alert">
-        <Typography
-          component="h3"
-          sx={{
-            fontSize: "1rem",
-            lineHeight: 1.4,
-            fontWeight: theme.typography.fontWeightBold,
-            color: theme.palette.primary.main,
-            overflowWrap: "anywhere",
-          }}
-        >
-          {row.layer.name}
-        </Typography>
-        <Typography
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            marginTop: "0.5rem",
-            fontSize: theme.typography.body2.fontSize,
-            color: theme.palette.text.primary,
-          }}
-        >
-          <ErrorOutlineIcon
-            aria-hidden
-            sx={{ fontSize: "1.25rem", color: theme.palette.error.main }}
-          />
-          This layer did not respond.
-        </Typography>
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={() => onRetry(row)}
-          disabled={row.retrying}
-          startIcon={
-            row.retrying ? <CircularProgress size="0.875rem" aria-hidden /> : null
-          }
-          sx={{ marginTop: "0.75rem", marginLeft: "1.75rem" }}
-        >
-          {row.retrying ? "Retrying…" : "Retry"}
-        </Button>
-      </Box>
-    );
-  }
+  return (
+    <Box
+      component="li"
+      ref={innerRef}
+      role="option"
+      aria-selected={selected}
+      tabIndex={selected ? 0 : -1}
+      onClick={() => {
+        if (!selected) onSelect(option);
+      }}
+      sx={{
+        ...rowSx(theme, FEATURE_INDENT, selected),
+        cursor: "pointer",
+        "&:hover": { backgroundColor: theme.palette.grey[100] },
+      }}
+    >
+      <Typography component="span" sx={nameSx(theme, selected)}>
+        {option.feature.name}
+      </Typography>
+    </Box>
+  );
+}
 
-  const { feature } = row;
-  if (!feature) return null;
-
-  const heading = featureHeading(row);
-
-  const labelSx = {
-    fontSize: theme.typography.body2.fontSize,
-    lineHeight: 1.4,
-    color: theme.palette.text.disabled,
-    overflowWrap: "anywhere",
-  } as const;
+/**
+ * The selected feature: what it is called, how to get to it, and what is
+ * recorded against it.
+ */
+function FeatureDetail({
+  option,
+  canZoom,
+  onZoom,
+  onRetry,
+}: {
+  option: MetaDataOption;
+  canZoom: boolean;
+  onZoom: (option: MetaDataOption) => void;
+  onRetry: (option: MetaDataOption) => void;
+}) {
+  const theme = useTheme();
+  const { feature, row } = option;
+  const heading = featureHeading(option);
 
   return (
     <Box sx={{ padding: "0.75rem 1rem 1rem" }}>
@@ -513,10 +618,10 @@ function Detail({
         <Typography
           component="h3"
           sx={{
-            fontSize: "1rem",
-            lineHeight: 1.4,
+            fontSize: "0.875rem",
+            lineHeight: 1.5,
             fontWeight: theme.typography.fontWeightBold,
-            color: theme.palette.primary.main,
+            color: DETAIL_TITLE_COLOR,
             overflowWrap: "anywhere",
           }}
         >
@@ -527,7 +632,7 @@ function Detail({
           <Box
             component="button"
             type="button"
-            onClick={() => onZoom(row)}
+            onClick={() => onZoom(option)}
             aria-label={`Zoom in to view ${heading}`}
             sx={{
               display: "inline-flex",
@@ -554,36 +659,229 @@ function Detail({
         )}
       </Box>
 
-      {feature.properties.length === 0 && (
-        <Typography sx={{ ...labelSx, marginTop: "0.5rem" }}>
-          {NO_ATTRIBUTES}
-        </Typography>
-      )}
+      <Records
+        feature={feature}
+        layerFailed={row.status === "error"}
+        retrying={row.retrying}
+        noun={recordNoun(row.layer.objectName)}
+        onRetry={() => onRetry(option)}
+      />
+    </Box>
+  );
+}
 
+const labelSx = (theme: Theme) => ({
+  fontSize: theme.typography.body2.fontSize,
+  lineHeight: 1.4,
+  color: theme.palette.text.disabled,
+  overflowWrap: "anywhere" as const,
+});
+
+/** The records on a feature, one at a time where it has more than one. */
+function Records({
+  feature,
+  layerFailed,
+  retrying,
+  noun,
+  onRetry,
+}: {
+  feature: MetaDataFeatureEntry;
+  /** The whole layer did not answer, rather than this one feature's records. */
+  layerFailed: boolean;
+  retrying: boolean;
+  noun: string;
+  onRetry: () => void;
+}) {
+  const theme = useTheme();
+  const [index, setIndex] = useState(0);
+
+  // The feature changes under this component when the selection moves, and the
+  // new one is read from its first record whatever page the last was left on.
+  const [shownFor, setShownFor] = useState(feature.key);
+  if (shownFor !== feature.key) {
+    setShownFor(feature.key);
+    setIndex(0);
+  }
+
+  if (feature.pending) {
+    return (
       <Box
-        component="dl"
         sx={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 2fr) minmax(0, 3fr)",
-          columnGap: "1rem",
-          rowGap: "0.5rem",
-          margin: "0.5rem 0 0",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+          marginTop: "0.75rem",
         }}
       >
-        {feature.properties.map(({ name, value }) => (
-          <Box key={name} sx={{ display: "contents" }}>
-            <Typography component="dt" sx={labelSx}>
-              {attributeLabel(name)}
-            </Typography>
-            <Typography
-              component="dd"
-              sx={{ ...labelSx, margin: 0, color: theme.palette.text.primary }}
-            >
-              {attributeValue(value)}
-            </Typography>
-          </Box>
-        ))}
+        <CircularProgress size="0.875rem" aria-hidden />
+        <Typography sx={labelSx(theme)}>Loading the details…</Typography>
       </Box>
+    );
+  }
+
+  if (feature.failed) {
+    return (
+      <Box sx={{ marginTop: "0.5rem" }} role="alert">
+        <Typography
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            fontSize: theme.typography.body2.fontSize,
+            color: theme.palette.text.primary,
+          }}
+        >
+          <ErrorOutlineIcon
+            aria-hidden
+            sx={{ fontSize: "1.25rem", color: theme.palette.error.main }}
+          />
+          {layerFailed
+            ? "This layer did not respond."
+            : "The details for this feature did not load."}
+        </Typography>
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={onRetry}
+          disabled={retrying}
+          startIcon={
+            retrying ? <CircularProgress size="0.875rem" aria-hidden /> : null
+          }
+          sx={{ marginTop: "0.75rem", marginLeft: "1.75rem" }}
+        >
+          {retrying ? "Retrying…" : "Retry"}
+        </Button>
+      </Box>
+    );
+  }
+
+  const { records } = feature;
+  if (records.length === 0) {
+    return (
+      <Typography sx={{ ...labelSx(theme), marginTop: "0.5rem" }}>
+        {NO_ATTRIBUTES}
+      </Typography>
+    );
+  }
+
+  const shown = records[Math.min(index, records.length - 1)];
+
+  return (
+    <>
+      {records.length > 1 && (
+        <RecordPager
+          noun={noun}
+          index={Math.min(index, records.length - 1)}
+          count={records.length}
+          onChange={setIndex}
+        />
+      )}
+      <Record record={shown} />
+    </>
+  );
+}
+
+/**
+ * Which of a feature's records is being read, and the way to the next.
+ *
+ * One at a time rather than all of them down the page: twelve nations on one
+ * area is twelve addresses and twelve phone numbers, and the question being
+ * asked is almost always about one of them.
+ */
+function RecordPager({
+  noun,
+  index,
+  count,
+  onChange,
+}: {
+  noun: string;
+  index: number;
+  count: number;
+  onChange: (index: number) => void;
+}) {
+  const theme = useTheme();
+
+  // Wraps rather than stopping: the pager is a ring of a feature's records, and
+  // a dead chevron at either end reads as a fault rather than an end.
+  const step = (by: number) => () => onChange((index + by + count) % count);
+
+  return (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "0.5rem",
+        marginTop: "0.75rem",
+        padding: "0.125rem 0.25rem",
+        border: `1px solid ${theme.palette.divider}`,
+        borderRadius: "0.25rem",
+      }}
+    >
+      <IconButton
+        size="small"
+        onClick={step(-1)}
+        aria-label={`Previous ${noun.toLowerCase()}`}
+        sx={{ padding: "0.125rem", ...focusRing(theme) }}
+      >
+        <ChevronLeftIcon sx={{ fontSize: "1.125rem" }} />
+      </IconButton>
+
+      <Typography
+        aria-live="polite"
+        sx={{
+          fontSize: theme.typography.caption.fontSize,
+          fontWeight: theme.typography.fontWeightBold,
+          color: theme.palette.text.secondary,
+        }}
+      >
+        {noun} {index + 1} of {count}
+      </Typography>
+
+      <IconButton
+        size="small"
+        onClick={step(1)}
+        aria-label={`Next ${noun.toLowerCase()}`}
+        sx={{ padding: "0.125rem", ...focusRing(theme) }}
+      >
+        <ChevronRightIcon sx={{ fontSize: "1.125rem" }} />
+      </IconButton>
+    </Box>
+  );
+}
+
+/** One record's attributes: label on the left, value on the right. */
+function Record({ record }: { record: MetaDataRecord }) {
+  const theme = useTheme();
+
+  return (
+    <Box
+      component="dl"
+      sx={{
+        display: "grid",
+        gridTemplateColumns: `${RECORD_LABEL_WIDTH} minmax(0, 1fr)`,
+        columnGap: "0.75rem",
+        rowGap: "0.5rem",
+        margin: "0.5rem 0 0",
+      }}
+    >
+      {record.attributes.map(({ label, value }) => (
+        <Box key={label} sx={{ display: "contents" }}>
+          <Typography component="dt" sx={labelSx(theme)}>
+            {label}
+          </Typography>
+          <Typography
+            component="dd"
+            sx={{
+              ...labelSx(theme),
+              margin: 0,
+              color: theme.palette.text.secondary,
+            }}
+          >
+            {attributeValue(value)}
+          </Typography>
+        </Box>
+      ))}
     </Box>
   );
 }

@@ -1,5 +1,6 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { AxiosInstance } from "axios";
+import type { RequestParameters } from "maplibre-gl";
 import type {
   MapBasemapStyles,
   MapExtent,
@@ -41,6 +42,22 @@ export interface MapWidgetContextValue {
    * learns who the user is without the token itself passing through it.
    */
   readHostIdentity: () => Promise<HostIdentity | null>;
+  /**
+   * Authorize one request MapLibre will make on its own.
+   *
+   * The renderer fetches tiles itself, so they never pass through the axios
+   * instance and never pick up its Authorization header. This resolves the
+   * header for a map-api URL and `undefined` for anything else, which is a
+   * security control rather than tidiness: MapLibre also fetches the basemap
+   * style, its sprites and its glyphs, and the basemap is host-supplied, so
+   * attaching the header unconditionally would leak the user's token.
+   *
+   * Must be referentially stable. MapLibre reads `transformRequest` once, when
+   * the map is constructed, so a new identity each render rebuilds the map.
+   */
+  authorizeTileRequest: (
+    url: string,
+  ) => RequestParameters | Promise<RequestParameters> | undefined;
   config: ResolvedMapWidgetConfig;
 }
 

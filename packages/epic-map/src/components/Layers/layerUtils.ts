@@ -1,4 +1,7 @@
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type {
+  Map as MapLibreMap,
+  TransformStyleFunction,
+} from "maplibre-gl";
 import type { FeatureCollection, Geometry } from "geojson";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
@@ -19,14 +22,11 @@ import {
 } from "@/utils/config";
 
 /**
- * Everything the panel does to the map, and the one piece of reasoning behind
- * it that touches no map at all.
+ * Everything the panel does to the map.
  *
- * A catalogue layer is on the map twice: as the warehouse's own raster, gated
- * at the zoom its published style starts drawing at, and as an outline of its
- * geometry covering every zoom below that. The two are complements, so they are
- * kept together - a change to where one stops is a change to where the other
- * starts.
+ * A catalogue layer is on twice: the warehouse's raster, gated at the zoom its
+ * style starts drawing at, and an outline covering every zoom below. They are
+ * complements, so a change to where one stops moves where the other starts.
  */
 
 // Style readiness
@@ -39,10 +39,9 @@ export const whenStyleReady = (map: MapLibreMap, work: () => void) => {
   }
 
   /*
-  `isStyleLoaded()` is stricter than this needs: it also waits on every in-view
-  tile and the sprite, so on a fresh load it stays false while the basemap
-  downloads. 'load' is no use either way: it fires once per map, so it never comes round
-  again after a basemap switch.
+  `isStyleLoaded()` is stricter than needed - it waits on in-view tiles and the
+  sprite too - and 'load' fires once per map, so it never comes round again
+  after a basemap switch.
   */
   const run = () => {
     map.off("styledata", run);
@@ -56,10 +55,7 @@ export const whenStyleReady = (map: MapLibreMap, work: () => void) => {
 
 // The layer itself
 
-/**
- * Source and layer ids carry the widget's prefix so that MapSurface's
- * `carryWidgetLayers` transform keeps them across a basemap switch.
- */
+/** Ids carry the widget's prefix so `carryWidgetLayers` keeps them. */
 const wmsSourceId = (layerId: string) =>
   `${WIDGET_ID_PREFIX}wms-src-${layerId}`;
 const wmsRasterId = (layerId: string) => `${WIDGET_ID_PREFIX}wms-${layerId}`;
@@ -154,16 +150,13 @@ export const hideWmsLayer = (map: MapLibreMap, layerId: string) => {
 /**
  * A layer's own shapes, stroked and unfilled, for the zooms it cannot draw at.
  *
- * The layer itself is gated at the scale its published style stops drawing at,
- * so below that the panel could say a layer was on while the map showed nothing
- * of it anywhere. This is the same geometry rendered by the same warehouse
- * under a style with no scale limit: not a box around where the layer is, but
- * the outline of the thing itself.
+ * Below its published scale limit the panel would otherwise say a layer was on
+ * while the map showed nothing. Same geometry, same warehouse, no scale limit:
+ * the outline of the thing itself, not a box around it.
  *
- * The handoff is left to MapLibre rather than run from React. An outline's
- * maxzoom is the layer's floor and the layer's minzoom is the same number, so
- * the two swap on the frame the zoom crosses it - a zoom gesture delivers a
- * frame every 16ms, which is faster than a render can answer it.
+ * The handoff is MapLibre's, not React's: the outline's maxzoom and the layer's
+ * minzoom are the same number, so they swap on the frame the zoom crosses it -
+ * faster than a render can answer.
  */
 
 const outlineSourceId = (layerId: string) =>
@@ -207,9 +200,8 @@ export const showOutlineLayer = (map: MapLibreMap, layer: CatalogueLayer) => {
 /**
  * Stop the outline where the layer itself starts.
  *
- * A layer that declares no scale limit draws everywhere, which leaves no zoom
- * for an outline to cover. MapLibre draws nothing for a layer whose maxzoom is
- * its minzoom, so that case needs no special handling here.
+ * A layer with no scale limit draws everywhere, leaving no zoom to cover, and
+ * MapLibre draws nothing when maxzoom equals minzoom - so no special case.
  */
 export const setOutlineLayerMaxZoom = (
   map: MapLibreMap,
@@ -236,15 +228,25 @@ export const hideOutlineLayer = (map: MapLibreMap, layerId: string) => {
 // The feature a metadata click selected
 
 const HIGHLIGHT_SOURCE = `${WIDGET_ID_PREFIX}highlight-src`;
-const HIGHLIGHT_LAYERS = ["fill", "casing", "line", "point", "raster"].map(
-  (part) => `${WIDGET_ID_PREFIX}highlight-${part}`,
-);
+const HIGHLIGHT_LAYERS = [
+  "fill",
+  "casing",
+  "line",
+  "point",
+  "raster",
+  // Drawn over a hosted layer's own vector source rather than this one's, so
+  // these carry no geometry of their own - but they are cleared with the rest.
+  "local-fill",
+  "local-line",
+].map((part) => `${WIDGET_ID_PREFIX}highlight-${part}`);
 const [
   HIGHLIGHT_FILL,
   HIGHLIGHT_CASING,
   HIGHLIGHT_LINE,
   HIGHLIGHT_POINT,
   HIGHLIGHT_RASTER,
+  HIGHLIGHT_LOCAL_FILL,
+  HIGHLIGHT_LOCAL_LINE,
 ] = HIGHLIGHT_LAYERS;
 
 export interface FeatureHighlight {
@@ -264,11 +266,10 @@ const removeHighlight = (map: MapLibreMap) => {
 };
 
 /**
- * Outline one feature above everything else on the map, replacing any other.
+ * Outline one feature above everything else, replacing any other.
  *
- * Drawn from its geometry where map-api sent it, and otherwise by id through
- * the warehouse's own tiles. A feature with neither is left undrawn rather than
- * guessed at.
+ * From its geometry where map-api sent it, otherwise by id through the
+ * warehouse's tiles. With neither, left undrawn rather than guessed at.
  */
 export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => {
   whenStyleReady(map, () => {
@@ -307,7 +308,7 @@ export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => 
           "line-width": HIGHLIGHT_WIDTH_PX,
         },
       });
-      // A circle layer would otherwise put a dot on every vertex of a line.
+      // Otherwise a dot lands on every vertex of a line.
       map.addLayer({
         id: HIGHLIGHT_POINT,
         type: "circle",
@@ -343,6 +344,329 @@ export const hideHighlight = (map: MapLibreMap) => {
   whenStyleReady(map, () => removeHighlight(map));
 };
 
+/** One feature of a layer we host, as the highlight addresses it. */
+export interface LocalFeatureHighlight {
+  /** The hosted layer's id in the panel, which names its tile source. */
+  layerId: string;
+  /** The layer's name inside the vector tile. */
+  sourceLayer: string;
+  /** The tile property holding the key, and the key to match on it. */
+  keyProperty: string;
+  key: string;
+}
+
+/**
+ * Outline one feature of a hosted layer, by filtering its own tiles.
+ *
+ * Not drawn from geometry, as a warehouse feature is: a vector tile clips
+ * shapes at its edge, so the copy the client was handed is a few pieces of the
+ * outline rather than the outline. Matching on the key in the tiles the map
+ * already holds draws all of it, and keeps drawing all of it as the user pans
+ * onto tiles that were never in view when they clicked.
+ */
+export const showLocalHighlight = (
+  map: MapLibreMap,
+  { layerId, sourceLayer, keyProperty, key }: LocalFeatureHighlight,
+) => {
+  whenStyleReady(map, () => {
+    removeHighlight(map);
+
+    const source = localSourceId(layerId);
+    if (!map.getSource(source)) return;
+
+    const filter = ["==", ["get", keyProperty], key];
+    const shared = { source, "source-layer": sourceLayer, filter } as const;
+
+    map.addLayer({
+      ...shared,
+      id: HIGHLIGHT_LOCAL_FILL,
+      type: "fill",
+      paint: {
+        "fill-color": HIGHLIGHT_COLOR,
+        "fill-opacity": HIGHLIGHT_FILL_OPACITY,
+      },
+    } as Parameters<MapLibreMap["addLayer"]>[0]);
+    map.addLayer({
+      ...shared,
+      id: HIGHLIGHT_LOCAL_LINE,
+      type: "line",
+      paint: {
+        "line-color": HIGHLIGHT_COLOR,
+        "line-width": HIGHLIGHT_WIDTH_PX,
+      },
+    } as Parameters<MapLibreMap["addLayer"]>[0]);
+  });
+};
+
+/**
+ * Every MapLibre layer currently drawing a hosted layer.
+ *
+ * What a click is tested against: the hosted layer is several of them - a fill
+ * under its own outline - and a feature hit in any one of them is the same
+ * feature.
+ */
+export const localDrawnIds = (
+  map: MapLibreMap,
+  layerId: string,
+): string[] => {
+  const prefix = `${WIDGET_ID_PREFIX}local-${layerId}-`;
+  return (map.getStyle()?.layers ?? [])
+    .map((layer) => layer.id)
+    .filter((id) => id.startsWith(prefix));
+};
+
+// Layers map-api hosts itself, drawn from vector tiles
+
+/**
+ * A catalogue layer is a picture openmaps drew; this is geometry we draw, from
+ * a style translated out of the .lyrx. That is why these carry a paint
+ * expression where the WMS pair above carry only opacity.
+ */
+const localSourceId = (layerId: string) =>
+  `${WIDGET_ID_PREFIX}local-src-${layerId}`;
+/**
+ * One drawn layer's id, suffixed with the spec's: a hosted layer is several
+ * MapLibre layers, a fill under a line with points a circle beside both.
+ */
+const localDrawnId = (layerId: string, specId: string) =>
+  `${WIDGET_ID_PREFIX}local-${layerId}-${specId}`;
+
+/** One MapLibre layer drawn from a hosted layer's tiles. */
+export interface LocalLayerSpec {
+  id: string;
+  type: "fill" | "line" | "circle";
+  sourceLayer: string;
+  minZoom?: number | null;
+  filter?: unknown;
+  layout?: Record<string, unknown>;
+  paint: Record<string, unknown>;
+}
+
+/**
+ * How map-api says a hosted layer should be drawn.
+ *
+ * `layers` is in draw order, first at the bottom. The server decides it,
+ * following from the symbology; the client only preserves it.
+ */
+export interface LocalLayerStyle {
+  source: {
+    minZoom: number | null;
+    maxZoom: number;
+  };
+  layers: LocalLayerSpec[];
+}
+
+/**
+ * Layer types that paint the ground rather than label it. `symbol` and
+ * `circle` are the basemap's labels, and staying under those is the point.
+ */
+const GROUND_LAYER_TYPES: ReadonlySet<string> = new Set([
+  "background",
+  "fill",
+  "line",
+  "raster",
+  "fill-extrusion",
+  "hillshade",
+  "heatmap",
+]);
+
+/**
+ * Index of the first layer in a style's trailing block of labels.
+ *
+ * Walks back to the last layer that paints the ground, rather than forward to
+ * the first `symbol`: those agree only for a labels-last style, which Mapbox
+ * and MapTiler are and the BC Basemap is not. It opens with eight placeholder
+ * label layers, so "first symbol" is index 0 and anything before it lands
+ * under 240 basemap layers.
+ *
+ * Returns `layers.length` for a style that labels nothing, which appends.
+ *
+ * Takes the basemap's own layers, never the live style's: the widget appends
+ * above the labels, so a live style's last ground layer is the widget's own.
+ */
+export const labelBlockStart = (
+  layers: readonly { readonly type?: string }[],
+): number => {
+  for (let index = layers.length - 1; index >= 0; index -= 1) {
+    if (GROUND_LAYER_TYPES.has(layers[index]?.type ?? "")) return index + 1;
+  }
+  // Nothing paints the ground, so every layer here is a label to stay under.
+  return 0;
+};
+
+/**
+ * The basemap layer a widget layer should be inserted before, if any.
+ *
+ * `undefined` where the label block is empty, which MapLibre reads as "on top".
+ */
+const beforeLabelBlock = (map: MapLibreMap): string | undefined => {
+  // The widget's own layers are filtered out: they sit above the basemap's
+  // labels, so counting them would put this above the place names.
+  const basemap = (map.getStyle()?.layers ?? []).filter(
+    (layer) => !layer.id.startsWith(WIDGET_ID_PREFIX),
+  );
+  return basemap[labelBlockStart(basemap)]?.id;
+};
+
+/**
+ * Draw a layer we host, or reveal it if it is already on the map.
+ *
+ * The source is gated at the style's floor as well as the layer, so no tile is
+ * requested for a zoom it would not draw at: the server builds each one.
+ */
+export const showLocalVectorLayer = (
+  map: MapLibreMap,
+  layerId: string,
+  tileUrl: string,
+  style: LocalLayerStyle,
+) => {
+  whenStyleReady(map, () => {
+    const source = localSourceId(layerId);
+
+    if (!map.getSource(source)) {
+      map.addSource(source, {
+        type: "vector",
+        tiles: [tileUrl],
+        minzoom: style.source.minZoom ?? MIN_ZOOM,
+        maxzoom: style.source.maxZoom,
+      });
+    }
+
+    // Read once: adding before it does not move it, so the specs keep their
+    // order among themselves.
+    const before = beforeLabelBlock(map);
+
+    style.layers.forEach((spec) => {
+      const drawn = localDrawnId(layerId, spec.id);
+
+      if (map.getLayer(drawn)) {
+        map.setLayoutProperty(drawn, "visibility", "visible");
+        return;
+      }
+
+      // The layer's own floor where it sets one, the source's otherwise. Both
+      // are gated: the source stops the fetch, the layer stops the draw, so a
+      // layer starting deeper than its source says so without moving it.
+      const minzoom = spec.minZoom ?? style.source.minZoom;
+
+      map.addLayer(
+        {
+          id: drawn,
+          type: spec.type,
+          source,
+          "source-layer": spec.sourceLayer,
+          ...(minzoom == null ? {} : { minzoom }),
+          ...(spec.filter == null ? {} : { filter: spec.filter }),
+          layout: { visibility: "visible", ...(spec.layout ?? {}) },
+          paint: spec.paint,
+          // MapLibre's own types are narrower than the union of what a fill, a
+          // line and a circle layer accept; the server decided this shape.
+        } as Parameters<MapLibreMap["addLayer"]>[0],
+        before,
+      );
+    });
+  });
+};
+
+/**
+ * Scale a hosted layer's drawn opacity by the user's setting.
+ *
+ * Multiplied rather than assigned: the style's own opacity is part of the
+ * symbology - a translucent fill under its own outline - so setting it to the
+ * slider's value outright would paint over a decision the .lyrx made. 100%
+ * means "as the layer is meant to look", which is the same promise the raster
+ * slider makes for a warehouse layer.
+ *
+ * Takes the style because the base opacities are in it: MapLibre reports the
+ * current value, so reading it back would compound every move of the slider.
+ */
+export const setLocalVectorLayerOpacity = (
+  map: MapLibreMap,
+  layerId: string,
+  style: LocalLayerStyle,
+  percent: number,
+) => {
+  whenStyleReady(map, () => {
+    style.layers.forEach((spec) => {
+      const drawn = localDrawnId(layerId, spec.id);
+      if (!map.getLayer(drawn)) return;
+
+      // "fill-opacity", "line-opacity" or "circle-opacity" - one per layer type
+      // this style can carry, which MapLibre's types cannot narrow from here.
+      const property = `${spec.type}-opacity` as Parameters<
+        MapLibreMap["setPaintProperty"]
+      >[1];
+      const base = spec.paint[property];
+      map.setPaintProperty(
+        drawn,
+        property,
+        (typeof base === "number" ? base : 1) * (percent / 100),
+      );
+    });
+  });
+};
+
+/**
+ * Take a hosted layer off the map, keeping its parsed tiles.
+ *
+ * Hidden rather than removed: turning it back on costs nothing and the parsed
+ * tiles survive a basemap switch. Found by id prefix, so the caller need not
+ * hold the style and a changed style cannot leave one layer of a set behind.
+ */
+export const hideLocalVectorLayer = (map: MapLibreMap, layerId: string) => {
+  whenStyleReady(map, () => {
+    const prefix = `${WIDGET_ID_PREFIX}local-${layerId}-`;
+    (map.getStyle()?.layers ?? []).forEach((layer) => {
+      if (layer.id.startsWith(prefix)) {
+        map.setLayoutProperty(layer.id, "visibility", "none");
+      }
+    });
+  });
+};
+
+/**
+ * Carry the widget's own sources and layers onto an incoming basemap.
+ */
+export const carryWidgetLayers: TransformStyleFunction = (previous, next) => {
+  if (!previous) return next;
+
+  const sources = Object.fromEntries(
+    Object.entries(previous.sources).filter(([id]) =>
+      id.startsWith(WIDGET_ID_PREFIX),
+    ),
+  );
+  const layers = previous.layers.filter((layer) =>
+    layer.id.startsWith(WIDGET_ID_PREFIX),
+  );
+
+  // Spliced in at the start of the incoming basemap's label block, not
+  // appended. Appending puts the widget's layers above the basemap's place
+  // names, which is invisible for a thin outline and very visible once a layer
+  // carries a translucent fill: the labels underneath it stop being readable.
+  // Found by walking back from the last layer that paints the ground - see
+  // labelBlockStart, and why the first `symbol` is the wrong end to look from.
+  const at = labelBlockStart(next.layers);
+
+  return {
+    ...next,
+    sources: { ...next.sources, ...sources },
+    layers: [
+      ...next.layers.slice(0, at),
+      ...layers,
+      ...next.layers.slice(at),
+    ],
+  };
+};
+
+/**
+ * The map itself, and everything drawn over it.
+ *
+ * `onMapReady` hands the MapLibre instance up to the widget root, because one
+ * control that needs it — the search field — lives in the bar above this
+ * component rather than inside it. Called with the instance once it is built and
+ * with null as it is torn down, so a holder above never keeps a removed map.
+ */
+
 // Which layers the current zoom cannot draw
 
 /** A visible layer and the zoom below which openmaps will not draw it. */
@@ -354,13 +678,10 @@ export interface LayerFloor {
 /**
  * Which of `floors` the given zoom is too far out to draw.
  *
- * Returns `current` itself, not an equal copy, when the answer has not changed.
- * That identity is the whole point: MapLibre's `zoom` event fires on every
- * frame of a gesture, but which layers sit below their floor changes only when
- * the zoom crosses one - a few times in a full sweep rather than sixty times a
- * second. The result is held in state and read through context by every row in
- * the panel, so a fresh Set per frame would be a fresh context value per frame,
- * and a re-render of every row with it.
+ * Returns `current` itself when the answer has not changed, and that identity
+ * is the point: `zoom` fires every frame, but which layers sit below their
+ * floor changes only when the zoom crosses one. The result is read through
+ * context by every row, so a fresh Set per frame re-renders all of them.
  */
 export const layersBelowFloor = (
   floors: readonly LayerFloor[],
@@ -382,9 +703,8 @@ export const layersBelowFloor = (
 // Layers the user imported
 
 /**
- * An imported layer is drawn from its own features rather than tiles: they
- * came from the user's file, and no warehouse serves them. Styled the way the
- * import preview drew them, so the layer looks as it did before Upload.
+ * An imported layer is drawn from its own features: they came from the user's
+ * file and no warehouse serves them. Styled as the import preview drew them.
  */
 
 const IMPORTED_PREFIX = `${WIDGET_ID_PREFIX}imported-`;
@@ -488,10 +808,7 @@ export const showImportedLayer = (
   });
 };
 
-/**
- * Show or hide an imported layer. Hidden rather than removed, so switching it
- * back on neither fetches nor parses its features again.
- */
+/** Show or hide an imported layer, hidden rather than removed. */
 export const setImportedLayerVisibility = (
   map: MapLibreMap,
   layerId: string,

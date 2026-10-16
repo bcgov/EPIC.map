@@ -5,7 +5,6 @@ import {
   Map as MapLibreMap,
   NavigationControl,
   ScaleControl,
-  type TransformStyleFunction,
 } from "maplibre-gl";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 import BasemapSwitch from "@/components/BasemapSwitch";
@@ -14,54 +13,23 @@ import MetaDataControl from "@/components/MetaData/MetaDataControl";
 import LayersControl from "@/components/Layers/LayersControl";
 import ProjectsControl from "@/components/Projects/ProjectsControl";
 import { LayersProvider } from "@/components/Layers/LayersContext";
+import { carryWidgetLayers } from "@/components/Layers/layerUtils";
 import {
   DEFAULT_BASEMAP,
   DEFAULT_EXTENT,
   MAX_ZOOM,
   MIN_ZOOM,
   PROJECT_CARD_WIDTH_PX,
-  WIDGET_ID_PREFIX,
   resolveBasemap,
   type BasemapId,
 } from "@/utils/config";
 
-/**
- * Carry the widget's own sources and layers onto an incoming basemap.
- */
-const carryWidgetLayers: TransformStyleFunction = (previous, next) => {
-  if (!previous) return next;
-
-  const sources = Object.fromEntries(
-    Object.entries(previous.sources).filter(([id]) =>
-      id.startsWith(WIDGET_ID_PREFIX),
-    ),
-  );
-  const layers = previous.layers.filter((layer) =>
-    layer.id.startsWith(WIDGET_ID_PREFIX),
-  );
-
-  return {
-    ...next,
-    sources: { ...next.sources, ...sources },
-    // Appended, so the widget's layers stay above the basemap's.
-    layers: [...next.layers, ...layers],
-  };
-};
-
-/**
- * The map itself, and everything drawn over it.
- *
- * `onMapReady` hands the MapLibre instance up to the widget root, because one
- * control that needs it — the search field — lives in the bar above this
- * component rather than inside it. Called with the instance once it is built and
- * with null as it is torn down, so a holder above never keeps a removed map.
- */
 export default function MapSurface({
   onMapReady,
 }: {
   onMapReady?: (map: MapLibreMap | null) => void;
 }) {
-  const { config } = useMapWidget();
+  const { config, authorizeTileRequest } = useMapWidget();
   const { initialExtent, basemapStyles, onError } = config;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -103,6 +71,11 @@ export default function MapSurface({
       dragRotate: false,
       touchZoomRotate: false,
       canvasContextAttributes: { preserveDrawingBuffer: true },
+      // MapLibre fetches tiles itself, so a layer served by map-api needs its
+      // token attached here rather than by the axios instance. Read once, at
+      // construction, which is why authorizeTileRequest has to be stable - an
+      // unstable one would tear down and rebuild the map on every render.
+      transformRequest: (url) => authorizeTileRequest(url),
     });
 
     if (!instance.painter) {
@@ -139,7 +112,7 @@ export default function MapSurface({
       notifyReady.current?.(null);
       instance.remove();
     };
-  }, [onError]);
+  }, [onError, authorizeTileRequest]);
 
   useEffect(() => {
     if (!map || !initialExtent) return;
