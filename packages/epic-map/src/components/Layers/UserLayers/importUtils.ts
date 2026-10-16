@@ -116,7 +116,7 @@ export const isWgs84 = (wkt: string): boolean => {
 
 /**
  * The system the coordinates were converted from, or `null` when nothing was
- * converted. Named so the warning can say what the file was drawn in.
+ * converted. Sent with the upload as the layer's source system.
  */
 export const reprojectedFrom = (wkt: string | null): string | null => {
   if (!wkt?.trim() || isWgs84(wkt)) return null;
@@ -235,7 +235,7 @@ const isMacMetadata = (filename: string) => filename.includes("__MACOSX");
  *
  * shpjs reads the zip itself but says nothing about what it found, and the
  * difference between "converted from BC Albers" and "there was no coordinate
- * system to convert from" is the difference between a warning and a refusal.
+ * system to convert from" is the difference between a preview and a refusal.
  */
 const readZipContents = async (
   bytes: Uint8Array,
