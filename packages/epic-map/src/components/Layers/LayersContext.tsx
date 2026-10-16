@@ -30,6 +30,7 @@ import {
   setWmsLayerOpacity,
   showOutlineLayer,
   showWmsLayer,
+  withoutFavourites,
 } from "@/components/Layers/layerUtils";
 import { ImportedLayersProvider } from "@/components/Layers/UserLayers/ImportedLayersContext";
 import {
@@ -44,6 +45,7 @@ interface LayersContextValue {
   visibleIds: ReadonlySet<string>;
   /** The layers map-api has stored for this user, bottom of the stack first. */
   appliedLayers: readonly AppliedLayer[];
+  searchEnabledLayers: readonly AppliedLayer[];
   appliedPending: boolean;
   appliedError: unknown;
   retryApplied: () => void;
@@ -87,7 +89,7 @@ interface LayersContextValue {
   opacities: Readonly<Record<string, number>>;
   atVisibleLimit: boolean;
   toggleVisible: (layer: CatalogueLayer) => void;
-  /** Switches off every enabled layer. */
+  /** Switches off every enabled layer that is not a favourite. */
   turnAllOff: () => void;
   toggleFavourite: (layer: CatalogueLayer) => void;
   toggleExpanded: (layerId: string) => void;
@@ -175,7 +177,6 @@ export function LayersProvider({
       ),
     [floors],
   );
-
 
   const {
     favourites,
@@ -284,14 +285,19 @@ export function LayersProvider({
     [pendingIds, visibleIds, applyLayer, removeLayer],
   );
 
-  const turnAllOff = useCallback(() => {
-    for (const layer of appliedLayers) removeLayer(layer.id);
-  }, [appliedLayers, removeLayer]);
-
   const favouriteIds = useMemo(
     () => new Set(favourites.map((favourite) => favourite.id)),
     [favourites],
   );
+
+  const searchEnabledLayers = useMemo(
+    () => withoutFavourites(appliedLayers, favouriteIds),
+    [appliedLayers, favouriteIds],
+  );
+
+  const turnAllOff = useCallback(() => {
+    for (const layer of searchEnabledLayers) removeLayer(layer.id);
+  }, [searchEnabledLayers, removeLayer]);
 
   const toggleFavourite = useCallback(
     (layer: CatalogueLayer) => {
@@ -351,6 +357,7 @@ export function LayersProvider({
       map,
       visibleIds,
       appliedLayers,
+      searchEnabledLayers,
       appliedPending,
       appliedError,
       retryApplied,
@@ -390,6 +397,7 @@ export function LayersProvider({
       map,
       visibleIds,
       appliedLayers,
+      searchEnabledLayers,
       appliedPending,
       appliedError,
       retryApplied,
