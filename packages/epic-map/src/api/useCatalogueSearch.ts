@@ -16,6 +16,7 @@ export interface CatalogueLayer {
   packageId: string;
   objectName: string | null;
   name: string;
+  /** The record's last modified date as YYYY-MM-DD, or "" when it has none. */
   lastUpdated: string;
   description: string | null;
   metadataUrl: string;
@@ -41,24 +42,15 @@ interface CkanSearchResponse {
   result?: { results?: CkanPackage[] };
 }
 
-const formatDate = (value?: string): string => {
-  if (!value) return "";
-  // Midday avoids the date shifting a day backwards west of UTC.
-  const date = new Date(`${value}T12:00:00`);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : date.toLocaleDateString("en-CA", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-};
+// map-api stores the date as a date, so anything else is dropped, not sent.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const toCatalogueLayer = (pkg: CkanPackage): CatalogueLayer => {
   const wms = pkg.resources?.find(
     (resource) => resource.format?.toLowerCase() === "wms",
   );
 
+  const modified = pkg.record_last_modified ?? "";
   const description = truncate(
     stripMarkdown(pkg.notes ?? ""),
     CATALOGUE_DESCRIPTION_LIMIT,
@@ -69,7 +61,7 @@ const toCatalogueLayer = (pkg: CkanPackage): CatalogueLayer => {
     packageId: pkg.id,
     objectName: wms?.object_name ?? null,
     name: pkg.title,
-    lastUpdated: formatDate(pkg.record_last_modified),
+    lastUpdated: ISO_DATE.test(modified) ? modified : "",
     description: description || null,
     metadataUrl: `${CATALOGUE_DATASET_URL}/${pkg.id}`,
   };

@@ -35,3 +35,6 @@ OBJECT_NAME_PATTERN = r'^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$'
 
 # The longest a display name may be, matching the column it is stored in.
 MAX_DISPLAY_NAME_LENGTH = 200
+
+# The longest a stored catalogue description may be, matching its column.
+MAX_DESCRIPTION_LENGTH = 1000

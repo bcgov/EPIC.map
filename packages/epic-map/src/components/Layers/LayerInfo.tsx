@@ -3,6 +3,7 @@ import { useTheme, type Theme } from "@mui/material/styles";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import { useLayers } from "@/components/Layers/LayersContext";
 import { DEFAULT_LAYER_OPACITY } from "@/utils/config";
+import { formatDate } from "@/utils/text";
 
 /**
  * A filled navy track with a solid thumb, plus the states the design calls for:
@@ -55,6 +56,7 @@ export default function LayerInfo({ layer }: { layer: CatalogueLayer }) {
   const { opacities, setOpacity } = useLayers();
 
   const opacity = opacities[layer.id] ?? DEFAULT_LAYER_OPACITY;
+  const lastUpdated = formatDate(layer.lastUpdated);
 
   const labelSx = {
     fontSize: theme.typography.body2.fontSize,
@@ -129,7 +131,7 @@ export default function LayerInfo({ layer }: { layer: CatalogueLayer }) {
             margin: "0.375rem 0 0",
           }}
         >
-          {layer.lastUpdated && detail("Last updated", layer.lastUpdated)}
+          {lastUpdated && detail("Last updated", lastUpdated)}
           {layer.description && detail("Description", layer.description)}
         </Box>
 

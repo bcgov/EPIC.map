@@ -21,6 +21,9 @@ interface AppliedLayerResponse {
   package_id: string;
   object_name: string;
   display_name: string;
+  // Optional: absent from an API older than this widget.
+  description?: string | null;
+  last_updated?: string | null;
   opacity: number;
   sort_order: number;
 }
@@ -56,8 +59,8 @@ export const toAppliedLayer = (row: AppliedLayerResponse): AppliedLayer => ({
   packageId: row.package_id,
   objectName: row.object_name,
   name: row.display_name,
-  lastUpdated: "",
-  description: null,
+  lastUpdated: row.last_updated ?? "",
+  description: row.description ?? null,
   metadataUrl: `${CATALOGUE_DATASET_URL}/${row.package_id}`,
   appliedId: row.id,
   opacity: row.opacity,
@@ -122,8 +125,8 @@ export const useAppliedLayers = () => {
         APPLIED_LAYERS_PATH,
         { signal },
       );
-      // A stored row keeps no description or modified date, so whatever the
-      // catalogue already told us about a layer survives the refetch.
+      // A row applied before details were stored has none, so keep what the
+      // catalogue gave.
       const known = new Map(readCache().map((entry) => [entry.id, entry]));
       return response.data.map((row) => {
         const layer = toAppliedLayer(row);
@@ -131,8 +134,8 @@ export const useAppliedLayers = () => {
         if (!seen) return layer;
         return {
           ...layer,
-          lastUpdated: seen.lastUpdated,
-          description: seen.description,
+          lastUpdated: layer.lastUpdated || seen.lastUpdated,
+          description: layer.description ?? seen.description,
           // A queued or in-flight save means the server has not stored this
           // layer's opacity yet, so its answer is stale and the slider is right.
           opacity:
@@ -163,6 +166,8 @@ export const useAppliedLayers = () => {
           package_id: layer.packageId,
           object_name: layer.objectName,
           display_name: layer.name,
+          description: layer.description,
+          last_updated: layer.lastUpdated || null,
           opacity,
         },
       );
@@ -179,8 +184,7 @@ export const useAppliedLayers = () => {
       return { previous };
     },
     onSuccess: (row, { layer }) => {
-      // Only the id is taken from the response: the optimistic entry carries the
-      // description and date the catalogue gave us, which the row does not store.
+      // Only the id: the optimistic entry already holds the description and date.
       patchCache(layer.id, { appliedId: row.id });
     },
     onError: (_error, _variables, context) => {
