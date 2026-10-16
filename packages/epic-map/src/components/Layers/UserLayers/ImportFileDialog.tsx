@@ -354,45 +354,6 @@ export default function ImportFileDialog(
             ))}
           </Box>
 
-          {parsed?.reprojectedFrom && (
-            <Box
-              sx={{
-                display: "flex",
-                gap: "0.625rem",
-                marginBottom: "1rem",
-                padding: "0.75rem",
-                borderRadius: `${theme.shape.borderRadius}px`,
-                border: `1px solid ${theme.palette.warning.main}`,
-                backgroundColor: alpha(theme.palette.warning.main, 0.08),
-              }}
-            >
-              <WarningAmberIcon
-                aria-hidden
-                sx={{
-                  flexShrink: 0,
-                  fontSize: "1.125rem",
-                  color: theme.palette.warning.dark,
-                }}
-              />
-              <Typography
-                sx={{
-                  fontSize: theme.typography.body2.fontSize,
-                  lineHeight: 1.5,
-                  color: theme.palette.text.primary,
-                }}
-              >
-                <Box
-                  component="span"
-                  sx={{ fontWeight: theme.typography.fontWeightBold }}
-                >
-                  Check this layer before uploading.
-                </Box>{" "}
-                The coordinates were converted from {parsed.reprojectedFrom} to
-                WGS 84 to preview them here.
-              </Typography>
-            </Box>
-          )}
-
           <Box sx={{ marginBottom: "1rem" }}>
             <Typography
               component="label"
