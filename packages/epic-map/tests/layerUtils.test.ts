@@ -13,6 +13,7 @@ import {
   setWmsLayerMinZoom,
   showOutlineLayer,
   showWmsLayer,
+  withoutFavourites,
 } from "@/components/Layers/layerUtils";
 import {
   MAX_ZOOM,
@@ -437,5 +438,20 @@ describe("imported layers on the map", () => {
 
     expect(layers).toHaveLength(3);
     expect(sources.size).toBe(1);
+  });
+});
+
+describe("withoutFavourites", () => {
+  const enabled = [{ id: "cat-a" }, { id: "cat-b" }, { id: "cat-c" }];
+
+  it("leaves a favourite out of the enabled layers group", () => {
+    expect(withoutFavourites(enabled, new Set(["cat-b"]))).toEqual([
+      { id: "cat-a" },
+      { id: "cat-c" },
+    ]);
+  });
+
+  it("keeps every layer when none is a favourite", () => {
+    expect(withoutFavourites(enabled, new Set(["cat-z"]))).toEqual(enabled);
   });
 });

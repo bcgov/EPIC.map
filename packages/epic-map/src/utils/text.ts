@@ -57,3 +57,17 @@ export const splitOnMatches = (text: string, query: string): string[] => {
 
   return parts;
 };
+
+/** "2023-06-29" as "Jun 29, 2023", or "" when it is not a date. */
+export const formatDate = (value: string): string => {
+  if (!value) return "";
+  // Midday avoids the date shifting a day backwards west of UTC.
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleDateString("en-CA", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+};
