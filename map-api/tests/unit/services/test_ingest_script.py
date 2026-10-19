@@ -448,7 +448,7 @@ class TestMainOnADatabaseError:
         """
         connection = FakeConnection(
             previous=None,
-            fail_on='TRUNCATE cache.pip_consultation_areas',
+            fail_on='DELETE FROM cache.pip_consultation_areas',
             error=psycopg2.errors.StringDataRightTruncation(  # pylint: disable=no-member
                 'value too long for type character varying(100)'),
         )
@@ -486,7 +486,7 @@ class TestMainOnADatabaseError:
         """
         connection = FakeConnection(
             previous=None,
-            fail_on='TRUNCATE cache.pip_consultation_areas',
+            fail_on='DELETE FROM cache.pip_consultation_areas',
             error=psycopg2.OperationalError(
                 'server closed the connection unexpectedly'),
             dies=True,
@@ -505,7 +505,7 @@ class TestMainOnADatabaseError:
         """Swallowed so it cannot replace the exit code, but not in silence."""
         connection = FakeConnection(
             previous=None,
-            fail_on='TRUNCATE cache.pip_consultation_areas',
+            fail_on='DELETE FROM cache.pip_consultation_areas',
             error=psycopg2.OperationalError('server closed the connection'),
             dies=True,
         )
@@ -521,7 +521,7 @@ class TestMainOnADatabaseError:
         """Whatever happened, the load does not leave a connection behind."""
         connection = FakeConnection(
             previous=None,
-            fail_on='TRUNCATE cache.pip_consultation_areas',
+            fail_on='DELETE FROM cache.pip_consultation_areas',
             error=psycopg2.errors.StringDataRightTruncation('too long'),  # pylint: disable=no-member
         )
 

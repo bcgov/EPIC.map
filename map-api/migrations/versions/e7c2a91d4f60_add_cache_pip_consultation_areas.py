@@ -49,12 +49,13 @@ def upgrade():
             feature_area_sqm              double precision,
             feature_length_m              double precision,
             contact_count                 integer NOT NULL,
-            -- Every contact in full. The layer needs an IDIR token to reach,
-            -- which is the protection this data is required to have, so the
-            -- ingest carries the warehouse's records rather than a subset.
+            -- One entry per nation, holding the fields the popup draws and
+            -- no more: the gate in front of this layer is an IDIR token in
+            -- the realm, so what the ingest does not carry is the only thing
+            -- that cannot be read. source_select.sql is where that is decided.
             --
-            -- ORGANIZATION_TYPE and GUID are in here rather than as columns
-            -- because 21 of the 298 areas have contacts of more than one type.
+            -- ORGANIZATION_TYPE is in here rather than as a column because 21
+            -- of the 298 areas have contacts of more than one type.
             contacts                      jsonb   NOT NULL,
             -- 3857 because ST_AsMVTGeom needs both arguments in one SRS.
             -- Transforming once here beats 1.5 million vertices per request,

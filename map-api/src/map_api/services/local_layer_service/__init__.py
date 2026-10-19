@@ -53,9 +53,9 @@ LOCAL_LAYERS = {
     ),
 }
 
-# Everything the ingest carried. The contacts blob holds names, addresses,
-# phone numbers, emails and both comments; the layer needs an IDIR token to
-# reach, which is the protection this data is required to have.
+# Everything the ingest carried, which is no longer everything the extract
+# holds: the contacts blob is cut down to the fields the popup draws, and
+# LocalContactSchema whitelists them again before the response goes out.
 DETAIL_COLUMNS = (
     'cnsltn_area_guid',
     'cnsltn_area_name',

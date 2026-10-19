@@ -113,12 +113,69 @@ class LocalLayerInfoSchema(Schema):
     )
 
 
+def _contact_field(key: str, description: str) -> fields.Str:
+    """One field of a stored contact, keyed as the blob stores it.
+
+    The key is both the attribute read out of the jsonb and the name it is
+    dumped under, which is what lets the whitelist below be one line per field.
+    """
+    return fields.Str(
+        attribute=key,
+        data_key=key,
+        allow_none=True,
+        metadata={'description': description},
+    )
+
+
+class LocalContactSchema(Schema):
+    """One nation's entry on a consultation area, as the popup reads it.
+
+    A whitelist, and the second of the two: the ingest already selects only
+    these fields out of the extract, and declaring them again here is what
+    keeps a field that reappears in the stored blob - an older load, a row put
+    there by hand - from reaching a browser. Everything undeclared is dropped
+    on the way out.
+
+    The gate in front of this is an IDIR token in the realm, which is not a
+    decision about who may read contact details, so what is served is the six
+    fields the popup shows plus the identity it pages them by. The extract's
+    emails, fax numbers, titles, comments, metadata and additional information
+    are not ingested and not served; PRIVATE_CONTACT_COMMENT stays out unless
+    the data custodian asks for it.
+
+    Each field is declared through _contact_field, which names it once: the
+    blob transform.sql writes is keyed in camelCase and goes out that way, so
+    the stored key and the wire key are the same string, and the attribute
+    beside it is snake_case because the rest of this module is.
+    """
+
+    class Meta:  # pylint: disable=too-few-public-methods
+        """Exclude unknown fields in the deserialized output."""
+
+        unknown = EXCLUDE
+
+    contact_guid = _contact_field(
+        'contactGuid', "The warehouse's identifier for this entry")
+    organization_type = _contact_field(
+        'organizationType', 'Band, House, Tribal Council and so on, as a code')
+    organization_name = _contact_field(
+        'organizationName', 'The nation or council')
+    contact_name = _contact_field(
+        'contactName', 'Who is recorded where there is no organisation')
+    address = _contact_field('address', 'Street or box, as recorded')
+    city = _contact_field('city', 'City or town')
+    province = _contact_field('province', 'Province or territory')
+    postal_code = _contact_field('postalCode', 'Postal code')
+    phone_number = _contact_field('phoneNumber', 'Phone number, digits only')
+
+
 class LocalLayerFeatureSchema(Schema):
     """One consultation area, with the contacts folded into it.
 
-    The contacts hold personal details. The endpoint is behind the same IDIR
-    gate as everything else under /api, which is the protection this data is
-    required to have.
+    The contacts carry an address and a phone number, so the endpoint is behind
+    the same IDIR gate as everything else under /api, and carries no more of
+    the warehouse's contact record than the popup draws - see
+    LocalContactSchema.
     """
 
     class Meta:  # pylint: disable=too-few-public-methods
@@ -144,8 +201,9 @@ class LocalLayerFeatureSchema(Schema):
     feature_area_sqm = fields.Float(data_key='areaSquareMetres', allow_none=True)
     feature_length_m = fields.Float(data_key='perimeterMetres', allow_none=True)
     contact_count = fields.Int(data_key='contactCount')
-    contacts = fields.Raw(
-        metadata={'description': 'Every contact recorded for this area'},
+    contacts = fields.List(
+        fields.Nested(LocalContactSchema),
+        metadata={'description': 'One entry per nation recorded on this area'},
     )
     bounds = fields.List(
         fields.Float(),

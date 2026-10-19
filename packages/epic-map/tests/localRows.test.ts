@@ -30,6 +30,9 @@ const detail = {
       province: "BC",
       postalCode: "V0C 2H0",
       phoneNumber: "2508277799",
+      // Not served any more: the ingest leaves it in the warehouse and the
+      // schema would drop it. Kept here because this mapping is a guard of its
+      // own, and a stored row from an older load could still carry it.
       privateComment: "Not for display",
     },
     {

@@ -717,10 +717,18 @@ def load(args, spec, sources: list, lyrx_path, connection, target) -> int:
                'allowShrink': args.allow_shrink,
            })
 
-    with connection.cursor() as cursor:
-        # Outside the transaction: ANALYZE inside one does nothing useful.
-        cursor.execute(f'ANALYZE {spec.target_table}')
-    connection.commit()
+    # Autocommit, because VACUUM cannot run inside a transaction block.
+    # transform.sql replaces the rows with DELETE rather than TRUNCATE, so that
+    # readers are not locked out for the length of a load; the dead row and
+    # geometry that leaves behind per area are reclaimed here rather than left
+    # for autovacuum to find some minutes later. ANALYZE comes with it, being
+    # useless inside a transaction anyway.
+    connection.autocommit = True
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(f'VACUUM (ANALYZE) {spec.target_table}')
+    finally:
+        connection.autocommit = False
     return EXIT_OK
 
 

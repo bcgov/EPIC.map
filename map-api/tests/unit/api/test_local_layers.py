@@ -229,10 +229,15 @@ A_FEATURE = {
     'cnsltn_area_name': 'Taku River Tlingit First Nation',
     'contact_count': 1,
     'contacts': [{
-        'contactName': 'Taku River Tlingit First Nation',
+        'contactGuid': '0F3B1C2D4E5A6B7C8D9E0F1A2B3C4D5E',
+        'organizationName': 'Taku River Tlingit First Nation',
+        'organizationType': 'BAND',
+        'contactName': 'Lands Department',
+        'address': 'PO Box 132',
+        'city': 'Atlin',
+        'province': 'BC',
+        'postalCode': 'V0W 1A0',
         'phoneNumber': '2506517900',
-        'emailAddress': 'trtfn@gov.trtfn.com',
-        'privateComment': None,
     }],
 }
 
@@ -256,6 +261,35 @@ def test_returns_the_full_record_including_contacts(app, client, jwt, session):
     assert response.status_code == HTTPStatus.OK
     assert response.json['consultationAreaId'] == FEATURE_GUID
     assert response.json['contacts'][0]['phoneNumber'] == '2506517900'
+
+
+def test_a_contact_field_the_ui_does_not_use_is_not_served(app, client, jwt, session):
+    """The schema is a whitelist, not a passthrough.
+
+    The ingest no longer carries these fields, so a stored row holding them is
+    an older load or one put there by hand - and the private comment is the one
+    field that must not reach a browser either way.
+    """
+    stored = {
+        **A_FEATURE,
+        'contacts': [{
+            **A_FEATURE['contacts'][0],
+            'emailAddress': 'lands@trtfn.example.com',
+            'faxNumber': '2506517901',
+            'privateComment': 'Not reviewed for display',
+            'contactMetadata': {'anything': 'at all'},
+        }],
+    }
+
+    with patch(FEATURE_SERVICE, return_value=stored):
+        response = client.get(FEATURE_ENDPOINT, headers=factory_auth_header(jwt))
+
+    contact = response.json['contacts'][0]
+    assert set(contact) == {
+        'contactGuid', 'organizationType', 'organizationName', 'contactName',
+        'address', 'city', 'province', 'postalCode', 'phoneNumber',
+    }
+    assert 'Not reviewed for display' not in response.get_data(as_text=True)
 
 
 def test_an_unknown_feature_is_not_found(app, client, jwt, session):

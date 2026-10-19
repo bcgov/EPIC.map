@@ -68,9 +68,12 @@ const organizationType = (value: unknown): string | null => {
 /**
  * One nation's entry on a consultation area.
  *
- * Six fields rather than everything the record holds: the rest is either
- * identifiers nobody reads or contact details that have not been reviewed for
- * display, including the private comment field, which stays out of the UI.
+ * Six fields, which since the ingest was cut down is nearly everything the
+ * record holds: map-api carries only what is drawn here and whitelists it
+ * again in its schema, so adding a field to this grid takes a change in three
+ * places. The private comment is not one of them - it is not ingested at all
+ * unless the data custodian asks for it - and this mapping is the last of the
+ * three guards rather than the only one.
  *
  * A field this nation has no value for is left out rather than shown empty: the
  * grid is short enough that a missing phone number reads as missing, and a

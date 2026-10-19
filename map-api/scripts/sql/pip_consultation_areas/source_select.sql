@@ -1,9 +1,16 @@
 -- What the ingest reads out of the extract. The only file that changes if the
 -- source format changes again.
 --
--- Every field is carried, contacts included: the layer needs an IDIR token to
--- reach, and a consultation area with no way to contact the nation is half an
--- answer. FEATURE_AREA_SQM and FEATURE_LENGTH_M are left out because PostGIS
+-- Per contact, only the fields the map shows. The extract also carries titles,
+-- emails, fax numbers, organisation ids, both comment fields, metadata and
+-- additional information, and none of it is drawn, searched or identified;
+-- PRIVATE_CONTACT_COMMENT is not ours to publish at all. A field that is never
+-- selected cannot be served by mistake, and the gate in front of this layer is
+-- an IDIR token in the realm rather than a decision about who may read contact
+-- details. Adding one back is a line here, a line in transform.sql, a line in
+-- the schema, and the next daily load.
+--
+-- FEATURE_AREA_SQM and FEATURE_LENGTH_M are left out because PostGIS
 -- recomputes them from the geometry.
 --
 -- FirstNationsOutlines by name: the GeoPackage also holds FirstNationsLabels,
@@ -32,24 +39,16 @@ SELECT
     -- Per contact: these differ within a group, so the transform collects one
     -- JSON record each. ORGANIZATION_TYPE included, because 21 areas have
     -- contacts of more than one type.
-    ORGANIZATION_GUID,
     ORGANIZATION_TYPE,
+    -- The identity the popup pages the nations by, not a contact detail.
     CONTACT_GUID,
-    CONTACT_UPDATE_DATE,
+    -- CONTACT_NAME because an area whose record names a person rather than an
+    -- organisation would otherwise have nothing to show.
     CONTACT_NAME,
-    CONTACT_TITLE,
     CONTACT_ORGANIZATION_NAME,
     CONTACT_ADDRESS,
     CONTACT_CITY,
     CONTACT_PROVINCE,
     CONTACT_POSTAL_CODE,
-    CONTACT_PHONE_NUMBER,
-    CONTACT_FAX_NUMBER,
-    CONTACT_EMAIL_ADDRESS,
-    -- 4000 characters here, truncated to 254 in the shapefile this layer first
-    -- arrived as.
-    PUBLIC_CONTACT_COMMENT,
-    PRIVATE_CONTACT_COMMENT,
-    CONTACT_METADATA,
-    CONTACT_ADDITIONAL_INFORMATION
+    CONTACT_PHONE_NUMBER
 FROM FirstNationsOutlines

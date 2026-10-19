@@ -4,7 +4,12 @@
 -- here: the ingest owns the transaction, so a file that fails anywhere leaves
 -- the previous load intact.
 
-TRUNCATE cache.pip_consultation_areas;
+-- DELETE, not TRUNCATE: TRUNCATE takes an ACCESS EXCLUSIVE lock and holds it
+-- until commit, so every tile and feature request queues behind the insert and
+-- the simplify. DELETE takes ROW EXCLUSIVE, under which readers keep seeing the
+-- previous load until this transaction commits and then see this one. The dead
+-- rows it leaves are reclaimed by the VACUUM the ingest runs after the commit.
+DELETE FROM cache.pip_consultation_areas;
 
 -- The extract is a flattened area x contact join: 415 rows, 298 areas. Folding
 -- them drops ~2,283,000 vertices to ~1,530,000 and stops 19 translucent copies
@@ -39,26 +44,23 @@ SELECT
     count(*),
     -- One record per contact, nulls preserved: the GeoPackage distinguishes
     -- them where the old shapefile could not.
+    --
+    -- The fields the popup shows, and no others. What is not selected in
+    -- source_select.sql cannot appear here, and what is stored here is what the
+    -- feature endpoint can hand to a browser - so the two files are where this
+    -- layer's data minimisation lives. The keys are camelCase because they go
+    -- out as they are stored; the schema whitelists them again on the way.
     jsonb_agg(
         jsonb_build_object(
-            'contactGuid',          s.contact_guid,
-            'contactUpdateDate',    s.contact_update_date,
-            'organizationGuid',     s.organization_guid,
-            'organizationType',     s.organization_type,
-            'contactName',          s.contact_name,
-            'contactTitle',         s.contact_title,
-            'organizationName',     s.contact_organization_name,
-            'address',              s.contact_address,
-            'city',                 s.contact_city,
-            'province',             s.contact_province,
-            'postalCode',           s.contact_postal_code,
-            'phoneNumber',          s.contact_phone_number,
-            'faxNumber',            s.contact_fax_number,
-            'emailAddress',         s.contact_email_address,
-            'publicComment',        s.public_contact_comment,
-            'privateComment',       s.private_contact_comment,
-            'metadata',             s.contact_metadata,
-            'additionalInformation', s.contact_additional_information
+            'contactGuid',      s.contact_guid,
+            'organizationType', s.organization_type,
+            'organizationName', s.contact_organization_name,
+            'contactName',      s.contact_name,
+            'address',          s.contact_address,
+            'city',             s.contact_city,
+            'province',         s.contact_province,
+            'postalCode',       s.contact_postal_code,
+            'phoneNumber',      s.contact_phone_number
         ) ORDER BY s.contact_organization_name, s.contact_guid
     ),
     -- Not ST_Union: the group holds the same polygon, not neighbouring ones,
@@ -78,6 +80,6 @@ UPDATE cache.pip_consultation_areas
    SET geom_generalized = ST_Multi(ST_CollectionExtract(
            ST_MakeValid(ST_SimplifyPreserveTopology(geom, 250)), 3));
 
--- The staging table and ANALYZE are the ingest's, after the commit: a DROP in
--- here would roll back with a dry run, and ANALYZE does nothing useful inside
--- a transaction.
+-- The staging table and the VACUUM are the ingest's, after the commit: a DROP
+-- in here would roll back with a dry run, and VACUUM cannot run in a
+-- transaction at all.
