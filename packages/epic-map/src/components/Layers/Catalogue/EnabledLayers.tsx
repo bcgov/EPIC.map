@@ -19,11 +19,10 @@ export default function EnabledLayers() {
     turnAllOff,
   } = useLayers();
 
-  const hasLayers = searchEnabledLayers.length > 0;
+  const layers = favouritesPending ? [] : searchEnabledLayers;
+  const hasLayers = layers.length > 0;
 
-  // Until favourites load, a favourite would show here and then vanish.
-  if (appliedPending || favouritesPending) return null;
-  if (!hasLayers && !appliedError) return null;
+  if (appliedPending || (!hasLayers && !appliedError)) return null;
 
   return (
     <Box sx={{ marginBottom: "0.5rem" }}>
@@ -64,7 +63,7 @@ export default function EnabledLayers() {
             lineHeight: 1,
           }}
         >
-          {searchEnabledLayers.length}
+          {layers.length}
         </Box>
         {hasLayers && (
           <Link
@@ -122,7 +121,7 @@ export default function EnabledLayers() {
 
       {hasLayers && (
         <Box component="ul" sx={{ margin: 0, padding: 0 }}>
-          {searchEnabledLayers.map((layer) => (
+          {layers.map((layer) => (
             <LayerRow key={layer.id} layer={layer} />
           ))}
         </Box>
