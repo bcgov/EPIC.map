@@ -92,7 +92,12 @@ def _configured(app, monkeypatch):
 
 
 def test_open_projects_are_returned_with_their_works_in_progress(app):
-    """Closed projects are left out; only IN_PROGRESS works make a project green."""
+    """A closed project still appears; only IN_PROGRESS works make one green.
+
+    is_active is what takes a project off the map. A closed one keeps its dot
+    and its footprint, and the In-progress works filter is what narrows to the
+    live ones.
+    """
     projects = [
         _project(1),
         _project(2),
@@ -110,7 +115,7 @@ def test_open_projects_are_returned_with_their_works_in_progress(app):
         result = TrackService.open_projects()
 
     assert [(p['id'], p['has_works_in_progress']) for p in result] == [
-        (1, True), (2, False), (4, False)
+        (1, True), (2, False), (3, True), (4, False)
     ]
     assert result[0] == {
         'id': 1,
@@ -166,9 +171,9 @@ def test_track_is_asked_with_a_service_account_token(app):
     }
     calls = {call.args[0]: call.kwargs for call in get.call_args_list}
     assert calls[f'{TRACK_URL}/api/v1/projects']['params'] == {'is_active': 'true'}
-    assert calls[f'{TRACK_URL}/api/v1/works']['params'] == {
-        'is_active': 'true', 'context': 'insights'
-    }
+    # No is_active on the works: a project is in progress when it has a work in
+    # progress, and 19 of the IN_PROGRESS works are flagged inactive.
+    assert calls[f'{TRACK_URL}/api/v1/works']['params'] == {'context': 'insights'}
     assert all(kwargs['headers'] == {'Authorization': 'Bearer abc'} for kwargs in calls.values())
 
 
@@ -259,9 +264,33 @@ def test_an_unconfigured_api_asks_nobody(app, monkeypatch, missing):
     get.assert_not_called()
 
 
+def test_an_inactive_work_still_makes_its_project_in_progress(app):
+    """A project is in progress when it has a work in progress.
+
+    The work's own is_active says whether Track still lists it, not whether the
+    work is under way, and the two disagree on 19 of the 50 IN_PROGRESS works.
+    """
+    projects = [_project(1), _project(2)]
+    works = [
+        dict(_work(1, 'IN_PROGRESS'), is_active=False),
+        dict(_work(2, 'COMPLETED'), is_active=True),
+    ]
+
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects, works)):
+        result = TrackService.open_projects()
+
+    assert [(p['id'], p['has_works_in_progress']) for p in result] == [
+        (1, True), (2, False),
+    ]
+
+
 def test_open_project_finds_one_or_none(app):
-    """Closed or unknown projects have no card."""
-    projects = [_project(1), _project(2, is_project_closed=True)]
+    """A project that is not on the map has no card.
+
+    Unlocated rather than closed: a closed project keeps its dot, so having no
+    usable location is what leaves one off the map now.
+    """
+    projects = [_project(1), _project(2, latitude=None, longitude=None)]
 
     with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects, [])):
         assert TrackService.open_project(1)['id'] == 1
@@ -363,9 +392,9 @@ def test_project_works_are_cached(app):
     assert len([c for c in posted.call_args_list if c.args[0].endswith('/works/listing')]) == 1
 
 
-def test_works_of_a_closed_or_unknown_project_are_none(app):
+def test_works_of_an_absent_project_are_none(app):
     """No card, no works, and no listing call."""
-    projects = [_project(2, is_project_closed=True)]
+    projects = [_project(2, latitude=None, longitude=None)]
     with patch(POST, side_effect=_track_with_listing([])) as posted, \
             patch(GET, side_effect=_track(projects, [])):
         assert TrackService.project_works(2) is None

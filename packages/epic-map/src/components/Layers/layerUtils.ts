@@ -607,6 +607,40 @@ export const setLocalVectorLayerOpacity = (
 };
 
 /**
+ * Narrow what a hosted layer draws, without disturbing its symbology.
+ *
+ * The style's own filter decides which features a spec is *for* - a fill for
+ * polygons, a circle for points - and is the server's. This adds the client's
+ * reason on top of it, so the two cannot overwrite each other: a spec given no
+ * extra filter keeps the style's unchanged.
+ */
+export const setLocalVectorLayerFilters = (
+  map: MapLibreMap,
+  layerId: string,
+  style: LocalLayerStyle,
+  extra: Record<string, unknown>,
+) => {
+  whenStyleReady(map, () => {
+    style.layers.forEach((spec) => {
+      const drawn = localDrawnId(layerId, spec.id);
+      if (!map.getLayer(drawn)) return;
+
+      const own = spec.filter ?? null;
+      const added = extra[spec.id] ?? null;
+      const combined =
+        own && added ? ["all", own, added] : (added ?? own ?? null);
+
+      // MapLibre's types describe a filter more narrowly than the union of
+      // what the server may send and what is added here.
+      map.setFilter(
+        drawn,
+        (combined ?? undefined) as Parameters<MapLibreMap["setFilter"]>[1],
+      );
+    });
+  });
+};
+
+/**
  * Take a hosted layer off the map, keeping its parsed tiles.
  *
  * Hidden rather than removed: turning it back on costs nothing and the parsed

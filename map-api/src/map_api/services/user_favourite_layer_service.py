@@ -14,6 +14,9 @@ from map_api.utils.constant import MAX_FAVOURITE_LAYERS
 # to have to hand rather than one they opt into. The display name is here rather
 # than read from the layer because it is what a reader of the panel should see,
 # which is not the warehouse's title for the table.
+# EAO.PROJECT_DATA is deliberately absent: the project footprints are drawn
+# from the filter bar rather than switched on from the panel, so they have no
+# row to star, unstar, file or toggle.
 SEEDED_LOCAL_FAVOURITES = {
     'WHSE_ADMIN_BOUNDARIES.PIP_CONSULTATION_AREAS_SP':
         'Profiles of Indigenous People (PIP) - First Nation Consultation Areas',

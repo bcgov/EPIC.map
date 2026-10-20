@@ -41,6 +41,7 @@ import {
   showLocalHighlight,
 } from "@/components/Layers/layerUtils";
 import { useImportedLayersContext } from "@/components/Layers/UserLayers/ImportedLayersContext";
+import { footprintTrackIdAt } from "@/components/Layers/eaoVisibility";
 import { projectIdAt } from "@/components/Projects/projectUtils";
 import type { MapExtent } from "@/types";
 import {
@@ -50,6 +51,7 @@ import {
   METADATA_TOLERANCE_PX,
 } from "@/utils/config";
 import {
+  EAO_OBJECT_NAME,
   HOSTED_LAYERS,
   localLayerId,
   type HostedLayerSpec,
@@ -112,7 +114,13 @@ export default function MetaDataControl() {
   /** The hosted layers on the map, named as their favourite row names them. */
   const hostedShown = useMemo(
     () =>
-      HOSTED_LAYERS.map((spec) => {
+      HOSTED_LAYERS.filter(
+        // EAO footprints answer a click by opening their project, which
+        // ProjectsControl does. Identifying them as a layer as well would put
+        // a popup beside the card. Lift this when the components are drawn and
+        // localRows can describe them.
+        (spec) => spec.objectName !== EAO_OBJECT_NAME,
+      ).map((spec) => {
         const id = localLayerId(spec.objectName);
         const favourite = favourites.find((entry) => entry.id === id);
         return { spec, layerId: id, layerName: favourite?.name ?? "" };
@@ -130,8 +138,13 @@ export default function MetaDataControl() {
     if (!map) return undefined;
 
     const onClick = (event: MapMouseEvent) => {
-      // A project dot opens its own card instead.
-      if (projectIdAt(map, event.point) !== null) {
+      // A project dot opens its own card instead, and so does the footprint
+      // under it: a click that opens a card must not also open a popup beside
+      // it, whatever other layer happens to be on.
+      if (
+        projectIdAt(map, event.point) !== null ||
+        footprintTrackIdAt(map, event.point) !== null
+      ) {
         setClick(null);
         return;
       }
