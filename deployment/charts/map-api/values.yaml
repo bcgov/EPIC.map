@@ -97,13 +97,20 @@ rollout:
 # for why its failure settings are what they are.
 ingest:
   enabled: false
-  # Daily at 09:00 UTC, roughly 02:00 Pacific: after any overnight re-export and
-  # early enough that a failure is found during the working day.
-  schedule: "0 9 * * *"
   # Kubernetes 1.27+ / OCP 4.14+ only. Blank it for an older cluster.
   timeZone: Etc/UTC
-  # A key of INGEST_SPECS in local_layer_service/ingest_spec.py.
-  layer: pip
+  # One CronJob per entry, named after the layer. `layer` is a key of
+  # INGEST_SPECS in local_layer_service/ingest_spec.py.
+  #
+  # Staggered rather than all at 09:00: they share one database and one
+  # object-store secret, and a stagger keeps a slow load from meeting the next
+  # layer's. Roughly 02:00 Pacific either way - after any overnight re-export,
+  # early enough that a failure is found during the working day.
+  layers:
+    - layer: pip
+      schedule: "0 9 * * *"
+    - layer: eao
+      schedule: "30 9 * * *"
   image:
     repository: image-registry.openshift-image-registry.svc:5000/c8b80a-tools/map-api-ingest
     # Both unset: the template falls back to image.pullPolicy and image.tag, so

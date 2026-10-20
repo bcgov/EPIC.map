@@ -32,7 +32,9 @@ from pathlib import Path
 import psycopg2
 import pytest
 
-from map_api.services.local_layer_service.ingest_spec import PIP_CONSULTATION_AREAS
+from map_api.services.local_layer_service import LOCAL_LAYERS
+from map_api.services.local_layer_service.ingest import LoadComparison
+from map_api.services.local_layer_service.ingest_spec import EAO_PROJECT_DATA, PIP_CONSULTATION_AREAS
 
 
 API_ROOT = Path(__file__).resolve().parents[3]
@@ -229,11 +231,15 @@ class FakeConnection:
     `dies` makes that failure the connection's last act, as a dropped
     connection is: every later call, rollback included, raises InterfaceError.
     Without it the cleanup path reads as working when it does not.
+
+    `stored` is how many rows the layer is serving, which an unchanged delivery
+    is skipped on as well as on the digest.
     """
 
     def __init__(self, previous=None, fail_on=None, error=None,
-                 existing=(0, 0), dies=False):
+                 existing=(0, 0), dies=False, stored=298):
         """Script the answers, and start with an empty history."""
+        self.stored = stored
         self.previous = previous
         self.fail_on = fail_on
         self.error = error
@@ -280,6 +286,9 @@ class FakeConnection:
             self.row = self.existing
         elif 'SELECT count(*) FROM cache.pip_consultation_areas_src' in flat:
             self.row = (1,)
+        elif flat.startswith('SELECT count(*) FROM cache.'):
+            # The served table, which the skip check reads.
+            self.row = (self.stored,)
         elif 'SELECT DISTINCT cnsltn_area_name' in flat:
             self.rows = [('Tsleil-Waututh Nation',)]
 
@@ -357,6 +366,27 @@ class TestLoadSkipsAnUnchangedDelivery:
 
         assert code == ingest.EXIT_OK
         assert connection.statuses == ['skipped']
+
+    def test_an_unchanged_delivery_is_loaded_when_the_table_is_empty(
+            self, tmp_path, monkeypatch):
+        """The digest lives apart from the rows, so it can outlive them.
+
+        A downgrade drops the layer's table and leaves the load history, and
+        the cache schema exists to be rebuilt - so skipping on the digest alone
+        left the table empty for as long as the delivery stayed the same.
+        Reaching ogr2ogr is the assertion.
+        """
+        extract, lyrx = delivery_files(tmp_path)
+        stored = ingest.digest([extract, lyrx])
+        connection = FakeConnection(previous=('loaded', stored, None, 1),
+                                    stored=0)
+        no_staging(monkeypatch)
+
+        with pytest.raises(StageCalledError):
+            ingest.load(make_args(), PIP_CONSULTATION_AREAS,
+                        [extract], lyrx, connection, TARGET)
+
+        assert connection.statuses == []
 
     def test_a_symbology_only_re_export_is_loaded(self, tmp_path, monkeypatch):
         """The bug itself, at the call site.
@@ -618,3 +648,202 @@ class TestTargetFromUrl:
         """Each of these left main() as an uncaught ValueError, so exit 1."""
         with pytest.raises(ingest.CannotRunError):
             ingest.target_from_url(url)
+
+
+# A delivery is either a file per source layer or one file holding them all.
+# The second is the EAO GeoPackage, and before source_paths() the zip in
+# stage() silently dropped every layer after the first - staging a third of the
+# extract and reporting it as the whole thing.
+
+def test_one_file_per_source_layer_is_paired_in_order():
+    """Three shapefiles, read in the order the spec lists its layers."""
+    paths = [Path(f'/tmp/{name}.shp') for name in ('a', 'b', 'c')]
+    assert ingest.source_paths(EAO_PROJECT_DATA, paths) == paths
+
+
+def test_a_single_file_is_read_once_per_source_layer():
+    """The EAO delivery: three feature classes in one GeoPackage."""
+    one = Path('/tmp/EAOProjectData.gpkg')
+    assert ingest.source_paths(EAO_PROJECT_DATA, [one]) == [one, one, one]
+
+
+def test_a_count_that_is_neither_cannot_run():
+    """Two files for three layers is a mistake, not a delivery to guess at."""
+    paths = [Path('/tmp/a.shp'), Path('/tmp/b.shp')]
+    with pytest.raises(ingest.CannotRunError, match='source layer'):
+        ingest.source_paths(EAO_PROJECT_DATA, paths)
+
+
+def test_a_single_source_layer_still_pairs():
+    """The PIP delivery, where one file holds the one layer."""
+    one = Path('/tmp/PIP.gpkg')
+    assert ingest.source_paths(PIP_CONSULTATION_AREAS, [one]) == [one]
+
+
+# Where a layer's style comes from. PIP translates the .lyrx it is delivered
+# with; EAO is delivered as geometry and the style is ours.
+
+def test_a_spec_that_owns_its_style_needs_no_lyrx():
+    """build_style must not reach for a file that is never delivered."""
+    style, manifest = ingest.build_style(EAO_PROJECT_DATA, None)
+    assert manifest['field'] == 'style_category'
+    assert style['layers']
+
+
+def test_an_owned_style_names_the_mvt_layer():
+    """A style says how to draw; the ingest is what knows where from."""
+    style, _ = ingest.build_style(EAO_PROJECT_DATA, None)
+    for layer in style['layers']:
+        assert layer['sourceLayer'] == 'eao_project_data'
+
+
+def test_a_translated_style_still_requires_its_lyrx():
+    """The PIP path is unchanged: no file is a usage error, not a refusal."""
+    with pytest.raises(ingest.CannotRunError, match='--lyrx'):
+        ingest.build_style(PIP_CONSULTATION_AREAS, None)
+
+
+# What a load changed, per feature. The pre-transform comparison cannot answer
+# this: it runs before the transform, matches on the label and reads only the
+# geometry, so an attribute-only fix never reaches it - 168 of them in the
+# 16/10/2026 delivery, which it would have reported as one change.
+
+class RecordingCursor:
+    """Records the SQL it is given and answers with fixed counts."""
+
+    def __init__(self, result=(1, 2, 3)):
+        """Hold the statements, so a test can read the SQL that was built."""
+        self.statements = []
+        self._result = result
+
+    def execute(self, sql, params=None):
+        """Record one statement instead of running it."""
+        self.statements.append((sql, params))
+
+    def fetchone(self):
+        """Answer with the counts the real query would return."""
+        return self._result
+
+
+def _history_sql(cursor):
+    """Find the diff statement, past the counts rebuilt_from_empty asks first."""
+    return next(sql for sql, _ in cursor.statements if 'INSERT INTO' in sql)
+
+
+def _history_params(cursor):
+    """Return the parameters bound to that statement."""
+    return next(params for sql, params in cursor.statements if 'INSERT INTO' in sql)
+
+
+def test_the_stored_rows_are_copied_aside_before_the_transform():
+    """The transform truncates, so the diff has to hold its own copy."""
+    cursor = RecordingCursor()
+
+    ingest.capture_previous(cursor, EAO_PROJECT_DATA)
+
+    sql = cursor.statements[0][0]
+    assert 'CREATE TEMP TABLE' in sql
+    assert 'ON COMMIT DROP' in sql
+    assert EAO_PROJECT_DATA.target_table in sql
+
+
+def test_the_copy_does_not_outlive_the_load():
+    """A rollback and a commit must both clear it, or the next load sees it."""
+    cursor = RecordingCursor()
+    ingest.capture_previous(cursor, EAO_PROJECT_DATA)
+    assert 'ON COMMIT DROP' in cursor.statements[0][0]
+
+
+def test_history_is_written_where_it_cannot_be_rebuilt():
+    """In app, not cache: the cache schema is reloadable and this is not."""
+    assert ingest.HISTORY_TABLE.startswith('app.')
+
+
+def test_history_records_all_three_kinds_of_change():
+    """Added, changed and removed, in one statement."""
+    cursor = RecordingCursor()
+
+    counts = ingest.write_feature_history(
+        cursor, EAO_PROJECT_DATA, 'EAOProjectData16102026.gpkg', 'abc123')
+
+    sql = _history_sql(cursor)
+    for change in ("'added'", "'changed'", "'removed'"):
+        assert change in sql
+    assert counts == {'added': 1, 'removed': 2, 'changed': 3}
+
+
+def test_history_compares_the_columns_the_registry_names():
+    """One list of columns, so the diff cannot drift from what is served."""
+    cursor = RecordingCursor()
+    layer = LOCAL_LAYERS[EAO_PROJECT_DATA.object_name]
+
+    ingest.write_feature_history(cursor, EAO_PROJECT_DATA, 'x.gpkg', 'abc')
+
+    sql = _history_sql(cursor)
+    for column in layer.detail_columns:
+        assert f"'{column}'" in sql or column == layer.key
+
+
+def test_history_keys_on_the_layers_own_key():
+    """Key on EAO's GlobalID: without it there is nothing to hang a history on."""
+    cursor = RecordingCursor()
+    layer = LOCAL_LAYERS[EAO_PROJECT_DATA.object_name]
+
+    ingest.write_feature_history(cursor, EAO_PROJECT_DATA, 'x.gpkg', 'abc')
+
+    assert f'p.{layer.key} = c.{layer.key}' in _history_sql(cursor)
+
+
+def test_history_stores_the_geometry_only_where_it_changed():
+    """Geometry is the bulk of this data; most deliveries do not touch it."""
+    cursor = RecordingCursor()
+
+    ingest.write_feature_history(cursor, EAO_PROJECT_DATA, 'x.gpkg', 'abc')
+
+    assert ('CASE WHEN d.geom_changed THEN d.previous_geom END'
+            in _history_sql(cursor))
+
+
+def test_history_names_the_delivery_that_made_the_change():
+    """So a row here can be tied to the load that wrote it."""
+    cursor = RecordingCursor()
+
+    ingest.write_feature_history(
+        cursor, EAO_PROJECT_DATA, 'EAOProjectData16102026.gpkg', 'abc123')
+
+    params = _history_params(cursor)
+    assert params['source_name'] == 'EAOProjectData16102026.gpkg'
+    assert params['digest'] == 'abc123'
+    assert params['object_name'] == EAO_PROJECT_DATA.object_name
+
+
+def test_only_a_layer_that_asks_for_history_keeps_it():
+    """It needs a key that is the same feature's from one delivery to the next."""
+    assert EAO_PROJECT_DATA.track_history is True
+    assert PIP_CONSULTATION_AREAS.track_history is False
+
+
+def test_the_counts_recorded_are_the_ones_the_transform_produced():
+    """Falling back to the pre-transform lists would under-report a data fix."""
+    comparison = LoadComparison(
+        existing_areas=953, staged_areas=953,
+        existing_vertices=1, staged_vertices=1,
+        changed=['one name the label comparison noticed'],
+    )
+    assert comparison.counted('changed') == 1
+
+    comparison.changed_count = 168
+    assert comparison.counted('changed') == 168
+    assert comparison.counted('added') == 0
+
+
+def test_a_quiet_load_says_so():
+    """Most scheduled runs change nothing, and should read that way."""
+    assert 'no feature changed' in ingest.describe_changes(
+        {'added': 0, 'changed': 0, 'removed': 0})
+
+
+def test_a_load_that_changed_things_counts_them():
+    """The operator's one line of what happened."""
+    line = ingest.describe_changes({'added': 2, 'changed': 168, 'removed': 1})
+    assert '2 added' in line and '168 changed' in line and '1 removed' in line

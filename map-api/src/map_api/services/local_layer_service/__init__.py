@@ -38,6 +38,16 @@ class LocalLayer(NamedTuple):
     properties: tuple
     # The column a feature is addressed by, for the detail endpoint.
     key: str
+    # The columns read for one feature: what the detail endpoint returns where
+    # it serves this layer, and what the load history diffs either way. Per
+    # layer, not shared: these are interpolated, so they must be ours by
+    # construction rather than merely look safe.
+    detail_columns: tuple
+    # Whether /features/<key> can answer for this layer. False where no
+    # response schema describes it yet: LocalLayerFeatureSchema whitelists one
+    # layer's fields on purpose, and dumping another through it answers with
+    # the bounds and nothing else.
+    serves_feature_detail: bool = False
 
 
 # A registry rather than a pattern: the table name reaches SQL, so it must be
@@ -50,29 +60,62 @@ LOCAL_LAYERS = {
         # one type, so it describes a contact, not the area.
         properties=('cnsltn_area_guid', 'cnsltn_area_name', 'contact_count'),
         key='cnsltn_area_guid',
+        serves_feature_detail=True,
+        # Everything the ingest carried, which is no longer everything the
+        # extract holds: the contacts blob is cut down to the fields the popup
+        # draws, and LocalContactSchema whitelists them again before the
+        # response goes out.
+        detail_columns=(
+            'cnsltn_area_guid',
+            'cnsltn_area_name',
+            'cnsltn_area_label',
+            'cnsltn_area_mapsource',
+            'cnsltn_area_verified_ind',
+            'cnsltn_area_low_confidence_ind',
+            'cnsltn_area_sensitivity',
+            'cnsltn_area_asserted_agg_ind',
+            'cnsltn_area_update_date',
+            'contact_type',
+            'feature_code',
+            'feature_area_sqm',
+            'feature_length_m',
+            'contact_count',
+            'contacts',
+        ),
+    ),
+    'EAO.PROJECT_DATA': LocalLayer(
+        table='cache.eao_project_data',
+        mvt_layer='eao_project_data',
+        # style_category because the style matches on it; track_id because the
+        # panel filters a project's features without a round trip.
+        properties=('feature_id', 'label', 'style_category', 'track_id'),
+        key='feature_id',
+        detail_columns=(
+            'feature_id',
+            'source_layer',
+            'style_category',
+            'is_amendment',
+            'is_footprint',
+            'track_id',
+            'project_name',
+            'proponent',
+            'label',
+            'comment',
+            'category',
+            'subcategory',
+            'component_type',
+            'amendment_number',
+            'source_of_spatial',
+            'gis_adjusted',
+            'gis_comment',
+            'sensitive',
+            'data_restriction',
+            'date_received',
+            'engage_id',
+            'from_engage',
+        ),
     ),
 }
-
-# Everything the ingest carried, which is no longer everything the extract
-# holds: the contacts blob is cut down to the fields the popup draws, and
-# LocalContactSchema whitelists them again before the response goes out.
-DETAIL_COLUMNS = (
-    'cnsltn_area_guid',
-    'cnsltn_area_name',
-    'cnsltn_area_label',
-    'cnsltn_area_mapsource',
-    'cnsltn_area_verified_ind',
-    'cnsltn_area_low_confidence_ind',
-    'cnsltn_area_sensitivity',
-    'cnsltn_area_asserted_agg_ind',
-    'cnsltn_area_update_date',
-    'contact_type',
-    'feature_code',
-    'feature_area_sqm',
-    'feature_length_m',
-    'contact_count',
-    'contacts',
-)
 
 # Integer units per tile side. 4096 is what every renderer assumes.
 MVT_EXTENT = 4096
@@ -150,7 +193,7 @@ class LocalLayerService:
         The tile carries only the style's fields plus this key, so this is how
         the panel gets from a boundary to the nation's contacts.
         """
-        columns = ', '.join(DETAIL_COLUMNS)
+        columns = ', '.join(layer.detail_columns)
 
         # The extent in degrees, which is what the client points the camera
         # with. Computed here rather than carried in the tile: a tile clips
@@ -163,7 +206,7 @@ class LocalLayerService:
             '] AS bounds'
         )
 
-        # Interpolated from DETAIL_COLUMNS and the registry, never the request;
+        # Interpolated from the registry, never the request;
         # the key itself is bound.
         statement = text(f"""
             SELECT {columns}, {bounds}

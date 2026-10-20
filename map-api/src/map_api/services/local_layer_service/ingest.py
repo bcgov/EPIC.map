@@ -23,6 +23,7 @@ database.
 """
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 # How much smaller a new extract may be before it is refused. Half the size is
@@ -42,7 +43,11 @@ class CannotRunError(Exception):
 
 
 @dataclass
-class LoadComparison:
+# Two measurements of the same three things, plus the four totals the guard
+# decides on: the lists come from the pre-transform comparison, the counts from
+# the diff the transform produced. Splitting them would thread both through
+# every caller to be recombined for one report.
+class LoadComparison:  # pylint: disable=too-many-instance-attributes
     """The staged extract set against what is already stored."""
 
     existing_areas: int
@@ -53,6 +58,22 @@ class LoadComparison:
     added: list = field(default_factory=list)
     removed: list = field(default_factory=list)
     changed: list = field(default_factory=list)
+
+    # What the load turned out to have done, counted after the transform by
+    # diffing the stored rows against their replacements. None where the layer
+    # keeps no history, in which case the lists above are all there is.
+    #
+    # Separate from them because they are not the same measurement: the lists
+    # come from a pre-transform comparison that matches on the label and reads
+    # the geometry only, so an attribute-only fix never reaches them.
+    added_count: Optional[int] = None
+    removed_count: Optional[int] = None
+    changed_count: Optional[int] = None
+
+    def counted(self, name: str) -> int:
+        """Return the authoritative count, or the list's length where there is none."""
+        counted = getattr(self, f'{name}_count')
+        return len(getattr(self, name)) if counted is None else counted
 
     @property
     def is_first_load(self) -> bool:

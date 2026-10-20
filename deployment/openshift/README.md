@@ -111,8 +111,9 @@ for the dev, test and prod default service accounts, which already covers a new 
 
 **2. Deploy `map-api` itself from a build that includes the ingest work.** The Deployment's
 `pre-hook` initContainer runs `flask db upgrade`, which is what creates the `cache` schema,
-`cache.pip_consultation_areas`, `cache.local_layer_loads` and `cache.local_layer_styles`. A
-CronJob that runs before that exits 2 on a missing table - correctly, but confusingly.
+`cache.pip_consultation_areas`, `cache.eao_project_data`, `cache.local_layer_loads` and
+`cache.local_layer_styles`. A CronJob that runs before that exits 2 on a missing table -
+correctly, but confusingly.
 
 **3. Create `map-ingest-s3`** in that namespace, as above.
 
@@ -135,16 +136,18 @@ The schedule means the same thing either way, because the control plane runs UTC
 
 ## The ingest CronJob
 
-`map-api`'s chart creates a `map-api-ingest` CronJob when `ingest.enabled` is true - dev only for
-now. It runs a **second image**, `map-api-ingest`, built from `map-api/Dockerfile.ingest` because
+`map-api`'s chart creates one CronJob per entry in `ingest.layers` when `ingest.enabled` is true -
+dev only for now - each named `map-api-ingest-<layer>` after the `INGEST_SPECS` key it loads, and
+each on its own schedule. They are staggered because they share a database and an object-store
+secret. Adding a hosted layer means an entry there; it does not mean a new template. It runs a **second image**, `map-api-ingest`, built from `map-api/Dockerfile.ingest` because
 the load needs GDAL and the API pod has no use for it. `.github/workflows/api-cd.yml` builds and
 pushes both with `docker build`; `charts/map-api-ingest.bc` declares only the ImageStream, with
 no BuildConfig, because OpenShift's build system is not in the path for this image.
 
-    oc get cronjob map-api-ingest -n c8b80a-dev
+    oc get cronjob -l app=map-api-ingest -n c8b80a-dev
     oc get jobs -l app=map-api-ingest -n c8b80a-dev
-    oc create job --from=cronjob/map-api-ingest ingest-manual-1 -n c8b80a-dev   # run it now
-    oc logs -f job/ingest-manual-1 -n c8b80a-dev
+    oc create job --from=cronjob/map-api-ingest-eao ingest-eao-manual-1 -n c8b80a-dev   # run one layer now
+    oc logs -f job/ingest-eao-manual-1 -n c8b80a-dev
 
 It is built to fail visibly rather than quietly: one attempt, no retries, and finished Jobs are
 kept rather than expired, so a **Failed** Job in the namespace is the alert. Exit 1 means an

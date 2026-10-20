@@ -1,4 +1,7 @@
 {{- if .Values.ingest.enabled }}
+{{- range $ingest := .Values.ingest.layers }}
+{{- with $ }}
+---
 {{/*
 The hosted-layer ingest, on a schedule.
 
@@ -20,11 +23,13 @@ by hand first. See deployment/openshift/README.md.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: "{{ .Chart.Name }}-ingest"
+  # Per layer: two CronJobs of one name would be one CronJob.
+  name: "{{ .Chart.Name }}-ingest-{{ $ingest.layer }}"
   labels:
     app: "{{ .Chart.Name }}-ingest"
+    layer: "{{ $ingest.layer }}"
 spec:
-  schedule: "{{ .Values.ingest.schedule }}"
+  schedule: "{{ $ingest.schedule }}"
   {{- if .Values.ingest.timeZone }}
   # Needs Kubernetes 1.27+ (OCP 4.14+). Unset it on an older cluster: the control
   # plane runs UTC, so the schedule means the same thing either way.
@@ -64,7 +69,7 @@ spec:
               # The image's ENTRYPOINT is the script, so these are only its flags.
               args:
                 - "--layer"
-                - "{{ .Values.ingest.layer }}"
+                - "{{ $ingest.layer }}"
                 - "--from-s3"
               volumeMounts:
                 - name: work
@@ -127,4 +132,6 @@ spec:
                 runAsNonRoot: true
                 capabilities:
                   drop: ["ALL"]
+{{- end }}
+{{- end }}
 {{- end }}

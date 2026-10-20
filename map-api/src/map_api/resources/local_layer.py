@@ -207,6 +207,13 @@ class LocalLayerFeature(Resource):
         being repeated per feature. The contacts are the rest.
         """
         layer = _registered_layer(object_name)
+        if not layer.serves_feature_detail:
+            # An explicit refusal, not an empty record: the response schema
+            # whitelists one layer's fields, so dumping another through it
+            # answers 200 with the bounds and nothing else.
+            raise ResourceNotFoundError(
+                f'No feature record is served for {object_name}.'
+            )
 
         try:
             FeatureKeySchema().load({'feature_key': feature_key})

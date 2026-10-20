@@ -241,6 +241,10 @@ class FeatureKeySchema(Schema):
 
         unknown = EXCLUDE
 
+    # Every layer that serves a record keys on the warehouse's 32-character
+    # GUID with the separators stripped. A layer keyed otherwise is refused by
+    # serves_feature_detail before this runs, so widening it here would only
+    # add a branch nothing can reach.
     feature_key = fields.Str(
         required=True,
         validate=validate.Regexp(r'^[0-9A-Fa-f]{32}$'),

@@ -80,6 +80,7 @@ def ogr2ogr_argv(spec, source_layer, index: int, source_arg: str, sql_arg: str,
         '-overwrite' if index == 0 else '-append',
         '-t_srs', TARGET_SRID,
         '-nlt', source_layer.geometry_type,
+        *(['-dim', source_layer.dimension] if source_layer.dimension else []),
         '-lco', 'GEOMETRY_NAME=geom',
         # No index on a table that is dropped a few seconds from now.
         '-lco', 'SPATIAL_INDEX=NONE',
