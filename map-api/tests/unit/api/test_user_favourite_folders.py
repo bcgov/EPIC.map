@@ -285,7 +285,11 @@ def test_delete_leaves_the_layers_favourited(app, client, jwt, session):
 
     client.delete(f"{ENDPOINT}/{folder['id']}", headers=headers)
 
-    favourites = client.get(FAVOURITES, headers=headers).json
+    # Without the layers the user was given, which were never in the folder.
+    favourites = [
+        row for row in client.get(FAVOURITES, headers=headers).json
+        if not row['restricted']
+    ]
     assert [row['id'] for row in favourites] == [favourite['id']]
     assert favourites[0]['folder_id'] is None
 
@@ -341,4 +345,7 @@ def test_folders_do_not_collide_with_a_favourite_id(app, client, jwt, session):
     new_folder(client, headers, name='Wildfire')
 
     assert client.get(ENDPOINT, headers=headers).status_code == HTTPStatus.OK
-    assert client.get(FAVOURITES, headers=headers).json == []
+    assert [
+        row for row in client.get(FAVOURITES, headers=headers).json
+        if not row['restricted']
+    ] == []

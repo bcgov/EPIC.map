@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import { CATALOGUE_DATASET_URL } from "@/utils/config";
+import { hostedLayer, localLayerId } from "@/utils/localLayers";
 import { isPendingId, nextPendingId } from "@/api/pendingIds";
 import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
@@ -28,6 +29,8 @@ interface FavouriteLayerResponse {
   last_updated?: string | null;
   folder_id: number | null;
   sort_order: number;
+  /** A favourite map-api put there for the user, which they may not remove. */
+  restricted?: boolean;
 }
 
 export interface FavouriteLayer extends CatalogueLayer {
@@ -35,6 +38,8 @@ export interface FavouriteLayer extends CatalogueLayer {
   favouriteId: number;
   /** The folder it is filed in, or null for the top level. */
   folderId: number | null;
+  /** Given rather than starred: it can be organised but not unstarred. */
+  restricted: boolean;
 }
 
 /** A layer with something to draw. The API rejects one without. */
@@ -42,19 +47,34 @@ type MappableLayer = CatalogueLayer & { objectName: string };
 
 const NO_FAVOURITES: readonly FavouriteLayer[] = [];
 
+/**
+ * A layer we host stores no catalogue package, so it is addressed by the object
+ * name - the one thing that identifies it on both sides - and what the panel
+ * shows about it is read from the hosted layer registry rather than the row.
+ */
+const isHosted = (row: FavouriteLayerResponse) => row.source === "local";
+
 export const toFavouriteLayer = (
   row: FavouriteLayerResponse,
-): FavouriteLayer => ({
-  id: `cat-${row.package_id}`,
-  packageId: row.package_id,
-  objectName: row.object_name,
-  name: row.display_name,
-  lastUpdated: row.last_updated ?? "",
-  description: row.description ?? null,
-  metadataUrl: `${CATALOGUE_DATASET_URL}/${row.package_id}`,
-  favouriteId: row.id,
-  folderId: row.folder_id ?? null,
-});
+): FavouriteLayer => {
+  const hosted = isHosted(row) ? hostedLayer(row.object_name) : undefined;
+
+  return {
+    id: isHosted(row) ? localLayerId(row.object_name) : `cat-${row.package_id}`,
+    packageId: row.package_id,
+    objectName: row.object_name,
+    name: row.display_name,
+    lastUpdated: row.last_updated ?? "",
+    // A hosted layer describes itself from the registry; the row is the fallback.
+    description: (hosted?.description ?? row.description) ?? null,
+    metadataUrl: isHosted(row)
+      ? hosted?.metadataUrl ?? null
+      : `${CATALOGUE_DATASET_URL}/${row.package_id}`,
+    favouriteId: row.id,
+    folderId: row.folder_id ?? null,
+    restricted: Boolean(row.restricted),
+  };
+};
 
 /**
  * The layers the signed-in user has starred, persisted by map-api.
@@ -140,7 +160,8 @@ export const useFavouriteLayers = () => {
       const previous = readCache();
       // Prepended, matching where map-api puts it.
       writeCache([
-        { ...layer, favouriteId: nextPendingId(), folderId: null },
+        // Starred by hand, so never a restricted one.
+        { ...layer, favouriteId: nextPendingId(), folderId: null, restricted: false },
         ...previous.filter((entry) => entry.id !== layer.id),
       ]);
       return { previous };
@@ -233,6 +254,8 @@ export const useFavouriteLayers = () => {
       const favourite = readCache().find((entry) => entry.id === layerId);
       // A star still waiting on its POST has no row id to delete yet.
       if (!favourite || isPendingId(favourite.favouriteId)) return;
+      // map-api refuses it, and the row would come straight back on the refetch.
+      if (favourite.restricted) return;
       removeMutate(favourite);
     },
     [readCache, removeMutate],

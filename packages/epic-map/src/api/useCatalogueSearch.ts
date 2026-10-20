@@ -19,7 +19,8 @@ export interface CatalogueLayer {
   /** The record's last modified date as YYYY-MM-DD, or "" when it has none. */
   lastUpdated: string;
   description: string | null;
-  metadataUrl: string;
+  /** Null for a layer we host, which has no catalogue dataset page. */
+  metadataUrl: string | null;
 }
 
 /** The slice of CKAN's package_search response this package relies on. */

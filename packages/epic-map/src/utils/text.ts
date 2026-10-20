@@ -58,11 +58,20 @@ export const splitOnMatches = (text: string, query: string): string[] => {
   return parts;
 };
 
-/** "2023-06-29" as "Jun 29, 2023", or "" when it is not a date. */
-export const formatDate = (value: string): string => {
+/**
+ * A date as the panel writes it: "Oct 5, 2026", or "" for anything unreadable.
+ *
+ * Takes a date or a timestamp and reads only the day off it. The catalogue
+ * sends a date, map-api sends the UTC instant an extract was loaded, and the
+ * panel shows the same thing for both: which day the layer is from. The day is
+ * taken as written rather than re-projected into the reader's zone - parsing it
+ * at midday is what stops that - so an ingest at 09:00 UTC is dated the day it
+ * ran, which is also the day it ran in BC.
+ */
+export const formatDate = (value?: string | null): string => {
   if (!value) return "";
-  // Midday avoids the date shifting a day backwards west of UTC.
-  const date = new Date(`${value}T12:00:00`);
+
+  const date = new Date(`${value.slice(0, 10)}T12:00:00`);
   return Number.isNaN(date.getTime())
     ? ""
     : date.toLocaleDateString("en-CA", {

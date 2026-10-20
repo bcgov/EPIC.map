@@ -7,6 +7,7 @@ import type {
   MetaDataLayerResult,
 } from "@/api/useMetaData";
 import {
+  boundsOutOfView,
   importedRows,
   NO_ATTRIBUTES,
   attributeLabel,
@@ -16,13 +17,15 @@ import {
   isOutOfView,
   EMPTY_VALUE,
   isLoading,
+  featureCount,
   POPUP_MARGIN_PX,
   popupPlacement,
   NOTHING_HERE_TITLE,
   POPUP_LARGE_STEP_PX,
   POPUP_STEP_PX,
   popupTitle,
-  selectedRow,
+  selectableOptions,
+  selectedOption,
   stepFor,
   steppedIndex,
   toRows,
@@ -132,42 +135,71 @@ describe("rows", () => {
     expect(row.retrying).toBe(true);
   });
 
-  it("selects the first layer that answered, skipping a failure above it", () => {
+  it("selects the first feature that answered, skipping a failure above it", () => {
     const rows = visibleRows(toRows([a, b], answers(failed(a), found(b))));
-    expect(selectedRow(rows, null)?.layer.name).toBe("b");
+    expect(selectedOption(rows, null)?.row.layer.name).toBe("b");
   });
 
   it("keeps the user's choice while it is listed, and falls back when it is not", () => {
     const rows = visibleRows(toRows([a, b], answers(found(a), found(b))));
-    expect(selectedRow(rows, b.id)?.layer.name).toBe("b");
-    expect(selectedRow(rows, "cat-gone")?.layer.name).toBe("a");
+    const pick = { layerId: b.id, featureKey: feature.id as string };
+    expect(selectedOption(rows, pick)?.row.layer.name).toBe("b");
+    expect(
+      selectedOption(rows, { layerId: "cat-gone", featureKey: "x" })?.row.layer
+        .name,
+    ).toBe("a");
   });
 
-  it("selects a failure when nothing else is listed, so its Retry shows", () => {
+  it("lists a layer that failed as a row of its own, which can be selected", () => {
+    // Selecting it is what shows why it failed, and the Retry.
     const rows = visibleRows(toRows([a], answers(failed(a))));
-    expect(selectedRow(rows, null)?.status).toBe("error");
+    expect(selectableOptions(rows)).toHaveLength(1);
+    expect(selectedOption(rows, null)?.row.status).toBe("error");
+    expect(selectedOption(rows, null)?.feature.records).toEqual([]);
+  });
+
+  it("does not open on the failure when another layer answered", () => {
+    const rows = visibleRows(toRows([a, b], answers(failed(a), found(b))));
+    expect(selectedOption(rows, null)?.row.layer.name).toBe("b");
   });
 
   it("has nothing to select when no layer has anything here", () => {
-    expect(selectedRow(visibleRows(toRows([a], answers(empty(a)))), null)).toBeNull();
+    expect(selectedOption(visibleRows(toRows([a], answers(empty(a)))), null)).toBeNull();
+  });
+
+  it("counts features rather than layers, across every layer listed", () => {
+    const rows = visibleRows(toRows([a, b], answers(found(a), found(b))));
+    expect(featureCount(rows)).toBe(2);
+  });
+
+  it("counts a layer that failed, which is a row the user can click", () => {
+    expect(
+      featureCount(visibleRows(toRows([a, b], answers(found(a), failed(b))))),
+    ).toBe(2);
   });
 });
 
 describe("featureHeading", () => {
-  const row = (name: string | null) => ({
-    layer: layer("Indian Reserves"),
-    status: "found" as const,
-    feature: { ...feature, name },
-    retrying: false,
-  });
+  const option = (name: string | null) => {
+    const [row] = toRows(
+      [layer("Indian Reserves")],
+      answers(
+        answer(layer("Indian Reserves"), {
+          status: "found",
+          feature: { ...feature, name },
+        }),
+      ),
+    );
+    return { row, feature: row.features[0] };
+  };
 
   it("is what the layer's own map labels the feature", () => {
-    expect(featureHeading(row("Musqueam 2"))).toBe("Musqueam 2");
+    expect(featureHeading(option("Musqueam 2"))).toBe("Musqueam 2");
   });
 
   it("stands the layer's name in when the style labels nothing", () => {
-    expect(featureHeading(row(null))).toBe("Indian Reserves");
-    expect(featureHeading(row(""))).toBe("Indian Reserves");
+    expect(featureHeading(option(null))).toBe("Indian Reserves");
+    expect(featureHeading(option(""))).toBe("Indian Reserves");
   });
 });
 
@@ -210,19 +242,19 @@ describe("popupTitle", () => {
     expect(popupTitle(true, 0)).toBe("Identifying…");
   });
 
-  it("counts the rows shown", () => {
-    expect(popupTitle(false, 1)).toBe("1 layer at this point");
-    expect(popupTitle(false, 3)).toBe("3 layers at this point");
+  it("counts the features shown, and pluralises on them", () => {
+    expect(popupTitle(false, 1)).toBe("1 feature at this point");
+    expect(popupTitle(false, 3)).toBe("3 features at this point");
   });
 
   it("says so when no layer had anything, rather than counting nothing", () => {
     expect(popupTitle(false, 0)).toBe(NOTHING_HERE_TITLE);
   });
 
-  it("counts a layer that failed, which is a row like any other", () => {
+  it("counts what has answered while the rest are still out", () => {
     const [one, two] = [layer("a"), layer("b")];
-    const rows = visibleRows(toRows([one, two], answers(found(one), failed(two))));
-    expect(popupTitle(false, rows.length)).toBe("2 layers at this point");
+    const rows = visibleRows(toRows([one, two], answers(found(one))));
+    expect(popupTitle(true, featureCount(rows))).toBe("1 feature at this point");
   });
 });
 
@@ -381,7 +413,7 @@ describe("importedRows", () => {
     properties,
   });
 
-  it("keeps only the topmost feature of each layer, in the order they were hit", () => {
+  it("lists every feature hit, under its own layer, in the order they were hit", () => {
     const rows = importedRows(
       [
         { layerId: "parks", featureId: 2 },
@@ -393,7 +425,23 @@ describe("importedRows", () => {
     );
 
     expect(rows.map((row) => row.layer.id)).toEqual(["parks", "roads"]);
-    expect(rows[0].feature?.properties).toEqual([{ name: "ID", value: 2 }]);
+    expect(rows[0].features.map((one) => one.key)).toEqual(["2", "3"]);
+    expect(rows[0].features[0].records[0].attributes).toEqual([
+      { label: "Id", value: 2 },
+    ]);
+  });
+
+  it("folds a feature reported twice over a tile seam into one", () => {
+    const [row] = importedRows(
+      [
+        { layerId: "roads", featureId: 7 },
+        { layerId: "roads", featureId: 7 },
+      ],
+      [roads],
+      (_layerId, featureId) => feature(Number(featureId), { ID: featureId }),
+    );
+
+    expect(row.features).toHaveLength(1);
   });
 
   it("reads attributes from the layer's own data, with their bounds", () => {
@@ -404,7 +452,7 @@ describe("importedRows", () => {
     );
 
     expect(row.status).toBe("found");
-    expect(row.feature?.bounds).toEqual([-123.37, 48.42, -123.37, 48.42]);
+    expect(row.features[0].bounds).toEqual([-123.37, 48.42, -123.37, 48.42]);
   });
 
   it("falls back to the map's copy when the layer's data has no such feature", () => {
@@ -414,7 +462,9 @@ describe("importedRows", () => {
       () => null,
     );
 
-    expect(row.feature?.properties).toEqual([{ name: "A", value: 1 }]);
+    expect(row.features[0].records[0].attributes).toEqual([
+      { label: "A", value: 1 },
+    ]);
   });
 
   it("lists a feature with no attributes, for the popup to say so", () => {
@@ -424,7 +474,7 @@ describe("importedRows", () => {
       () => feature(7, null),
     );
 
-    expect(row.feature?.properties).toEqual([]);
+    expect(row.features[0].records[0].attributes).toEqual([]);
   });
 
   it("drops a hit on a layer it was not given", () => {
@@ -435,5 +485,71 @@ describe("importedRows", () => {
 
   it("says a feature has no metadata in the design's words", () => {
     expect(NO_ATTRIBUTES).toBe("No metadata for this feature.");
+  });
+});
+
+describe("boundsOutOfView", () => {
+  /**
+   * A map that projects degrees to pixels by a fixed scale, in a known
+   * viewport. `project` is the only thing boundsOutOfView adds over
+   * isOutOfView, which is tested above on pixel boxes directly.
+   */
+  const fakeMap = (
+    project: (lngLat: [number, number]) => { x: number; y: number },
+    size = { width: 800, height: 600 },
+  ) =>
+    ({
+      project,
+      getContainer: () => ({
+        clientWidth: size.width,
+        clientHeight: size.height,
+      }),
+    }) as unknown as MapLibreMap;
+
+  // A degree is ten pixels, and latitude grows upwards while y grows down.
+  const tenPixelsPerDegree = ([lng, lat]: [number, number]) => ({
+    x: lng * 10,
+    y: -lat * 10,
+  });
+
+  it("is false without a map or without bounds", () => {
+    // Nothing has been measured, so nothing is off screen: the caller shows
+    // the feature rather than offering to zoom to it.
+    expect(boundsOutOfView(null, [0, 0, 1, 1])).toBe(false);
+    expect(boundsOutOfView(fakeMap(tenPixelsPerDegree), null)).toBe(false);
+  });
+
+  it("is false for a feature filling the middle of the view", () => {
+    // 20 degrees across at ten pixels each: 200px in an 800x600 container.
+    expect(
+      boundsOutOfView(fakeMap(tenPixelsPerDegree), [10, -40, 30, -20]),
+    ).toBe(false);
+  });
+
+  it("is true for a feature off the side of the view", () => {
+    // Projects to x 2000..2200, past the container's 800.
+    expect(
+      boundsOutOfView(fakeMap(tenPixelsPerDegree), [200, -40, 220, -20]),
+    ).toBe(true);
+  });
+
+  it("is true for a feature too small to see", () => {
+    // One degree is ten pixels, under the 24 a feature needs to be worth
+    // looking at - the case a bounds check on screen position alone misses.
+    expect(
+      boundsOutOfView(fakeMap(tenPixelsPerDegree), [10, -20, 11, -19]),
+    ).toBe(true);
+  });
+
+  it("does not depend on which corner projects to the larger pixel", () => {
+    // North is a smaller y than south, so the projected corners arrive with
+    // top and bottom the other way round. Taking them as given would make
+    // every box negative-height and so "too small".
+    const inverted = ([lng, lat]: [number, number]) => ({
+      x: -lng * 10,
+      y: lat * 10,
+    });
+
+    expect(boundsOutOfView(fakeMap(inverted), [-30, 20, -10, 40])).toBe(false);
   });
 });

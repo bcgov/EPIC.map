@@ -42,6 +42,25 @@ def second_user_auth_header(jwt):
     )
 
 
+def listed(client, headers):
+    """Every favourite the user has, seeded ones included."""
+    return client.get(ENDPOINT, headers=headers).json
+
+
+def starred(client, headers):
+    """Only the favourites the user starred themselves.
+
+    The hosted layers are put in every user's list by the GET itself, so a test
+    about starring has to say which rows it means.
+    """
+    return [row for row in listed(client, headers) if not row['restricted']]
+
+
+def seeded(client, headers):
+    """Only the favourites the user was given."""
+    return [row for row in listed(client, headers) if row['restricted']]
+
+
 def star(client, headers, **overrides):
     """Star a layer and return the response body."""
     return client.post(
@@ -80,10 +99,10 @@ def test_favourite_endpoints_require_a_token(app, client, session, method, path)
 
 def test_get_returns_an_empty_list_for_a_new_user(app, client, jwt, session):
     """A user who has starred nothing has no favourites."""
-    response = client.get(ENDPOINT, headers=factory_auth_header(jwt))
+    headers = factory_auth_header(jwt)
 
-    assert response.status_code == HTTPStatus.OK
-    assert response.json == []
+    assert client.get(ENDPOINT, headers=headers).status_code == HTTPStatus.OK
+    assert starred(client, headers) == []
 
 
 def test_the_first_favourite_call_provisions_the_staff_users_row(app, client, jwt, session):
@@ -137,7 +156,7 @@ def test_starring_the_same_layer_twice_does_not_duplicate_it(app, client, jwt, s
     client.post(ENDPOINT, json=bcdc_layer_payload(), headers=headers)
     client.post(ENDPOINT, json=bcdc_layer_payload(), headers=headers)
 
-    assert len(client.get(ENDPOINT, headers=headers).json) == 1
+    assert len(starred(client, headers)) == 1
 
 
 def test_the_response_carries_no_urls(app, client, jwt, session):
@@ -168,9 +187,7 @@ def test_get_returns_favourites_newest_first(app, client, jwt, session):
         ENDPOINT, json=bcdc_layer_payload(object_name=OTHER_OBJECT), headers=headers
     )
 
-    response = client.get(ENDPOINT, headers=headers)
-
-    assert [row['object_name'] for row in response.json] == [
+    assert [row['object_name'] for row in starred(client, headers)] == [
         OTHER_OBJECT,
         bcdc_layer_payload()['object_name'],
     ]
@@ -185,7 +202,7 @@ def test_a_favourite_keeps_its_description_and_last_updated(app, client, jwt, se
         headers=headers,
     )
 
-    favourite = client.get(ENDPOINT, headers=headers).json[0]
+    favourite = starred(client, headers)[0]
 
     assert favourite['description'] == 'Reserves in BC.'
     assert favourite['last_updated'] == '2023-06-29'
@@ -312,18 +329,20 @@ def test_put_order_reorders_the_favourites(app, client, jwt, session):
     first = star(client, headers)
     second = star(client, headers, object_name=OTHER_OBJECT)
 
+    given = [row['id'] for row in seeded(client, headers)]
+
     response = client.put(
         ORDER_ENDPOINT,
-        json={'favourite_ids': [second['id'], first['id']]},
+        json={'favourite_ids': [second['id'], first['id']] + given},
         headers=headers,
     )
 
     assert response.status_code == HTTPStatus.OK
-    assert [row['id'] for row in response.json] == [second['id'], first['id']]
-    assert [row['sort_order'] for row in response.json] == [1, 2]
-    assert [row['id'] for row in client.get(ENDPOINT, headers=headers).json] == [
+    assert [row['id'] for row in response.json] == [second['id'], first['id']] + given
+    assert [row['sort_order'] for row in response.json] == [1, 2, 3]
+    assert [row['id'] for row in listed(client, headers)] == [
         second['id'], first['id'],
-    ]
+    ] + given
 
 
 @pytest.mark.parametrize('body', [{}, {'favourite_ids': []}, {'favourite_ids': 'abc'}])
@@ -377,7 +396,7 @@ def test_delete_unstars_the_layer(app, client, jwt, session):
     response = client.delete(f"{ENDPOINT}/{created.json['id']}", headers=headers)
 
     assert response.status_code == HTTPStatus.NO_CONTENT
-    assert client.get(ENDPOINT, headers=headers).json == []
+    assert starred(client, headers) == []
 
 
 def test_delete_twice_is_idempotent(app, client, jwt, session):
@@ -413,9 +432,7 @@ def test_a_favourite_is_only_visible_to_its_owner(app, client, jwt, session):
     """Two users' favourites do not see each other."""
     client.post(ENDPOINT, json=bcdc_layer_payload(), headers=factory_auth_header(jwt))
 
-    response = client.get(ENDPOINT, headers=second_user_auth_header(jwt))
-
-    assert response.json == []
+    assert starred(client, second_user_auth_header(jwt)) == []
 
 
 def test_favouriting_does_not_apply_the_layer_to_the_map(app, client, jwt, session):
@@ -502,7 +519,7 @@ def test_moving_a_favourite_does_not_un_favourite_it(app, client, jwt, session):
     response = move(client, headers, favourite, folder['id'])
 
     assert response.json['id'] == favourite['id']
-    assert len(client.get(ENDPOINT, headers=headers).json) == 1
+    assert len(starred(client, headers)) == 1
 
 
 def test_patch_rejects_a_body_without_a_folder(app, client, jwt, session):
@@ -663,7 +680,55 @@ def test_folder_membership_survives_a_reload(app, client, jwt, session):
     move(client, headers, favourite, folder['id'])
 
     folders = client.get(FOLDERS_ENDPOINT, headers=headers).json
-    favourites = client.get(ENDPOINT, headers=headers).json
 
     assert [row['name'] for row in folders] == ['Wildfire']
-    assert [row['folder_id'] for row in favourites] == [folder['id']]
+    assert [row['folder_id'] for row in starred(client, headers)] == [folder['id']]
+
+
+def test_a_new_user_is_given_the_hosted_layer(app, client, jwt, session):
+    """The layer we host is in the panel without anybody starring it."""
+    given = seeded(client, headers=factory_auth_header(jwt))
+
+    assert [row['display_name'] for row in given] == [
+        'Profiles of Indigenous People (PIP) - First Nation Consultation Areas',
+    ]
+    assert given[0]['source'] == 'local'
+    # No catalogue dataset behind it, so there is no package to point at.
+    assert given[0]['package_id'] == ''
+
+
+def test_the_hosted_layer_is_seeded_once(app, client, jwt, session):
+    """Every GET seeds, so the second must find the row already there."""
+    headers = factory_auth_header(jwt)
+    client.get(ENDPOINT, headers=headers)
+
+    assert len(seeded(client, headers)) == 1
+
+
+def test_the_hosted_layer_cannot_be_unstarred(app, client, jwt, session):
+    """It was not starred, so there is no starring to undo."""
+    headers = factory_auth_header(jwt)
+    given = seeded(client, headers)[0]
+
+    response = client.delete(f"{ENDPOINT}/{given['id']}", headers=headers)
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert [row['id'] for row in seeded(client, headers)] == [given['id']]
+
+
+def test_the_hosted_layer_stays_where_it_is_filed(app, client, jwt, session):
+    """Organising it is the user's, so the seed must not pull it back out."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers, name='First Nations')
+    given = seeded(client, headers)[0]
+
+    move(client, headers, given, folder['id'])
+
+    assert [row['folder_id'] for row in seeded(client, headers)] == [folder['id']]
+
+
+def test_a_starred_layer_is_not_restricted(app, client, jwt, session):
+    """The flag is about how the favourite got there, not what it holds."""
+    headers = factory_auth_header(jwt)
+
+    assert star(client, headers)['restricted'] is False

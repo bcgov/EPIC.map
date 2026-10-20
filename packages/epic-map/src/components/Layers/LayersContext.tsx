@@ -32,6 +32,7 @@ import {
   showWmsLayer,
   withoutFavourites,
 } from "@/components/Layers/layerUtils";
+import HostedLayer from "@/components/Layers/HostedLayer";
 import { ImportedLayersProvider } from "@/components/Layers/UserLayers/ImportedLayersContext";
 import {
   DEFAULT_LAYER_OPACITY,
@@ -39,6 +40,7 @@ import {
   isBeyondMapZoom,
   MAX_VISIBLE_LAYERS,
 } from "@/utils/config";
+import { isLocalLayer, LOCAL_LAYER_OBJECT_NAMES } from "@/utils/localLayers";
 
 interface LayersContextValue {
   map: MapLibreMap | null;
@@ -208,9 +210,25 @@ export function LayersProvider({
     Readonly<Record<string, number>>
   >({});
 
+  /**
+   * Hosted layers that are on, which map-api does not store.
+   *
+   * Kept apart from the applied layers rather than folded into them: a row in
+   * `user_applied_layers` carries a catalogue package these layers have none
+   * of, so there is nothing to write. The favourite itself is stored, so what
+   * is lost on a reload is only whether it was switched on.
+   */
+  const [localVisibleIds, setLocalVisibleIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
   const visibleIds = useMemo(
-    () => new Set(appliedLayers.map((layer) => layer.id)),
-    [appliedLayers],
+    () =>
+      new Set([
+        ...appliedLayers.map((layer) => layer.id),
+        ...localVisibleIds,
+      ]),
+    [appliedLayers, localVisibleIds],
   );
 
   const opacities = useMemo(() => {
@@ -271,6 +289,21 @@ export function LayersProvider({
   const toggleVisible = useCallback(
     (layer: CatalogueLayer) => {
       if (pendingIds.has(layer.id)) return;
+
+      // A hosted layer is drawn from our own tiles and stored nowhere, so this
+      // is the whole of switching it on: HostedLayer follows the set.
+      if (isLocalLayer(layer.objectName)) {
+        const on = visibleIds.has(layer.id);
+        if (!on && visibleIds.size >= MAX_VISIBLE_LAYERS) return;
+        setLocalVisibleIds((current) => {
+          const next = new Set(current);
+          if (on) next.delete(layer.id);
+          else next.add(layer.id);
+          return next;
+        });
+        return;
+      }
+
       if (visibleIds.has(layer.id)) {
         removeLayer(layer.id);
         return;
@@ -297,7 +330,15 @@ export function LayersProvider({
 
   const turnAllOff = useCallback(() => {
     for (const layer of searchEnabledLayers) removeLayer(layer.id);
-  }, [searchEnabledLayers, removeLayer]);
+    // A local layer is never in appliedLayers, so it clears separately. A
+    // favourited one stays on, same as every other favourite.
+    setLocalVisibleIds((current) => {
+      const next = new Set(
+        [...current].filter((layerId) => favouriteIds.has(layerId)),
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [searchEnabledLayers, removeLayer, favouriteIds]);
 
   const toggleFavourite = useCallback(
     (layer: CatalogueLayer) => {
@@ -437,6 +478,10 @@ export function LayersProvider({
 
   return (
     <LayersContext.Provider value={value}>
+      {/* Inside the provider: each follows its own row through the context. */}
+      {LOCAL_LAYER_OBJECT_NAMES.map((objectName) => (
+        <HostedLayer key={objectName} objectName={objectName} />
+      ))}
       <ImportedLayersProvider map={map}>{children}</ImportedLayersProvider>
     </LayersContext.Provider>
   );

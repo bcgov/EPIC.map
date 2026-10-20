@@ -39,6 +39,9 @@ class UserFavouriteLayerSchema(Schema):
     last_updated = fields.Date(data_key='last_updated', allow_none=True)
     folder_id = fields.Int(data_key='folder_id', allow_none=True)
     sort_order = fields.Int(data_key='sort_order')
+    # Read off `source`, not stored: a favourite put there for the user rather
+    # than starred by them, which they may organise but not remove.
+    restricted = fields.Bool(data_key='restricted', dump_only=True)
     created_date = fields.DateTime(data_key='created_date')
     updated_date = fields.DateTime(data_key='updated_date')
 

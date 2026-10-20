@@ -3,6 +3,7 @@ from __future__ import with_statement
 import logging
 from logging.config import fileConfig
 
+import sqlalchemy as sa
 from alembic import context
 from flask import current_app
 
@@ -30,6 +31,42 @@ target_metadata = current_app.extensions['migrate'].db.metadata
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
+# Schemas autogenerate must leave alone. include_schemas=True makes alembic
+# compare every schema against the model metadata, and anything absent from it
+# reads as a deleted table - so without this filter `flask db migrate` writes a
+# migration dropping the cache tables and most of PostGIS with them.
+UNMANAGED_SCHEMAS = {'cache'}
+
+# PostGIS brings about seventy, often with their schema unset, so filtering by
+# schema name misses them and a hand-written list goes stale on upgrade.
+EXTENSION_TABLES = set()
+
+# `pg_depend` is what CREATE EXTENSION records ownership in, so this asks
+# Postgres rather than encoding a version of PostGIS's contents here.
+EXTENSION_TABLES_SQL = """
+    SELECT c.relname
+    FROM pg_depend d
+    JOIN pg_extension e
+      ON d.refobjid = e.oid AND d.refclassid = 'pg_extension'::regclass
+    JOIN pg_class c
+      ON d.objid = c.oid AND d.classid = 'pg_class'::regclass
+    WHERE c.relkind IN ('r', 'p', 'f', 'v', 'm')
+"""
+
+
+def include_object(object_, name, type_, reflected, compare_to):  # pylint: disable=unused-argument
+    """Tell autogenerate which database objects it owns.
+
+    Runs against reflected objects too, so a table is filtered wherever seen.
+    """
+    if type_ != 'table':
+        return True
+
+    if getattr(object_, 'schema', None) in UNMANAGED_SCHEMAS:
+        return False
+
+    return name not in EXTENSION_TABLES
+
 
 def run_migrations_offline():
     """Run migrations in 'offline' mode.
@@ -46,7 +83,7 @@ def run_migrations_offline():
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url, target_metadata=target_metadata, literal_binds=True,
-        include_schemas=True
+        include_schemas=True, include_object=include_object
     )
 
     with context.begin_transaction():
@@ -73,12 +110,22 @@ def run_migrations_online():
 
     connectable = current_app.extensions['migrate'].db.engine
 
+    # Its own connection, closed before the migration's opens. Querying on
+    # that one leaves an implicit transaction alembic does not know it owns,
+    # and the upgrade's DDL rolls back on close - an upgrade that logs every
+    # step, sets the version, and leaves an empty database.
+    with connectable.connect() as probe:
+        EXTENSION_TABLES.update(
+            row[0] for row in probe.execute(sa.text(EXTENSION_TABLES_SQL))
+        )
+
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             process_revision_directives=process_revision_directives,
             include_schemas=True,
+            include_object=include_object,
             **current_app.extensions['migrate'].configure_args
         )
 

@@ -4,20 +4,31 @@ import type { MapMouseEvent } from "maplibre-gl";
 import { useQueryClient } from "@tanstack/react-query";
 import type { AppliedLayer } from "@/api/useAppliedLayers";
 import { importedFeaturesKey } from "@/api/useImportedLayers";
+import {
+  localFeatureRef,
+  useLocalLayerFeatures,
+  type LocalFeatureRef,
+} from "@/api/useLocalLayerFeatures";
 import { useMetaData } from "@/api/useMetaData";
 import MetaDataPopup from "@/components/MetaData/MetaDataPopup";
+import { localRows, type LocalHit } from "@/components/MetaData/localRows";
 import {
+  boundsOutOfView,
   clickBox,
+  featureCount,
   importedRows,
+  isEmptySoFar,
   isLoading,
   popupPlacement,
   popupTitle,
-  selectedRow,
+  selectedOption,
   toRows,
   useFeatureOutOfView,
   visibleRows,
   type ImportedHit,
+  type MetaDataOption,
   type MetaDataRow,
+  type MetaDataSelection,
   type PopupPlacement,
 } from "@/components/MetaData/metaDataUtils";
 import { useLayers } from "@/components/Layers/LayersContext";
@@ -25,7 +36,9 @@ import {
   hideHighlight,
   importedLayerIdOf,
   importedStyleLayerIds,
+  localDrawnIds,
   showHighlight,
+  showLocalHighlight,
 } from "@/components/Layers/layerUtils";
 import { useImportedLayersContext } from "@/components/Layers/UserLayers/ImportedLayersContext";
 import { projectIdAt } from "@/components/Projects/projectUtils";
@@ -36,8 +49,24 @@ import {
   FOCUS_PADDING_PX,
   METADATA_TOLERANCE_PX,
 } from "@/utils/config";
+import {
+  HOSTED_LAYERS,
+  localLayerId,
+  type HostedLayerSpec,
+} from "@/utils/localLayers";
 
 const POPUP_WIDTH_PX = 320;
+
+/** One hosted layer's features under a click, with what is needed to draw them. */
+interface LocalClick {
+  spec: HostedLayerSpec;
+  /** The layer as the popup lists it, which is its row in Favourites. */
+  layerId: string;
+  layerName: string;
+  /** The layer's name inside the vector tile, for the highlight's filter. */
+  sourceLayer: string;
+  hits: LocalHit[];
+}
 
 interface MetaDataClick {
   /** Remounts the popup per click, so a drag or scroll does not carry over. */
@@ -48,16 +77,19 @@ interface MetaDataClick {
   layers: AppliedLayer[];
   /** Imported features under the click, answered on the spot. */
   imported: MetaDataRow[];
+  /** Hosted features under the click, whose records are then asked for. */
+  local: LocalClick[];
 }
 
 /**
  * Click the map, see what the enabled layers have there: catalogue layers by
- * asking map-api, imported layers from the features already on the map.
+ * asking map-api, imported and hosted layers from the features already drawn.
  */
 export default function MetaDataControl() {
   const {
     map,
     appliedLayers,
+    favourites,
     visibleIds,
     belowFloorIds,
     beyondReachIds,
@@ -69,13 +101,27 @@ export default function MetaDataControl() {
   const queryClient = useQueryClient();
 
   const [click, setClick] = useState<MetaDataClick | null>(null);
-  const [chosenLayerId, setChosenLayerId] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<MetaDataSelection | null>(null);
 
   const appliedRef = useRef(appliedLayers);
   appliedRef.current = appliedLayers;
 
   const importedRef = useRef({ importedLayers, importedShownIds });
   importedRef.current = { importedLayers, importedShownIds };
+
+  /** The hosted layers on the map, named as their favourite row names them. */
+  const hostedShown = useMemo(
+    () =>
+      HOSTED_LAYERS.map((spec) => {
+        const id = localLayerId(spec.objectName);
+        const favourite = favourites.find((entry) => entry.id === id);
+        return { spec, layerId: id, layerName: favourite?.name ?? "" };
+      }).filter(({ layerId, layerName }) => layerName && visibleIds.has(layerId)),
+    [favourites, visibleIds],
+  );
+
+  const hostedRef = useRef(hostedShown);
+  hostedRef.current = hostedShown;
 
   // Counts up for the life of the widget, never per map instance
   const clicks = useRef(0);
@@ -94,23 +140,22 @@ export default function MetaDataControl() {
         .filter((layer) => layer.objectName)
         .reverse();
 
+      const { x, y } = event.point;
+      const t = METADATA_TOLERANCE_PX;
+      const box: [[number, number], [number, number]] = [
+        [x - t, y - t],
+        [x + t, y + t],
+      ];
+
       const { importedLayers: stored, importedShownIds: shown } =
         importedRef.current;
       const shownImported = stored.filter((layer) => shown.has(layer.id));
       const styleLayers = shownImported
         .flatMap((layer) => importedStyleLayerIds(layer.id))
         .filter((id) => map.getLayer(id));
-      const { x, y } = event.point;
-      const t = METADATA_TOLERANCE_PX;
       const hits: ImportedHit[] = styleLayers.length
         ? map
-            .queryRenderedFeatures(
-              [
-                [x - t, y - t],
-                [x + t, y + t],
-              ],
-              { layers: styleLayers },
-            )
+            .queryRenderedFeatures(box, { layers: styleLayers })
             .flatMap((rendered) => {
               const layerId = importedLayerIdOf(rendered.layer.id);
               return layerId
@@ -133,14 +178,48 @@ export default function MetaDataControl() {
           ?.features.find((feature) => feature.id === featureId) ?? null;
       const imported = importedRows(hits, shownImported, findFeature);
 
-      if (layers.length === 0 && imported.length === 0) {
+      /*
+      Hosted layers are asked of the map rather than of map-api: their tiles are
+      already in the browser, and the same click can land on several overlapping
+      areas, which is what the popup lists. A shape crossing a tile seam comes
+      back once per tile, so the key folds those back into one feature.
+      */
+      const local: LocalClick[] = hostedRef.current.flatMap(
+        ({ spec, layerId, layerName }) => {
+          const drawn = localDrawnIds(map, layerId);
+          if (drawn.length === 0) return [];
+
+          const seen = new Map<string, LocalHit>();
+          let sourceLayer = "";
+          for (const rendered of map.queryRenderedFeatures(box, {
+            layers: drawn,
+          })) {
+            const key = rendered.properties?.[spec.keyProperty];
+            if (typeof key !== "string" || seen.has(key)) continue;
+            sourceLayer = rendered.sourceLayer ?? sourceLayer;
+            seen.set(key, {
+              key,
+              name:
+                String(rendered.properties?.[spec.nameProperty] ?? "").trim() ||
+                layerName,
+            });
+          }
+
+          if (seen.size === 0) return [];
+          return [
+            { spec, layerId, layerName, sourceLayer, hits: [...seen.values()] },
+          ];
+        },
+      );
+
+      if (layers.length === 0 && imported.length === 0 && local.length === 0) {
         setClick(null);
         return;
       }
 
       const container = map.getContainer();
       clicks.current += 1;
-      setChosenLayerId(null);
+      setChosen(null);
       setClick({
         key: clicks.current,
         box: clickBox(map, event.point, METADATA_TOLERANCE_PX),
@@ -151,6 +230,7 @@ export default function MetaDataControl() {
         ),
         layers,
         imported,
+        local,
       });
     };
 
@@ -172,42 +252,103 @@ export default function MetaDataControl() {
       click?.imported.filter((row) => importedShownIds.has(row.layer.id)) ?? [],
     [click, importedShownIds],
   );
-  const nothingShown = shown.length === 0 && shownImported.length === 0;
+
+  const shownLocal = useMemo(
+    () => click?.local.filter((entry) => visibleIds.has(entry.layerId)) ?? [],
+    [click, visibleIds],
+  );
+
+  const nothingShown =
+    shown.length === 0 && shownImported.length === 0 && shownLocal.length === 0;
 
   const { byLayer, isError, retrying, retry } = useMetaData(
     click?.layers ?? [],
     click?.box ?? null,
     click?.key ?? 0,
   );
-  // Imported layers draw above the catalogue's, so their rows lead.
+
+  const localRefs = useMemo<LocalFeatureRef[]>(
+    () =>
+      shownLocal.flatMap((entry) =>
+        entry.hits.map((hit) => ({
+          objectName: entry.spec.objectName,
+          key: hit.key,
+        })),
+      ),
+    [shownLocal],
+  );
+  const localDetails = useLocalLayerFeatures(localRefs);
+
+  // Imported and hosted layers draw above the catalogue's, so their rows lead.
   const allRows = [
     ...shownImported,
+    ...shownLocal.flatMap((entry) =>
+      localRows(
+        {
+          id: entry.layerId,
+          name: entry.layerName,
+          objectName: entry.spec.objectName,
+        },
+        entry.spec.objectName,
+        entry.hits,
+        localDetails,
+      ),
+    ),
     ...toRows(shown, byLayer, { failed: isError, retrying }),
   ];
+
+  // The list fills as layers answer rather than all at once: a warehouse layer
+  // taking its time should not hold back the ones already here.
   const loading = isLoading(allRows);
-  const rows = loading ? [] : visibleRows(allRows);
-  const selected = selectedRow(rows, chosenLayerId);
+  const rows = isEmptySoFar(allRows) ? [] : visibleRows(allRows);
+  const selected = selectedOption(rows, chosen);
 
   useEffect(() => {
     if (click && nothingShown) setClick(null);
   }, [click, nothingShown]);
 
-  const highlightLayer = selected?.layer.objectName ?? null;
-  const highlightFeature = selected?.feature ?? null;
+  const selectedLayerId = selected?.row.layer.id ?? null;
+  const selectedObjectName = selected?.row.layer.objectName ?? null;
+  const selectedFeature = selected?.feature ?? null;
+  const localHighlight = shownLocal.find(
+    (entry) => entry.layerId === selectedLayerId,
+  );
+  const localSourceLayer = localHighlight?.sourceLayer ?? null;
+  const localKeyProperty = localHighlight?.spec.keyProperty ?? null;
 
   useEffect(() => {
-    if (!map || !highlightFeature) return undefined;
+    if (!map || !selectedFeature) return undefined;
+
+    // A hosted feature is drawn from its own tiles, which hold all of it; the
+    // copy a query hands back is clipped to the tile the click was in.
+    if (localSourceLayer && localKeyProperty && selectedLayerId) {
+      showLocalHighlight(map, {
+        layerId: selectedLayerId,
+        sourceLayer: localSourceLayer,
+        keyProperty: localKeyProperty,
+        key: selectedFeature.key,
+      });
+      return () => hideHighlight(map);
+    }
+
     showHighlight(map, {
-      objectName: highlightLayer,
-      featureId: highlightFeature.id,
-      geometry: highlightFeature.geometry,
+      objectName: selectedObjectName,
+      featureId: selectedFeature.id,
+      geometry: selectedFeature.geometry,
     });
     return () => hideHighlight(map);
-  }, [map, highlightLayer, highlightFeature]);
+  }, [
+    map,
+    selectedLayerId,
+    selectedObjectName,
+    selectedFeature,
+    localSourceLayer,
+    localKeyProperty,
+  ]);
 
   const zoomTo = useCallback(
-    (row: MetaDataRow) => {
-      const bounds = row.feature?.bounds;
+    (option: MetaDataOption) => {
+      const bounds = option.feature.bounds;
       if (!map || !bounds) return;
       const camera = map.cameraForBounds(bounds, {
         padding: FOCUS_PADDING_PX,
@@ -218,7 +359,7 @@ export default function MetaDataControl() {
       // Far enough in for the layer's own raster to draw, not just the feature
       // to fill the screen: a big feature frames at a zoom its layer is still
       // blank at, which would land the user on an outline and nothing else.
-      const floor = layerFloors[row.layer.id] ?? 0;
+      const floor = layerFloors[option.row.layer.id] ?? 0;
       map.easeTo({
         ...camera,
         zoom: Math.max(camera.zoom ?? floor, floor),
@@ -228,24 +369,48 @@ export default function MetaDataControl() {
     [map, layerFloors],
   );
 
+  /**
+   * Selecting moves the camera only when the feature cannot be seen from here.
+   *
+   * Stepping through five overlapping areas should not throw the map about -
+   * the point the user clicked is what they are reading from. A feature that is
+   * off screen or a speck at this zoom is the opposite case: selecting it would
+   * otherwise highlight something invisible.
+   */
   const select = useCallback(
-    (row: MetaDataRow) => {
-      setChosenLayerId(row.layer.id);
-      zoomTo(row);
+    (option: MetaDataOption) => {
+      setChosen({
+        layerId: option.row.layer.id,
+        featureKey: option.feature.key,
+      });
+      if (boundsOutOfView(map, option.feature.bounds)) zoomTo(option);
     },
-    [zoomTo],
+    [map, zoomTo],
   );
 
-  const retryRow = useCallback(
-    (row: MetaDataRow) => {
-      if (row.layer.objectName) retry(row.layer.objectName);
+  /**
+   * Ask again for whatever the selected row is missing.
+   *
+   * Two different failures behind one button: a warehouse layer that did not
+   * answer the click at all, and a hosted feature whose records did not load.
+   * The row knows which it is, so the popup does not have to.
+   */
+  const retryOption = useCallback(
+    (option: MetaDataOption) => {
+      const { objectName } = option.row.layer;
+      if (!objectName) return;
+      if (option.row.status === "error") {
+        retry(objectName);
+        return;
+      }
+      localDetails[localFeatureRef(objectName, option.feature.key)]?.retry();
     },
-    [retry],
+    [retry, localDetails],
   );
 
   const close = useCallback(() => setClick(null), []);
 
-  const outOfView = useFeatureOutOfView(map, selected?.feature?.bounds ?? null);
+  const outOfView = useFeatureOutOfView(map, selected?.feature.bounds ?? null);
 
   /*
   Worth offering when the feature cannot be seen from here: either its layer
@@ -254,9 +419,9 @@ export default function MetaDataControl() {
   out - zooming there would not show it either.
   */
   const canZoom =
-    Boolean(selected?.feature?.bounds) &&
-    !beyondReachIds.has(selected?.layer.id ?? "") &&
-    (belowFloorIds.has(selected?.layer.id ?? "") || outOfView);
+    Boolean(selected?.feature.bounds) &&
+    !beyondReachIds.has(selectedLayerId ?? "") &&
+    (belowFloorIds.has(selectedLayerId ?? "") || outOfView);
 
   if (!click || nothingShown) return null;
 
@@ -264,13 +429,13 @@ export default function MetaDataControl() {
     <MetaDataPopup
       key={click.key}
       placement={click.placement}
-      title={popupTitle(loading, rows.length)}
+      title={popupTitle(loading, featureCount(rows))}
       loading={loading}
       rows={rows}
       selected={selected}
       canZoom={canZoom}
       onSelect={select}
-      onRetry={retryRow}
+      onRetry={retryOption}
       onZoom={zoomTo}
       onClose={close}
     />

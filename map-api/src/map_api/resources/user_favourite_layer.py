@@ -150,11 +150,14 @@ class Favourite(Resource):
     @auth.require
     @ApiHelper.swagger_decorators(API, endpoint_description='Un-favourite a layer')
     @API.response(code=204, description='Removed')
+    @API.response(400, 'This favourite cannot be removed')
     def delete(favourite_id):
         """Un-favourite a layer. The row is deleted outright.
 
         Idempotent: 204 whether or not the row was there, so a retry or a
-        second click is not an error.
+        second click is not an error. A favourite the user was given rather than
+        starred is a 400 - the client disables its star, so reaching here means
+        something asked for a removal that cannot hold.
         """
         user = UserService.current_user()
         UserFavouriteLayerService.remove_favourite(favourite_id, user.id)

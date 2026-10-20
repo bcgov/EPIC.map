@@ -24,6 +24,9 @@ same numbers repeat across folders and only ever compare inside one.
 from __future__ import annotations
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
+
+from map_api.utils.constant import LAYER_SOURCE_LOCAL
 
 from .base_model import BaseModel
 from .catalogue_layer_reference import CatalogueLayerReference
@@ -113,6 +116,53 @@ class UserFavouriteLayer(CatalogueLayerReference, BaseModel):
         Returns `(row, created)`. Favouriting twice is not an error.
         """
         return cls.add_reference(user_id, data)
+
+    @property
+    def restricted(self) -> bool:
+        """Whether this is a favourite the user is not allowed to unstar.
+
+        A layer we host rather than one they starred: it is put in their
+        favourites for them, so there is no act of theirs to undo.
+        """
+        return self.source == LAYER_SOURCE_LOCAL
+
+    @classmethod
+    def ensure_local(cls, user_id: int, object_name: str, display_name: str) -> UserFavouriteLayer:
+        """Return this user's favourite of a hosted layer, adding it if it is not there.
+
+        Only the row is seeded. Where it is filed is the user's, so a row that
+        already exists is returned untouched - including one they have moved
+        into a folder of their own.
+
+        `package_id` is empty because a hosted layer has no catalogue dataset
+        behind it. The client reads `source` rather than guessing from that.
+        """
+        existing = cls.find_reference(user_id, LAYER_SOURCE_LOCAL, object_name)
+        if existing is not None:
+            return existing
+
+        row = cls(
+            user_id=user_id,
+            source=LAYER_SOURCE_LOCAL,
+            package_id='',
+            object_name=object_name,
+            display_name=display_name,
+            sort_order=cls.top_sort_order(user_id),
+        )
+
+        try:
+            # Savepoint for the same reason add_reference uses one: two tabs
+            # loading the panel at once both reach this, and the loser of that
+            # race must not roll back the session it shares with the winner.
+            with db.session.begin_nested():
+                db.session.add(row)
+            db.session.commit()
+            return row
+        except IntegrityError:
+            seeded = cls.find_reference(user_id, LAYER_SOURCE_LOCAL, object_name)
+            if seeded is None:
+                raise
+            return seeded
 
     @classmethod
     def move_to_folder(cls, favourite: UserFavouriteLayer, folder_id: int = None) -> UserFavouriteLayer:

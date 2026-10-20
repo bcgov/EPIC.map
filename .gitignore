@@ -165,3 +165,13 @@ coverage/
 cypress/screenshots/
 cypress/videos/
 .nyc_output/
+
+# Local Claude Code settings, and archives produced while debugging - a 74MB zip
+# in a public repository's history is not undoable.
+.claude/
+*.zip
+# Test fixtures are the one place a committed .zip is the point: the shapefile
+# import reads them, so they have to be in the repository. Named back in rather
+# than narrowing the rule above, which is deliberately broad - an archive turns
+# up next to whatever is being debugged, not in one known directory.
+!packages/epic-map/tests/fixtures/*.zip
