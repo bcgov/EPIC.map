@@ -19,7 +19,7 @@ from flask_restx import Namespace, Resource
 
 from map_api.auth import auth
 from map_api.exceptions import ResourceNotFoundError
-from map_api.schemas.project import ProjectSchema, ProjectWorkSchema, to_feature_collection
+from map_api.schemas.project import ProjectFilterOptionsSchema, ProjectSchema, ProjectWorkSchema, to_feature_collection
 from map_api.services.epic_track_service import TrackService
 from map_api.utils.util import cors_preflight
 
@@ -30,6 +30,10 @@ API = Namespace('projects', description='EPIC.Track projects shown on the map')
 
 project_model = ApiHelper.convert_ma_schema_to_restx_model(API, ProjectSchema(), 'Project')
 work_model = ApiHelper.convert_ma_schema_to_restx_model(API, ProjectWorkSchema(), 'ProjectWork')
+# No restx model for the filter options: the schema is two lists of nested
+# objects, and convert_ma_schema_to_restx_model maps only scalar fields - it
+# would publish an empty model, which documents less than naming no model at
+# all. The GeoJSON route above says 'Success' for the same reason.
 
 
 @cors_preflight('GET, OPTIONS')
@@ -47,6 +51,23 @@ class Projects(Resource):
     def get():
         """Return open projects as GeoJSON."""
         return to_feature_collection(TrackService.open_projects()), HTTPStatus.OK
+
+
+@cors_preflight('GET, OPTIONS')
+@API.route('/filter-options', methods=['GET', 'OPTIONS'])
+class ProjectFilterOptions(Resource):
+    """The code tables behind the map's Type and Region menus."""
+
+    @staticmethod
+    @auth.require
+    @ApiHelper.swagger_decorators(
+        API, endpoint_description="EPIC.Track's project type and ENV region code tables"
+    )
+    @API.response(200, 'Success')
+    @API.response(503, 'EPIC.Track did not answer')
+    def get():
+        """Return the options the filter menus list."""
+        return ProjectFilterOptionsSchema().dump(TrackService.filter_options()), HTTPStatus.OK
 
 
 @cors_preflight('GET, OPTIONS')

@@ -47,6 +47,7 @@ describe("formatDate", () => {
   it("says nothing for a layer that has no date", () => {
     expect(formatDate(null)).toBe("");
     expect(formatDate(undefined)).toBe("");
+    expect(formatDate("")).toBe("");
     expect(formatDate("not a date")).toBe("");
   });
 });

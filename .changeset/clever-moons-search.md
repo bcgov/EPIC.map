@@ -5,7 +5,8 @@
 Search the map from the bar above it. One field, two kinds of result in a
 single dropdown: EAO projects matched against the project list, and places
 matched against the BC Address Geocoder. Each group is headed and only appears
-when it has matches; choosing a row flies the map to it and drops a marker.
+when it has matches. Choosing a row flies the map to it, and drops a marker on
+anything the map is not already drawing.
 
 Projects are matched in the browser against the list the filter bar already
 holds, so they appear on the keystroke, while places are debounced and arrive a
@@ -19,9 +20,13 @@ run.
 Projects are searched over the whole list rather than the filtered subset.
 Search is how a user reaches something they cannot see, and a project hidden by
 a filter they have forgotten is the case where being unable to find it is worst.
-A chosen project is flown to Track's single coordinate for it; project markers
-and host navigation are still their own ticket, and `GET /projects` does not
-exist yet, so the Projects group renders empty until that lands.
+A chosen project is flown to Track's single coordinate for it, and pinned only
+when the map is not already drawing it. A project the filters let through is a
+dot carrying its type's glyph and its work state's colour, so a pin beside it
+would be a second symbol for one thing and the camera centring on it says which
+dot it is. A project the filters are hiding has no dot, and the pin is then the
+only thing marking where the map went. Host navigation is still its own
+ticket.
 
 Places come from `addresses.json`, which carries everything each row shows — no
 second call. A row is titled with the most specific thing the feature names: a

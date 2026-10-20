@@ -65,9 +65,9 @@ export default function LayerInfo({ layer }: { layer: CatalogueLayer }) {
   const { data: hostedInfo } = useLocalLayerInfo(
     hosted ? (layer.objectName as string) : null,
   );
-  const lastUpdated = hosted
-    ? formatDate(hostedInfo?.loadedDate)
-    : layer.lastUpdated;
+  const lastUpdated = formatDate(
+    hosted ? hostedInfo?.loadedDate : layer.lastUpdated,
+  );
 
   const labelSx = {
     fontSize: theme.typography.body2.fontSize,

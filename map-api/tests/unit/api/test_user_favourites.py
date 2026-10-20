@@ -193,6 +193,48 @@ def test_get_returns_favourites_newest_first(app, client, jwt, session):
     ]
 
 
+def test_a_favourite_keeps_its_description_and_last_updated(app, client, jwt, session):
+    """The details shown when starring come back on the next load."""
+    headers = factory_auth_header(jwt)
+    client.post(
+        ENDPOINT,
+        json=bcdc_layer_payload(description='Reserves in BC.', last_updated='2023-06-29'),
+        headers=headers,
+    )
+
+    favourite = starred(client, headers)[0]
+
+    assert favourite['description'] == 'Reserves in BC.'
+    assert favourite['last_updated'] == '2023-06-29'
+
+
+def test_description_and_last_updated_are_optional(app, client, jwt, session):
+    """Not every catalogue record has them."""
+    response = client.post(
+        ENDPOINT, json=bcdc_layer_payload(), headers=factory_auth_header(jwt)
+    )
+
+    assert response.status_code == HTTPStatus.CREATED
+    assert response.json['description'] is None
+    assert response.json['last_updated'] is None
+
+
+@pytest.mark.parametrize(
+    'overrides',
+    [
+        {'description': 'x' * 1001},
+        {'last_updated': 'Jun 29, 2023'},
+    ],
+)
+def test_post_rejects_bad_details(app, client, jwt, session, overrides):
+    """An over-long description or a non-ISO date is refused."""
+    response = client.post(
+        ENDPOINT, json=bcdc_layer_payload(**overrides), headers=factory_auth_header(jwt)
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+
+
 @pytest.mark.parametrize('field', ['sort_order', 'user_id', 'source', 'id', 'folder_id'])
 def test_post_ignores_server_owned_fields(app, client, jwt, session, field):
     """A client cannot choose its own position or identity."""

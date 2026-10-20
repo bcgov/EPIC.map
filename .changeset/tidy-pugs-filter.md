@@ -24,20 +24,12 @@ one did it. The message fades in beside the Layers button, carries its own
 "Clear filters" shortcut, and is announced politely; the bar's link stays.
 
 Projects are read from `GET /projects` and the dropdown options from `GET
-/projects/filter-options`. Neither endpoint exists yet — they are a separate
-ticket — so both calls currently come back 404 and the bar renders with empty
-menus and nothing to narrow. The dropdowns are built from the Type and Region
+/projects/filter-options`. The dropdowns are built from the Type and Region
 code tables those endpoints return rather than from the values present in the
-data, which is what will let an option with no projects still be offered,
-dimmed at 0.
+data, which is what lets an option with no projects still be offered, dimmed at
+0. An option the menus do not offer — a project carrying a type or region
+retired since the tables were cached — is left out of the counts, so the "All"
+row never promises projects that selecting every option cannot reach.
 
-A request may now name statuses it will handle itself, through
-`epicMapSilentStatuses`. The request still throws; the host is simply not told.
-Both project calls claim 404 with it, so endpoints that are not built yet do not
-reach a host's `onError` on every mount, and a 404 is read as "nothing yet"
-rather than as an error the user sees. That tolerance comes out when the
-endpoints are real, where a 404 would mean something is genuinely wrong.
-
-Project markers are not here either — this narrows a list the map does not draw
-yet — and the search field is still a placeholder, so it filters nothing and
-"Clear filters" leaves it alone.
+A project list that cannot be loaded says so over the map, with a retry, rather
+than leaving an empty province unexplained.

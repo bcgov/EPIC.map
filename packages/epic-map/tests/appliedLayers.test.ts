@@ -24,6 +24,22 @@ describe("toAppliedLayer", () => {
     expect(layer.opacity).toBe(60);
   });
 
+  it("keeps the description and date stored with the layer", () => {
+    const layer = toAppliedLayer({
+      ...row,
+      description: "Reserves in BC.",
+      last_updated: "2023-06-29",
+    });
+    expect(layer.description).toBe("Reserves in BC.");
+    expect(layer.lastUpdated).toBe("2023-06-29");
+  });
+
+  it("leaves the details empty for a row stored without them", () => {
+    const layer = toAppliedLayer(row);
+    expect(layer.description).toBeNull();
+    expect(layer.lastUpdated).toBe("");
+  });
+
   it("links to the dataset by package id, not by title", () => {
     expect(toAppliedLayer(row).metadataUrl).toBe(
       `https://catalogue.data.gov.bc.ca/dataset/${row.package_id}`,

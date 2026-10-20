@@ -329,3 +329,8 @@ EPIC_TRACK_REFRESH_WAIT_SECONDS = 3 * EPIC_TRACK_TIMEOUT_SECONDS
 
 # The service account token is dropped this long before Keycloak says it expires.
 EPIC_TRACK_TOKEN_EXPIRY_MARGIN_SECONDS = 30
+
+# Track revises its project types and regions rarely, and caches them for a day
+# at its own end, so the filter menus are worth holding far longer than the
+# projects counted inside them.
+EPIC_TRACK_CODE_TABLE_CACHE_TTL_SECONDS = 24 * 60 * 60

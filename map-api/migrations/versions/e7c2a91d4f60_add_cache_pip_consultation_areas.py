@@ -1,7 +1,7 @@
 """add cache.pip_consultation_areas and cache.local_layer_styles
 
 Revision ID: e7c2a91d4f60
-Revises: e3f19a6c42d8
+Revises: f2a7c4e19b60
 Create Date: 2026-09-23 00:00:00.000000
 
 The first tenants of the cache schema: a copy of a BCGW layer we are given as
@@ -17,10 +17,10 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'e7c2a91d4f60'
-# Re-pointed from b8e4f27c1a53 when this branch caught up with develop:
-# user_layers had taken that parent, and two heads make `flask db upgrade`
-# refuse. These tables share nothing with it, so the order is free.
-down_revision = 'e3f19a6c42d8'
+# Re-pointed as this branch caught up with develop - twice now, as the layer
+# detail columns took the parent this had. Two heads make `flask db upgrade`
+# refuse. These tables share nothing with either, so the order is free.
+down_revision = 'f2a7c4e19b60'
 branch_labels = None
 depends_on = None
 

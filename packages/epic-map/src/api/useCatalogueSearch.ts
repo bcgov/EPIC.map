@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
-import { formatDate, stripMarkdown, truncate } from "@/utils/text";
+import { stripMarkdown, truncate } from "@/utils/text";
 import {
   CATALOGUE_DATASET_URL,
   CATALOGUE_DESCRIPTION_LIMIT,
@@ -16,6 +16,7 @@ export interface CatalogueLayer {
   packageId: string;
   objectName: string | null;
   name: string;
+  /** The record's last modified date as YYYY-MM-DD, or "" when it has none. */
   lastUpdated: string;
   description: string | null;
   /** Null for a layer we host, which has no catalogue dataset page. */
@@ -42,11 +43,15 @@ interface CkanSearchResponse {
   result?: { results?: CkanPackage[] };
 }
 
+// map-api stores the date as a date, so anything else is dropped, not sent.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 const toCatalogueLayer = (pkg: CkanPackage): CatalogueLayer => {
   const wms = pkg.resources?.find(
     (resource) => resource.format?.toLowerCase() === "wms",
   );
 
+  const modified = pkg.record_last_modified ?? "";
   const description = truncate(
     stripMarkdown(pkg.notes ?? ""),
     CATALOGUE_DESCRIPTION_LIMIT,
@@ -57,7 +62,7 @@ const toCatalogueLayer = (pkg: CkanPackage): CatalogueLayer => {
     packageId: pkg.id,
     objectName: wms?.object_name ?? null,
     name: pkg.title,
-    lastUpdated: formatDate(pkg.record_last_modified),
+    lastUpdated: ISO_DATE.test(modified) ? modified : "",
     description: description || null,
     metadataUrl: `${CATALOGUE_DATASET_URL}/${pkg.id}`,
   };

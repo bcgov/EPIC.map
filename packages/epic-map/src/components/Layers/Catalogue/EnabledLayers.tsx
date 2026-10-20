@@ -4,18 +4,23 @@ import { useTheme } from "@mui/material/styles";
 import LayerRow from "@/components/Layers/LayerRow";
 import { useLayers } from "@/components/Layers/LayersContext";
 
-/** Layers the user has switched on, shown above the search results. */
+/**
+ * Layers the user switched on from search, shown above the results. Favourites
+ * are left out: they are listed, and switched, under Favourites.
+ */
 export default function EnabledLayers() {
   const theme = useTheme();
   const {
-    appliedLayers,
+    searchEnabledLayers,
     appliedPending,
+    favouritesPending,
     appliedError,
     retryApplied,
     turnAllOff,
   } = useLayers();
 
-  const hasLayers = appliedLayers.length > 0;
+  const layers = favouritesPending ? [] : searchEnabledLayers;
+  const hasLayers = layers.length > 0;
 
   if (appliedPending || (!hasLayers && !appliedError)) return null;
 
@@ -58,7 +63,7 @@ export default function EnabledLayers() {
             lineHeight: 1,
           }}
         >
-          {appliedLayers.length}
+          {layers.length}
         </Box>
         {hasLayers && (
           <Link
@@ -116,7 +121,7 @@ export default function EnabledLayers() {
 
       {hasLayers && (
         <Box component="ul" sx={{ margin: 0, padding: 0 }}>
-          {appliedLayers.map((layer) => (
+          {layers.map((layer) => (
             <LayerRow key={layer.id} layer={layer} />
           ))}
         </Box>

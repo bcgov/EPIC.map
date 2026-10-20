@@ -41,7 +41,6 @@ const project = (overrides: Partial<MapProject> = {}): MapProject => ({
   regionId: SKEENA,
   certificateIssued: false,
   inProgressWorks: false,
-  isClosed: false,
   ...overrides,
 });
 

@@ -18,7 +18,7 @@ import pytest
 import requests
 
 from map_api.exceptions import ServiceUnavailableError
-from map_api.services.epic_track_service import PROJECTS_KEY, TrackService
+from map_api.services.epic_track_service import FILTER_OPTIONS_KEY, PROJECTS_KEY, TrackService
 from map_api.utils.cache import cache
 
 
@@ -412,3 +412,112 @@ def test_a_project_without_a_type_or_region_has_no_ids(app):
 
     assert project['type_id'] is None
     assert project['region_id'] is None
+
+
+def _code_tables(types, regions):
+    """Answer Track's two code table endpoints, in place of requests.get."""
+    def get(url, params=None, headers=None, timeout=None):  # pylint: disable=unused-argument
+        if url == f'{TRACK_URL}/api/v1/project-types':
+            return _Response(types)
+        if url == f'{TRACK_URL}/api/v1/regions':
+            assert params == {'type': 'ENV'}, f'unexpected params {params}'
+            return _Response(regions)
+        raise AssertionError(f'unexpected url {url}')
+    return get
+
+
+def test_filter_options_are_the_live_rows_by_name(app):
+    """Retired rows are left out; what is left is ordered for the menu."""
+    types = [
+        {'id': 2, 'name': 'Water Management'},
+        {'id': 1, 'name': 'Mines'},
+        {'id': 3, 'name': 'Retired Type', 'is_active': False},
+        {'id': 4, 'name': 'Deleted Type', 'is_deleted': True},
+    ]
+    regions = [{'id': 6, 'name': 'Skeena'}, {'id': 5, 'name': 'Cariboo'}]
+
+    with patch(POST, return_value=_token()), patch(GET, _code_tables(types, regions)):
+        with app.app_context():
+            options = TrackService.filter_options()
+
+    assert options == {
+        'types': [{'id': 1, 'name': 'Mines'}, {'id': 2, 'name': 'Water Management'}],
+        'regions': [{'id': 5, 'name': 'Cariboo'}, {'id': 6, 'name': 'Skeena'}],
+    }
+
+
+@pytest.mark.parametrize('row', [
+    {'id': None, 'name': 'No id'},
+    {'id': 9, 'name': ''},
+    {'id': 9, 'name': '   '},
+    {'id': 9},
+])
+def test_a_code_table_row_the_menu_cannot_draw_is_left_out(app, row):
+    """An option needs both an id to filter on and a name to show."""
+    with patch(POST, return_value=_token()), patch(GET, _code_tables([row], [])):
+        with app.app_context():
+            options = TrackService.filter_options()
+
+    assert options == {'types': [], 'regions': []}
+
+
+def test_filter_options_are_cached(app):
+    """Track revises its code tables rarely, so it is asked once per period."""
+    types = [{'id': 1, 'name': 'Mines'}]
+
+    with patch(POST, return_value=_token()):
+        with patch(GET, side_effect=_code_tables(types, [])) as get:
+            with app.app_context():
+                TrackService.filter_options()
+                TrackService.filter_options()
+
+    # One call per code table, not per request.
+    assert get.call_count == 2
+
+
+def test_filter_options_failing_with_nothing_cached_is_unavailable(app):
+    """No code tables to fall back on is a 503, not two empty menus."""
+    with patch(POST, return_value=_token()), patch(GET, return_value=_Response(None, 500)):
+        with app.app_context():
+            with pytest.raises(ServiceUnavailableError):
+                TrackService.filter_options()
+
+
+def test_filter_options_failing_serves_the_last_tables(app):
+    """An outage after a good fetch keeps the menus populated.
+
+    The gap this closes: the project list has its own last-good copy, so an
+    outage used to leave dots on the map beside menus with nothing in them.
+    """
+    types = [{'id': 1, 'name': 'Mines'}]
+    regions = [{'id': 5, 'name': 'Cariboo'}]
+    with patch(POST, return_value=_token()), patch(GET, _code_tables(types, regions)):
+        with app.app_context():
+            TrackService.filter_options()
+
+    with app.app_context():
+        cache.delete(FILTER_OPTIONS_KEY)
+        with patch(POST, return_value=_token()), patch(GET, return_value=_Response(None, 500)):
+            options = TrackService.filter_options()
+
+    assert options == {'types': [{'id': 1, 'name': 'Mines'}], 'regions': [{'id': 5, 'name': 'Cariboo'}]}
+
+
+def test_the_second_code_table_failing_serves_the_last_tables(app):
+    """Half an answer is not an answer: both tables come from the same fetch."""
+    with patch(POST, return_value=_token()), \
+            patch(GET, _code_tables([{'id': 1, 'name': 'Mines'}], [{'id': 5, 'name': 'Cariboo'}])):
+        with app.app_context():
+            TrackService.filter_options()
+
+    def half(url, params=None, headers=None, timeout=None):  # pylint: disable=unused-argument
+        if url == f'{TRACK_URL}/api/v1/project-types':
+            return _Response([{'id': 2, 'name': 'Water Management'}])
+        return _Response(None, 500)
+
+    with app.app_context():
+        cache.delete(FILTER_OPTIONS_KEY)
+        with patch(POST, return_value=_token()), patch(GET, half):
+            options = TrackService.filter_options()
+
+    assert options == {'types': [{'id': 1, 'name': 'Mines'}], 'regions': [{'id': 5, 'name': 'Cariboo'}]}

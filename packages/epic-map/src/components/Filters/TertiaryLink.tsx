@@ -2,22 +2,23 @@ import { Button } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { focusRing, HOVER_FILL, LINK } from "@/components/Filters/filterTokens";
 
-type ClearFiltersLinkProps = {
+type TertiaryLinkProps = {
   onClick: () => void;
+  children: string;
 };
 
 /**
- * "Clear filters", as a tertiary text button.
+ * A tertiary text button: "Clear filters" in two places, "Try again" in one.
  *
- * Two of these exist at once by design: one in the filter bar and one on the
- * over-map message. The message's is a shortcut rather than a replacement, so
- * both clear the same state and this is shared rather than duplicated.
+ * Three of these exist at once by design - one in the filter bar and two on the
+ * over-map message, whose shortcuts are additions rather than replacements - so
+ * the styling is shared rather than duplicated. Only the label differs.
  *
- * A button rather than an anchor - it changes state on this page and navigates
+ * A button rather than an anchor - each changes state on this page and navigates
  * nowhere, so there is no href to give it, and a link without one is not
  * reachable by keyboard.
  */
-export default function ClearFiltersLink({ onClick }: ClearFiltersLinkProps) {
+export default function TertiaryLink({ onClick, children }: TertiaryLinkProps) {
   const theme = useTheme();
 
   return (
@@ -50,7 +51,7 @@ export default function ClearFiltersLink({ onClick }: ClearFiltersLinkProps) {
         ...focusRing,
       }}
     >
-      Clear filters
+      {children}
     </Button>
   );
 }

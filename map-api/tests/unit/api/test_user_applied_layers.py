@@ -151,6 +151,48 @@ def test_applying_the_same_layer_twice_does_not_duplicate_it(app, client, jwt, s
     assert len(client.get(ENDPOINT, headers=headers).json) == 1
 
 
+def test_an_applied_layer_keeps_its_description_and_last_updated(app, client, jwt, session):
+    """The details shown when applying come back on the next load."""
+    headers = factory_auth_header(jwt)
+    client.post(
+        ENDPOINT,
+        json=bcdc_layer_payload(description='Reserves in BC.', last_updated='2023-06-29'),
+        headers=headers,
+    )
+
+    layer = client.get(ENDPOINT, headers=headers).json[0]
+
+    assert layer['description'] == 'Reserves in BC.'
+    assert layer['last_updated'] == '2023-06-29'
+
+
+def test_description_and_last_updated_are_optional(app, client, jwt, session):
+    """Not every catalogue record has them."""
+    response = client.post(
+        ENDPOINT, json=bcdc_layer_payload(), headers=factory_auth_header(jwt)
+    )
+
+    assert response.status_code == HTTPStatus.CREATED
+    assert response.json['description'] is None
+    assert response.json['last_updated'] is None
+
+
+@pytest.mark.parametrize(
+    'overrides',
+    [
+        {'description': 'x' * 1001},
+        {'last_updated': 'Jun 29, 2023'},
+    ],
+)
+def test_post_rejects_bad_details(app, client, jwt, session, overrides):
+    """An over-long description or a non-ISO date is refused."""
+    response = client.post(
+        ENDPOINT, json=bcdc_layer_payload(**overrides), headers=factory_auth_header(jwt)
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+
+
 @pytest.mark.parametrize('field', ['sort_order', 'user_id', 'source', 'id', 'project_id'])
 def test_post_ignores_server_owned_fields(app, client, jwt, session, field):
     """A client cannot choose its own stacking position or identity."""

@@ -667,6 +667,18 @@ export const carryWidgetLayers: TransformStyleFunction = (previous, next) => {
  * with null as it is torn down, so a holder above never keeps a removed map.
  */
 
+// Which enabled layers the "Enabled layers" group lists
+
+/**
+ * Enabled layers minus the favourites. The group is for layers switched on
+ * from search and left on; a favourite is listed, and switched, under
+ * Favourites instead.
+ */
+export const withoutFavourites = <T extends { id: string }>(
+  layers: readonly T[],
+  favouriteIds: ReadonlySet<string>,
+): T[] => layers.filter((layer) => !favouriteIds.has(layer.id));
+
 // Which layers the current zoom cannot draw
 
 /** A visible layer and the zoom below which openmaps will not draw it. */

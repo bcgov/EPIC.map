@@ -47,14 +47,18 @@ export default function ProjectsControl({
   const { data } = useProjectFeatures();
   const { visibleProjects } = useFilters();
 
+  const visibleIds = useMemo(
+    () => new Set(visibleProjects.map((project) => project.id)),
+    [visibleProjects],
+  );
+
   const drawn = useMemo<FeatureCollection<Point, DrawnProjectPoint> | null>(
     () => {
       if (!data) return null;
-      const visible = new Set(visibleProjects.map((project) => project.id));
       return {
         ...data,
         features: data.features
-          .filter((feature) => visible.has(feature.properties.id))
+          .filter((feature) => visibleIds.has(feature.properties.id))
           .map((feature) => ({
             ...feature,
             properties: {
@@ -64,7 +68,7 @@ export default function ProjectsControl({
           })),
       };
     },
-    [data, visibleProjects],
+    [data, visibleIds],
   );
 
   const selectedRef = useRef(selectedId);
@@ -104,6 +108,16 @@ export default function ProjectsControl({
       map.off("mouseleave", PROJECTS_LAYER_ID, onLeave);
     };
   }, [map]);
+
+  // A filter that excludes the selected project closes its card. The dot is
+  // gone from the map, so a card still describing the project would describe
+  // something the map says is not there - and with no dot left, the card's own
+  // close button would be the only way out of it.
+  useEffect(() => {
+    if (selectedId !== null && data && !visibleIds.has(selectedId)) {
+      onSelectRef.current(null);
+    }
+  }, [selectedId, visibleIds, data]);
 
   useEffect(() => {
     if (map && drawn) showProjects(map, drawn, selectedRef.current);

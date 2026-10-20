@@ -8,6 +8,8 @@ const row = {
   package_id: "0c1c0e2d-6a5e-4d9d-9c3f-1e2b3c4d5e6f",
   object_name: "WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES",
   display_name: "Indian Reserves",
+  description: "Reserves in BC.",
+  last_updated: "2023-06-29",
   folder_id: null,
   sort_order: 1,
 };
@@ -27,6 +29,22 @@ describe("toFavouriteLayer", () => {
 
   it("carries the row id that DELETE addresses", () => {
     expect(toFavouriteLayer(row).favouriteId).toBe(4);
+  });
+
+  it("keeps the description and date stored with the favourite", () => {
+    const layer = toFavouriteLayer(row);
+    expect(layer.description).toBe("Reserves in BC.");
+    expect(layer.lastUpdated).toBe("2023-06-29");
+  });
+
+  it("leaves the details empty for a row stored without them", () => {
+    const layer = toFavouriteLayer({
+      ...row,
+      description: null,
+      last_updated: null,
+    });
+    expect(layer.description).toBeNull();
+    expect(layer.lastUpdated).toBe("");
   });
 
   it("links to the dataset by package id, not by title", () => {

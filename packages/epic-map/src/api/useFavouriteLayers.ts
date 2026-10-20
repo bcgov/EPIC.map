@@ -25,6 +25,8 @@ interface FavouriteLayerResponse {
   package_id: string;
   object_name: string;
   display_name: string;
+  description?: string | null;
+  last_updated?: string | null;
   folder_id: number | null;
   sort_order: number;
   /** A favourite map-api put there for the user, which they may not remove. */
@@ -62,8 +64,9 @@ export const toFavouriteLayer = (
     packageId: row.package_id,
     objectName: row.object_name,
     name: row.display_name,
-    lastUpdated: "",
-    description: hosted?.description ?? null,
+    lastUpdated: row.last_updated ?? "",
+    // A hosted layer describes itself from the registry; the row is the fallback.
+    description: (hosted?.description ?? row.description) ?? null,
     metadataUrl: isHosted(row)
       ? hosted?.metadataUrl ?? null
       : `${CATALOGUE_DATASET_URL}/${row.package_id}`,
@@ -115,7 +118,8 @@ export const useFavouriteLayers = () => {
         FAVOURITES_PATH,
         { signal },
       );
-      // A stored row has no description or date, so keep what the catalogue gave.
+      // A row starred before details were stored has none, so keep what the
+      // catalogue gave.
       const known = new Map(readCache().map((entry) => [entry.id, entry]));
       return response.data.map((row) => {
         const layer = toFavouriteLayer(row);
@@ -123,8 +127,8 @@ export const useFavouriteLayers = () => {
         if (!seen) return layer;
         return {
           ...layer,
-          lastUpdated: seen.lastUpdated,
-          description: seen.description,
+          lastUpdated: layer.lastUpdated || seen.lastUpdated,
+          description: layer.description ?? seen.description,
         };
       });
     },
@@ -145,6 +149,8 @@ export const useFavouriteLayers = () => {
         package_id: layer.packageId,
         object_name: layer.objectName,
         display_name: layer.name,
+        description: layer.description,
+        last_updated: layer.lastUpdated || null,
       });
       return response.data;
     },
@@ -161,7 +167,7 @@ export const useFavouriteLayers = () => {
       return { previous };
     },
     onSuccess: (row, layer) => {
-      // Only the id: the optimistic entry holds the catalogue description and date.
+      // Only the id: the optimistic entry already holds the description and date.
       writeCache(
         readCache().map((entry) =>
           entry.id === layer.id ? { ...entry, favouriteId: row.id } : entry,

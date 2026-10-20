@@ -58,6 +58,9 @@ class CatalogueLayerReference:  # pylint: disable=no-member
     object_name = db.Column(db.String(200), nullable=False)
     # Snapshot, so the list renders without a call to the catalogue.
     display_name = db.Column(db.String(200), nullable=False)
+    # Snapshots of the catalogue record, so the details survive a reload.
+    description = db.Column(db.String(1000), nullable=True)
+    last_updated = db.Column(db.Date, nullable=True)
     # Position in the list. Not unique; ties break on id.
     sort_order = db.Column(db.Integer, nullable=False, server_default='0')
 
@@ -114,6 +117,8 @@ class CatalogueLayerReference:  # pylint: disable=no-member
             package_id=data['package_id'],
             object_name=object_name,
             display_name=data['display_name'],
+            description=data.get('description'),
+            last_updated=data.get('last_updated'),
             sort_order=cls.next_sort_order(user_id),
             **extra,
         )
