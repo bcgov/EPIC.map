@@ -326,3 +326,26 @@ def test_a_layer_with_no_style_loaded_is_not_found(app, client, jwt, session):
         response = client.get(STYLE_ENDPOINT, headers=factory_auth_header(jwt))
 
     assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+EAO_OBJECT_NAME = 'EAO.PROJECT_DATA'
+# EAO keys on the GUID ArcGIS writes, which the key pattern does not admit -
+# the layer is refused before the key is read, so the reason is the layer.
+EAO_FEATURE_GUID = '{BB896798-6D09-43B0-B504-45D47E67B9E1}'
+
+
+def test_a_layer_with_no_record_schema_serves_no_feature(app, client, jwt, session):
+    """An explicit refusal, not a 200 holding only the bounds.
+
+    LocalLayerFeatureSchema whitelists one layer's fields on purpose, so
+    dumping another layer's row through it answers with the bounds and nothing
+    else - which reads as a feature that exists and holds nothing.
+    """
+    endpoint = f'/api/local/layers/{EAO_OBJECT_NAME}/features/{EAO_FEATURE_GUID}'
+
+    with patch(FEATURE_SERVICE) as service:
+        response = client.get(endpoint, headers=factory_auth_header(jwt))
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    # Refused before the table is read: there is nothing to describe.
+    service.assert_not_called()

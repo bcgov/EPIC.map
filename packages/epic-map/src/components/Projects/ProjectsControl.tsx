@@ -8,6 +8,7 @@ import type {
 } from "maplibre-gl";
 import { useProjectFeatures } from "@/api/useProjects";
 import { useFilters } from "@/components/Filters/FiltersContext";
+import { footprintTrackIdAt } from "@/components/Layers/eaoVisibility";
 import ProjectCard from "@/components/Projects/ProjectCard";
 import {
   addMissingProjectImage,
@@ -83,7 +84,10 @@ export default function ProjectsControl({
       addMissingProjectImage(map, event);
     const onStyleData = () => keepProjectsOnTop(map);
     const onClick = (event: MapMouseEvent) => {
-      const projectId = projectIdAt(map, event.point);
+      // The dot first, then the boundary under it: a dot sits on top of its
+      // own footprint, and hitting either should open the same project.
+      const projectId =
+        projectIdAt(map, event.point) ?? footprintTrackIdAt(map, event.point);
       if (projectId === null) return;
       onSelectRef.current(projectId);
       revealBesideCard(map, event.lngLat);

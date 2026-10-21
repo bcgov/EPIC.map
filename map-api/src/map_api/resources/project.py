@@ -39,7 +39,7 @@ work_model = ApiHelper.convert_ma_schema_to_restx_model(API, ProjectWorkSchema()
 @cors_preflight('GET, OPTIONS')
 @API.route('', methods=['GET', 'OPTIONS'])
 class Projects(Resource):
-    """Every open project, as points."""
+    """Every project the map draws, as points."""
 
     @staticmethod
     @auth.require
@@ -79,7 +79,7 @@ class Project(Resource):
     @auth.require
     @ApiHelper.swagger_decorators(API, endpoint_description='One open EPIC.Track project')
     @API.response(code=200, model=project_model, description='Success')
-    @API.response(404, 'Not an open project')
+    @API.response(404, 'Not a project the map draws')
     @API.response(503, 'EPIC.Track did not answer')
     def get(project_id: int):
         """Return one open project."""
@@ -100,7 +100,7 @@ class ProjectWorks(Resource):
         API, endpoint_description='Works on an open EPIC.Track project, in progress first'
     )
     @API.response(code=200, model=[work_model], description='Success')
-    @API.response(404, 'Not an open project')
+    @API.response(404, 'Not a project the map draws')
     @API.response(503, 'EPIC.Track did not answer')
     def get(project_id: int):
         """Return one open project's works."""

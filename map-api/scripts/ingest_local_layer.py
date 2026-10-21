@@ -69,10 +69,14 @@ sys.path.insert(0, str(SCRIPT_DIR.parent / 'src'))
 
 # pylint: disable=wrong-import-position
 from map_api.config import get_ingest_config  # noqa: E402,I005
-from map_api.services.local_layer_service import ogr  # noqa: E402,I005
+from map_api.services.local_layer_service import LOCAL_LAYERS, ogr  # noqa: E402,I005
 from map_api.services.local_layer_service.ingest import (  # noqa: E402,I005
     DEFAULT_MIN_RATIO, CannotRunError, LoadComparison, StyleCoverage, assess)
 from map_api.services.local_layer_service.ingest_spec import INGEST_SPECS  # noqa: E402,I005
+from map_api.services.local_layer_service.eao_categories import (  # noqa: E402,I005
+    eao_style,
+    style_manifest,
+)
 from map_api.services.local_layer_service.lyrx import (  # noqa: E402,I005
     UnsupportedRendererError, unique_value_paint)
 from map_api.services.local_layer_service.s3 import fetch  # noqa: E402,I005
@@ -233,6 +237,23 @@ def connect(target: PgTarget):
     return connection
 
 
+def source_paths(spec, sources: list) -> list:
+    """One path per source layer, in order.
+
+    A delivery is either a file per layer or one file holding them all; the
+    second is repeated so the callers can zip the two lists without caring.
+    """
+    if len(sources) == len(spec.sources):
+        return list(sources)
+    if len(sources) == 1:
+        return [sources[0]] * len(spec.sources)
+    raise CannotRunError(
+        f'{spec.object_name} reads {len(spec.sources)} source layer(s) but '
+        f'{len(sources)} file(s) were given; pass one per layer, or one file '
+        f'holding them all'
+    )
+
+
 def stage(spec, sources: list, target: PgTarget, mode: str) -> float:
     """Load the extract into the staging table with ogr2ogr.
 
@@ -247,7 +268,8 @@ def stage(spec, sources: list, target: PgTarget, mode: str) -> float:
     build = ogr.command_for(mode)
 
     started = time.monotonic()
-    for index, (source, source_layer) in enumerate(zip(sources, spec.sources)):
+    paired = zip(source_paths(spec, sources), spec.sources)
+    for index, (source, source_layer) in enumerate(paired):
         result = subprocess.run(
             build(spec, source, source_layer, index, sql_dir, dsn), check=False)
 
@@ -271,7 +293,7 @@ def take_lock(connection, spec) -> bool:
         return bool(cursor.fetchone()[0])
 
 
-def digest(paths: list) -> str:
+def digest(paths: list, style: str = '') -> str:
     """Hash the delivery, to recognise a republish of the same files.
 
     Most scheduled runs are handed what is already loaded, and hashing 74MB
@@ -280,6 +302,10 @@ def digest(paths: list) -> str:
 
     Every file the load reads goes in, the .lyrx included: a re-export that
     changed only the symbology is a change.
+
+    `style` is for a layer whose symbology is ours rather than delivered, where
+    no file changes when it does. It is left out of the hash when empty, so a
+    delivered-style layer keeps the digest already stored for it.
     """
     import hashlib  # pylint: disable=import-outside-toplevel
 
@@ -289,6 +315,8 @@ def digest(paths: list) -> str:
         with path.open('rb') as handle:
             for block in iter(lambda: handle.read(1024 * 1024), b''):  # noqa: B023
                 digester.update(block)
+    if style:
+        digester.update(f'style:{style}\0'.encode('utf-8'))
     return digester.hexdigest()
 
 
@@ -330,9 +358,9 @@ def record(connection, spec, status: str, source_name: str, source_digest: str,
             comparison.staged_areas if comparison else None,
             source_rows,
             comparison.staged_vertices if comparison else None,
-            len(comparison.added) if comparison else 0,
-            len(comparison.removed) if comparison else 0,
-            len(comparison.changed) if comparison else 0,
+            comparison.counted('added') if comparison else 0,
+            comparison.counted('removed') if comparison else 0,
+            comparison.counted('changed') if comparison else 0,
             json.dumps(notes or {}),
         ))
     connection.commit()
@@ -413,21 +441,30 @@ def compare(cursor, spec) -> LoadComparison:
     if comparison.is_first_load:
         return comparison
 
-    # By name, not id: a name is what the report's reader recognises, and
-    # validate.sql has established the two identify each other.
+    # The staged key and the stored key are not always the same column: EAO
+    # stages EAO's GlobalID as global_id and stores it as feature_id.
+    stored_key = LOCAL_LAYERS[spec.object_name].key
+
+    # Matched on the key and reported by name. Names are not unique in every
+    # layer - EAO repeats 'project - label' across features - so joining on the
+    # name counted every pair that shared one as a changed shape: an unchanged
+    # delivery reported twenty.
     cursor.execute(f"""
         WITH staged AS ({staged_source}),
         stored AS (
-            SELECT {identity.label} AS name, md5(ST_AsBinary(geom)) AS shape
+            SELECT {stored_key} AS key, {identity.label} AS name,
+                   md5(ST_AsBinary(geom)) AS shape
             FROM {spec.target_table}
         ),
         staged_shapes AS (
-            SELECT name, md5(ST_AsBinary(geom)) AS shape FROM staged
+            SELECT key, name, md5(ST_AsBinary(geom)) AS shape FROM staged
         )
         SELECT
-            array(SELECT name FROM staged_shapes EXCEPT SELECT name FROM stored ORDER BY 1),
-            array(SELECT name FROM stored EXCEPT SELECT name FROM staged_shapes ORDER BY 1),
-            array(SELECT s.name FROM staged_shapes s JOIN stored p USING (name)
+            array(SELECT name FROM staged_shapes
+                   WHERE key NOT IN (SELECT key FROM stored) ORDER BY 1),
+            array(SELECT name FROM stored
+                   WHERE key NOT IN (SELECT key FROM staged_shapes) ORDER BY 1),
+            array(SELECT s.name FROM staged_shapes s JOIN stored p USING (key)
                   WHERE s.shape <> p.shape ORDER BY 1)
     """)
     comparison.added, comparison.removed, comparison.changed = cursor.fetchone()
@@ -435,13 +472,19 @@ def compare(cursor, spec) -> LoadComparison:
 
 
 def build_style(spec, lyrx_path) -> tuple:
-    """Translate the delivered .lyrx into the MapLibre style, before storing it.
+    """Return the MapLibre style to store, from wherever this layer's comes.
+
+    A spec that owns its style has no file to read, so nothing here can refuse:
+    the style is in the tree and a test covers it.
 
     A .lyrx this cannot translate is a RefusedError: a judgement about a
     delivered file, so it goes through the refusal path and leaves a history
     row. Being invoked without one at all stays a CannotRunError.
     """
     mvt_layer = _mvt_layer(spec)
+
+    if spec.owns_style:
+        return _name_source_layers(eao_style(), _mvt_layer(spec)), style_manifest()
 
     if lyrx_path is None:
         raise CannotRunError(f'--lyrx is required for {spec.object_name}')
@@ -469,6 +512,29 @@ def build_style(spec, lyrx_path) -> tuple:
     return _name_source_layers(style, mvt_layer), manifest
 
 
+def owned_style_digest(spec) -> str:
+    """Hash the style a spec builds for itself, or '' where one is delivered.
+
+    The delivery is what the digest normally watches, but for EAO the symbology
+    comes from eao_categories.py and no delivered byte changes when a colour or
+    a width does. Without this, the next scheduled run reads the same digest,
+    skips, and the style in cache.local_layer_styles stays stale until EAO sends
+    a new file or somebody runs with --force.
+
+    Hashes the style as it would be stored, the manifest included, so a renamed
+    MVT layer counts as a change too.
+    """
+    import hashlib  # pylint: disable=import-outside-toplevel
+
+    if not spec.owns_style:
+        return ''
+
+    # build_style cannot refuse for a spec that owns its style, so no .lyrx and
+    # no error path: it is the same call the load makes further down.
+    built = json.dumps(build_style(spec, None), sort_keys=True)
+    return hashlib.sha256(built.encode('utf-8')).hexdigest()
+
+
 def _name_source_layers(style: dict, mvt_layer: str) -> dict:
     """Fill in the MVT layer name on every layer spec that left it open.
 
@@ -492,7 +558,14 @@ def _mvt_layer(spec) -> str:
 
 
 def check_style_against(cursor, spec, manifest: dict) -> StyleCoverage:
-    """Measure which staged values the style covers, and which it does not."""
+    """Measure which staged values the style covers, and which it does not.
+
+    A style of ours covers its own categories by construction: the same module
+    derives the stored value and matches on it, so there is nothing to measure.
+    """
+    if spec.owns_style:
+        return StyleCoverage(matched=staged_rows(cursor, spec))
+
     column = spec.style_coverage_column
     cursor.execute(f'SELECT DISTINCT {column} FROM {spec.staging_table}')
     names = {row[0] for row in cursor.fetchall()}
@@ -522,6 +595,149 @@ def write_style(cursor, spec, style: dict, manifest: dict):
           style['layers'][0]['sourceLayer'],
           style['source'].get('minZoom'),
           json.dumps(style), json.dumps(manifest)))
+
+
+# Where the change record lives. In `app`, not `cache`: everything in the cache
+# schema is reloadable from the source extract, and this is the one thing that
+# is not.
+HISTORY_TABLE = 'app.local_layer_feature_history'
+
+# The temp table holding the stored rows while the transform replaces them.
+# ON COMMIT DROP, so a rollback and a commit both clear it.
+PREVIOUS_TABLE = 'ingest_previous'
+
+
+def capture_previous(cursor, spec):
+    """Copy the stored rows aside before the transform truncates them.
+
+    The diff is taken against the transformed shape rather than the staged one
+    because that is what the map serves, and because the two are not
+    comparable: a staged date is the delivery's text, a stored one is a date.
+    """
+    cursor.execute(
+        f'CREATE TEMP TABLE {PREVIOUS_TABLE} ON COMMIT DROP AS '
+        f'SELECT * FROM {spec.target_table}'
+    )
+
+
+def rebuilt_from_empty(cursor, spec) -> bool:
+    """Whether this load is refilling a table whose history already exists.
+
+    The history is in `app` so that it survives a cache rebuild, and the ingest
+    reloads an unchanged delivery into an emptied table. Those two together
+    would write an `added` row for every feature, dated the rebuild - which is
+    not what `added` means, and would answer "when did this footprint first
+    appear" with the day the cache was dropped.
+    """
+    cursor.execute(f'SELECT count(*) FROM {PREVIOUS_TABLE}')
+    if int(cursor.fetchone()[0]) > 0:
+        return False
+
+    cursor.execute(
+        f'SELECT count(*) FROM {HISTORY_TABLE} WHERE object_name = %s',
+        (spec.object_name,))
+    return int(cursor.fetchone()[0]) > 0
+
+
+def _attribute_json(alias: str, columns: tuple) -> str:
+    """Build a jsonb object of one row's attributes, to compare and to store."""
+    pairs = ', '.join(f"'{name}', {alias}.{name}" for name in columns)
+    return f'jsonb_build_object({pairs})'
+
+
+def write_feature_history(cursor, spec, source_name: str, source_digest: str) -> dict:
+    """Record what this load did to each feature, and return the counts.
+
+    Runs after the transform and inside its transaction: a load that rolls back
+    changed nothing, so it has no history to write.
+
+    Attributes are compared as jsonb rather than column by column so that the
+    set of columns comes from the registry and not from a second list here.
+    """
+    if rebuilt_from_empty(cursor, spec):
+        # Nothing happened to any feature: the rows are the ones this layer
+        # already had, put back.
+        return {'added': 0, 'removed': 0, 'changed': 0}
+
+    layer = LOCAL_LAYERS[spec.object_name]
+    key = layer.key
+    # The key identifies the row rather than describing it, and the geometry is
+    # compared separately, so neither belongs in the attribute bag.
+    columns = tuple(name for name in layer.detail_columns if name != key)
+
+    previous = _attribute_json('p', columns)
+    current = _attribute_json('c', columns)
+
+    # Interpolated from the registry, never the request. The literals are bound.
+    cursor.execute(f"""
+        WITH added AS (
+            INSERT INTO {HISTORY_TABLE}
+                (object_name, feature_id, change, source_name, source_digest)
+            SELECT %(object_name)s, c.{key}, 'added', %(source_name)s, %(digest)s
+            FROM {spec.target_table} c
+            LEFT JOIN {PREVIOUS_TABLE} p ON p.{key} = c.{key}
+            WHERE p.{key} IS NULL
+            RETURNING 1
+        ),
+        removed AS (
+            INSERT INTO {HISTORY_TABLE}
+                (object_name, feature_id, change, source_name, source_digest,
+                 previous, previous_geom)
+            SELECT %(object_name)s, p.{key}, 'removed', %(source_name)s,
+                   %(digest)s, {previous}, p.geom
+            FROM {PREVIOUS_TABLE} p
+            LEFT JOIN {spec.target_table} c ON c.{key} = p.{key}
+            WHERE c.{key} IS NULL
+            RETURNING 1
+        ),
+        differences AS (
+            SELECT p.{key} AS feature_id,
+                   {previous} AS was,
+                   {current} AS now,
+                   md5(ST_AsBinary(p.geom)) IS DISTINCT FROM
+                       md5(ST_AsBinary(c.geom)) AS geom_changed,
+                   p.geom AS previous_geom
+            FROM {PREVIOUS_TABLE} p
+            JOIN {spec.target_table} c ON c.{key} = p.{key}
+        ),
+        changed AS (
+            INSERT INTO {HISTORY_TABLE}
+                (object_name, feature_id, change, source_name, source_digest,
+                 changed_columns, previous, previous_geom)
+            SELECT %(object_name)s, d.feature_id, 'changed', %(source_name)s,
+                   %(digest)s,
+                   -- The attributes that differ, plus 'geom' where the shape
+                   -- did, so one column answers "what changed".
+                   (
+                       SELECT coalesce(array_agg(each.key ORDER BY each.key), '{{}}')
+                       FROM jsonb_each_text(d.was) AS each
+                       WHERE each.value IS DISTINCT FROM (d.now ->> each.key)
+                   ) || CASE WHEN d.geom_changed THEN ARRAY['geom'] ELSE '{{}}' END,
+                   d.was,
+                   CASE WHEN d.geom_changed THEN d.previous_geom END
+            FROM differences d
+            WHERE d.was <> d.now OR d.geom_changed
+            RETURNING 1
+        )
+        SELECT (SELECT count(*) FROM added),
+               (SELECT count(*) FROM removed),
+               (SELECT count(*) FROM changed)
+    """, {
+        'object_name': spec.object_name,
+        'source_name': source_name,
+        'digest': source_digest,
+    })
+
+    added, removed, changed = cursor.fetchone()
+    return {'added': int(added), 'removed': int(removed), 'changed': int(changed)}
+
+
+def describe_changes(counts: dict) -> str:
+    """Say what the load did, in one line for the operator reading the log."""
+    if not any(counts.values()):
+        return '  no feature changed'
+    return (f"  {counts['added']} added, {counts['changed']} changed, "
+            f"{counts['removed']} removed")
 
 
 def report(spec, comparison: LoadComparison, assessment, dry_run: bool):
@@ -558,6 +774,20 @@ def drop_staging(connection, spec):
     with connection.cursor() as cursor:
         cursor.execute(f'DROP TABLE IF EXISTS {spec.staging_table}')
     connection.commit()
+
+
+def stored_rows(connection, spec) -> int:
+    """How many rows the layer is currently serving.
+
+    Asked before a delivery is skipped as unchanged: the load history lives in
+    cache.local_layer_loads and the rows live in the layer's own table, so
+    dropping or truncating one leaves the other saying the data is loaded.
+    That is not hypothetical - the cache schema exists to be rebuilt, and a
+    downgrade takes the table while the history survives.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(f'SELECT count(*) FROM {spec.target_table}')
+        return int(cursor.fetchone()[0])
 
 
 def stored_age_note(connection, spec) -> str:
@@ -599,11 +829,12 @@ def refuse(connection, spec, refusal: RefusedError, source_names: str,
 def local_sources(args, spec) -> tuple:
     """Resolve the files named on the command line, and check they are there."""
     sources = [Path(one).expanduser().resolve() for one in args.source]
-    if len(sources) != len(spec.sources):
+    if len(sources) not in (1, len(spec.sources)):
         raise CannotRunError(
             f'{spec.object_name} reads {len(spec.sources)} source layer(s); '
             f'pass --source that many times, in the order '
-            f'{[one.name for one in spec.sources]}'
+            f'{[one.name for one in spec.sources]}, or once for a file '
+            f'holding them all'
         )
 
     lyrx_path = Path(args.lyrx).expanduser().resolve() if args.lyrx else None
@@ -642,15 +873,22 @@ def load(args, spec, sources: list, lyrx_path, connection, target) -> int:
     """Do the work, once the lock is held. Returns the exit code."""
     # Checked before anything is read, so being invoked without a .lyrx is a
     # usage error whether or not the delivery turns out to be unchanged.
-    if lyrx_path is None:
+    if lyrx_path is None and not spec.owns_style:
         raise CannotRunError(f'--lyrx is required for {spec.object_name}')
 
     source_names = ', '.join(path.name for path in sources)
     # The .lyrx hashes with the extract: a delivery whose symbology changed is a
-    # delivery that changed. See digest().
-    source_digest = digest([*sources, lyrx_path])
+    # delivery that changed. For a layer whose style is ours, the style itself
+    # hashes in for the same reason - nothing in the delivery moves when it
+    # changes. See digest().
+    source_digest = digest([*sources] + ([lyrx_path] if lyrx_path else []),
+                           owned_style_digest(spec))
     previous = last_load(connection, spec, ('loaded',))
-    if previous.get('digest') == source_digest and not args.force:
+    # Unchanged bytes are only a reason to stop if the rows they produced are
+    # still there. Skipping on the digest alone would leave an emptied table
+    # empty for as long as the delivery stayed the same.
+    unchanged = previous.get('digest') == source_digest
+    if unchanged and not args.force and stored_rows(connection, spec) > 0:
         # Most scheduled runs land here: nothing changed upstream.
         print(f'  {source_names} is byte-for-byte what is already loaded; '
               f'nothing to do.')
@@ -658,9 +896,14 @@ def load(args, spec, sources: list, lyrx_path, connection, target) -> int:
             record(connection, spec, 'skipped', source_names, source_digest)
         return EXIT_OK
 
+    if unchanged and not args.force:
+        print(f'  {source_names} is unchanged, but {spec.target_table} is '
+              f'empty; loading it again.')
+
     # After the digest check, so a bad .lyrx is reported on the runs where it
     # would change what is drawn, not every morning.
-    print(f'Translating {lyrx_path.name} ...')
+    print('Building the style ...' if spec.owns_style
+          else f'Translating {lyrx_path.name} ...')
     try:
         style, manifest = build_style(spec, lyrx_path)
     except RefusedError as refusal:
@@ -668,7 +911,7 @@ def load(args, spec, sources: list, lyrx_path, connection, target) -> int:
 
     staging = ', '.join(
         f'{path.name}:{source.name}'
-        for path, source in zip(sources, spec.sources)
+        for path, source in zip(source_paths(spec, sources), spec.sources)
     )
     mode = ogr.resolve_mode(args.gdal)
     print(f'Staging {staging} (ogr2ogr: {mode}) ...')
@@ -703,9 +946,26 @@ def load(args, spec, sources: list, lyrx_path, connection, target) -> int:
 
         print('Replacing the stored extract ...')
         started = time.monotonic()
+        # Before the transform, which truncates what it is about to replace.
+        if spec.track_history:
+            capture_previous(cursor, spec)
         run_sql_file(cursor, spec, 'transform.sql')
         write_style(cursor, spec, style, manifest)
         print(f'  transform: {time.monotonic() - started:.1f}s')
+
+        # Inside the transaction: a load that rolls back changed nothing, so
+        # it has nothing to have recorded.
+        if spec.track_history:
+            changes = write_feature_history(
+                cursor, spec, source_names, source_digest)
+            print(describe_changes(changes))
+            # What the transform actually did, which is more than the staged
+            # comparison can see: that one runs before the transform and
+            # matches on the label, so an attribute-only fix is invisible to
+            # it. 168 of them in the 16/10/2026 delivery.
+            comparison.added_count = changes['added']
+            comparison.removed_count = changes['removed']
+            comparison.changed_count = changes['changed']
 
     connection.commit()
     print('  committed.')

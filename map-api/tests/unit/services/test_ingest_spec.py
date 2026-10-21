@@ -95,6 +95,8 @@ def test_the_style_coverage_column_is_a_staged_column(name):
     bad delivery rather than as a bad spec.
     """
     spec = INGEST_SPECS[name]
+    if spec.owns_style:
+        pytest.skip(f'{name} owns its style, so there is no coverage to check')
     column = spec.style_coverage_column
     select = (SQL_ROOT / spec.sql_dir / spec.sources[0].select).read_text(
         encoding='utf-8')
@@ -107,23 +109,32 @@ def test_the_style_coverage_column_is_a_staged_column(name):
 # months from now to a layer nobody is thinking about, and a failing test says
 # which invariant was broken where an ImportError does not.
 
+def _s3_keys(spec) -> list:
+    """Every key the delivery is fetched from, the .lyrx included where there is one."""
+    keys = list(spec.s3.sources)
+    if spec.s3.lyrx is not None:
+        keys.append(spec.s3.lyrx)
+    return keys
+
+
 @pytest.mark.parametrize('name', sorted(INGEST_SPECS))
 def test_s3_names_one_key_per_source_layer(name):
-    """stage() zips the keys against the source layers.
+    """stage() pairs the keys against the source layers.
 
     Fewer keys than layers stages a subset and reports it as a whole extract,
     which is the one failure this pipeline is not otherwise built to catch: the
-    rows that arrive are all valid.
+    rows that arrive are all valid. One key is the exception, being a file that
+    holds every layer.
     """
     spec = INGEST_SPECS[name]
     if spec.s3 is None:
         pytest.skip(f'{name} is loaded from files only')
-    assert len(spec.s3.sources) == len(spec.sources)
+    assert len(spec.s3.sources) in (1, len(spec.sources))
 
 
 @pytest.mark.parametrize('name', sorted(INGEST_SPECS))
 def test_s3_names_a_lyrx_key(name):
-    """Every layer is styled from its delivered .lyrx, so every spec names one.
+    """A layer styled from its delivered .lyrx must name one.
 
     Missing, the download succeeds and the style step refuses afterwards -
     having already spent the transfer.
@@ -131,6 +142,8 @@ def test_s3_names_a_lyrx_key(name):
     spec = INGEST_SPECS[name]
     if spec.s3 is None:
         pytest.skip(f'{name} is loaded from files only')
+    if spec.owns_style:
+        pytest.skip(f'{name} owns its style, so no .lyrx is delivered')
     assert spec.s3.lyrx
 
 
@@ -143,7 +156,7 @@ def test_s3_keys_are_relative_to_the_bucket(name):
     spec = INGEST_SPECS[name]
     if spec.s3 is None:
         pytest.skip(f'{name} is loaded from files only')
-    for key in [*spec.s3.sources, spec.s3.lyrx]:
+    for key in _s3_keys(spec):
         assert key.strip()
         assert not key.startswith('/')
 
@@ -154,9 +167,28 @@ def test_s3_keys_land_under_distinct_filenames(name):
     spec = INGEST_SPECS[name]
     if spec.s3 is None:
         pytest.skip(f'{name} is loaded from files only')
-    keys = [*spec.s3.sources, spec.s3.lyrx]
-    basenames = [key.rsplit('/', 1)[-1] for key in keys]
+    basenames = [key.rsplit('/', 1)[-1] for key in _s3_keys(spec)]
     assert len(set(basenames)) == len(basenames)
+
+
+@pytest.mark.parametrize('name', sorted(INGEST_SPECS))
+def test_several_source_layers_stage_as_generic_geometry(name):
+    """The first ogr2ogr call creates the geometry column the rest append to.
+
+    A typed column refuses the classes that follow, as a COPY failure part way
+    through the staging rather than a check anywhere: EAOPoly created a
+    MultiPolygon column and EAOLine could not be appended to it. Only a spec
+    reading one layer may name a type.
+    """
+    spec = INGEST_SPECS[name]
+    if len(spec.sources) == 1:
+        pytest.skip(f'{name} stages one layer, so its type is its own')
+
+    for source in spec.sources:
+        assert source.geometry_type == 'GEOMETRY', (
+            f'{name} stages {len(spec.sources)} layers into one table, so '
+            f'{source.name} must not narrow the geometry column'
+        )
 
 
 def test_the_ingest_image_is_built_on_the_pinned_gdal():

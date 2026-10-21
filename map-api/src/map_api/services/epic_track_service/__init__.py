@@ -87,7 +87,11 @@ class TrackService:
 
     @classmethod
     def open_project(cls, project_id: int) -> Optional[dict]:
-        """Return one open project, or None when it is closed or unknown."""
+        """Return one project the map draws, or None where it draws none.
+
+        A closed project is still drawn; what leaves one off the map is
+        is_active, or having no usable location.
+        """
         return next(
             (project for project in cls.open_projects() if project['id'] == project_id),
             None,
@@ -160,7 +164,14 @@ class TrackService:
     @classmethod
     def _fetch_open_projects(cls) -> list:
         projects = cls._get('projects', {'is_active': 'true'})
-        works = cls._get('works', {'is_active': 'true', 'context': 'insights'})
+        # Every work, not just the active ones: a project is in progress when
+        # it has a work in progress, and the work's own is_active says whether
+        # Track still lists it rather than whether the work is under way. 19 of
+        # the 50 IN_PROGRESS works are is_active=false, covering 18 projects.
+        #
+        # context=insights is kept because it is what EPIC.Track's own insights
+        # pages ask for; it makes no difference to what comes back.
+        works = cls._get('works', {'context': 'insights'})
 
         in_progress = {
             work.get('project_id')
@@ -171,8 +182,10 @@ class TrackService:
         open_projects = []
         unlocated = 0
         for project in projects:
-            if project.get('is_project_closed'):
-                continue
+            # is_project_closed is deliberately not a filter: a closed project
+            # is still a project with a footprint worth drawing. `is_active`,
+            # which the request above asks for, is what takes one off the map,
+            # and the In-progress works filter is what narrows to live ones.
             location = _location(project)
             if location is None:
                 unlocated += 1
@@ -181,7 +194,8 @@ class TrackService:
 
         if unlocated:
             current_app.logger.warning(
-                'Left %s open EPIC.Track projects off the map: no usable location.', unlocated
+                'Left %s active EPIC.Track projects off the map: no usable location.',
+                unlocated
             )
         return open_projects
 

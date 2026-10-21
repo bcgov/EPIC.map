@@ -29,7 +29,7 @@ bad". Nothing was staged, so the stored layer is untouched.
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import boto3
 from botocore.config import Config as BotoConfig
@@ -70,7 +70,8 @@ class Delivery:
     """What was fetched, as the local paths the rest of the ingest understands."""
 
     sources: List[Path]
-    lyrx: Path
+    # None for a layer whose style is ours, delivered as geometry only.
+    lyrx: Optional[Path] = None
 
 
 def local_name(key: str) -> str:
@@ -201,6 +202,9 @@ def fetch(spec, into: Path, config=None) -> Delivery:
         destination = into / local_name(key)
         _download(s3, bucket, key, destination)
         sources.append(destination)
+
+    if spec.s3.lyrx is None:
+        return Delivery(sources=sources)
 
     lyrx = into / local_name(spec.s3.lyrx)
     _download(s3, bucket, spec.s3.lyrx, lyrx)

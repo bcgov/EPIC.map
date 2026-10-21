@@ -128,6 +128,15 @@ const { LayersProvider, useLayers } = await import(
 );
 const { PIP_OBJECT_NAME, localLayerId } = await import("@/utils/localLayers");
 
+// HostedLayer reads the filter bar. Mocked rather than provided: the real
+// provider runs the bar's queries, which these tests are not about.
+// One array, not a fresh one per render: the real provider memoises this, and
+// a new identity each call would churn the memo and re-run the draw effect.
+const NO_PROJECTS: never[] = [];
+vi.mock("@/components/Filters/FiltersContext", () => ({
+  useFilters: () => ({ visibleProjects: NO_PROJECTS }),
+}));
+
 const PIP_LAYER_ID = localLayerId(PIP_OBJECT_NAME);
 
 /**
@@ -202,13 +211,24 @@ beforeEach(() => {
   hideLocalVectorLayer.mockClear();
 });
 
+/**
+ * How many times this layer in particular was drawn.
+ *
+ * By layer id, not by call count: the EAO footprints are drawn without being
+ * switched on, so a total counts a layer these tests are not about.
+ */
+const drawsOf = (objectName: string) =>
+  showLocalVectorLayer.mock.calls.filter(
+    (call) => call[1] === localLayerId(objectName),
+  ).length;
+
 afterEach(cleanup);
 
 describe("the hosted layer across a panel close", () => {
   it("stays on when the panel is closed and reopened", async () => {
     const panel = renderPanel(fakeMap());
     await userEvent.click(toggle());
-    expect(showLocalVectorLayer).toHaveBeenCalledTimes(1);
+    expect(drawsOf(PIP_OBJECT_NAME)).toBe(1);
 
     panel.reopen(false);
     panel.reopen(true);
@@ -235,7 +255,7 @@ describe("the hosted layer across a panel close", () => {
     panel.reopen(true);
 
     // The draw effect is the provider's, which never unmounted.
-    expect(showLocalVectorLayer).toHaveBeenCalledTimes(1);
+    expect(drawsOf(PIP_OBJECT_NAME)).toBe(1);
   });
 
   it("comes off the map when the user switches it off", async () => {

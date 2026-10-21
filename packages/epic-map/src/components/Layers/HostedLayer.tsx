@@ -2,12 +2,14 @@ import { useEffect } from "react";
 import { useLocalLayerStyle } from "@/api/useLocalLayerStyle";
 import {
   hideLocalVectorLayer,
+  setLocalVectorLayerFilters,
   setLocalVectorLayerOpacity,
   showLocalVectorLayer,
 } from "@/components/Layers/layerUtils";
+import { useHostedLayerFilters } from "@/components/Layers/useHostedLayerFilters";
 import { useLayers } from "@/components/Layers/LayersContext";
 import { DEFAULT_LAYER_OPACITY, localTileUrl } from "@/utils/config";
-import { localLayerId } from "@/utils/localLayers";
+import { isAlwaysDrawn, localLayerId } from "@/utils/localLayers";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 
 /**
@@ -26,11 +28,15 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
   const { apiBaseUrl } = useMapWidget();
 
   const layerId = localLayerId(objectName);
-  const visible = visibleIds.has(layerId);
+  // An always-drawn layer has no row to switch on: it follows the filter bar,
+  // so the panel's set says nothing about whether it should be drawn.
+  const visible = isAlwaysDrawn(objectName) || visibleIds.has(layerId);
   const opacity = opacities[layerId] ?? DEFAULT_LAYER_OPACITY;
 
   // Not asked for until wanted: the style is a few hundred classes.
   const { data: style } = useLocalLayerStyle(visible ? objectName : null);
+  // Narrows what is drawn, where the layer has a reason beyond its symbology.
+  const filters = useHostedLayerFilters(objectName, style);
 
   useEffect(() => {
     if (!map) return;
@@ -52,7 +58,10 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
       style,
     );
     setLocalVectorLayerOpacity(map, layerId, style, opacity);
-  }, [map, layerId, objectName, visible, style, apiBaseUrl, opacity]);
+    // After showing: adding a layer takes the style's filter, so the client's
+    // reason has to be applied to the layer that now exists.
+    setLocalVectorLayerFilters(map, layerId, style, filters);
+  }, [map, layerId, objectName, visible, style, apiBaseUrl, opacity, filters]);
 
   return null;
 }
