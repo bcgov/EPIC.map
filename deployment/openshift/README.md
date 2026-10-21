@@ -95,6 +95,20 @@ Because the bucket is in the secret rather than the chart, each namespace can re
 one with no chart change - so dev and test do not have to share a delivery, and asking the
 storage team for a per-environment key costs nothing here.
 
+As it stands **dev and test read the same bucket with the same key, and prod has its own**. So a
+new delivery is uploaded once and both lower environments pick it up on their next run, and
+test's secret is a copy of dev's rather than something to retype:
+
+    oc get secret map-ingest-s3 -n c8b80a-dev -o json \
+      | jq 'del(.metadata.namespace, .metadata.resourceVersion, .metadata.uid,
+                .metadata.creationTimestamp, .metadata.managedFields)' \
+      | oc apply -n c8b80a-test -f -
+
+Copying beats retyping for a second reason: the values are already encoded correctly. A secret
+hand-edited in the console's YAML view needs its values base64-encoded, because that view shows
+`data:`, while the templates here use `stringData:` and take plaintext. Mixing the two gives a
+value encoded twice, which reads as present but decodes to nothing usable.
+
 ## Turning the ingest on in a namespace
 
 Four things, in this order. The ordering is the part that bites: the CronJob reads tables that
@@ -123,12 +137,27 @@ and `true` only in `values.dev.yaml`. For another environment, add to its values
     ingest:
       enabled: true
 
-The image tag follows `image.tag`, so test runs `map-api-ingest:test` without naming it twice -
-but `deploy.yml` does not tag that stream yet. Promoting to test needs a line beside the others:
+The image tag follows `image.tag`, so test runs `map-api-ingest:test` without naming it twice,
+and `deploy.yml` tags that stream alongside the others. Without that line the tag never exists
+and the CronJob's pods sit `ImagePullBackOff`.
 
-    oc tag map-api-ingest:$SOURCE_TAG map-api-ingest:$ENV
+**The chart is applied by hand.** Nothing in `.github/workflows` runs helm: `api-cd.yml` builds
+and pushes both images and restarts the Deployment, and `deploy.yml` moves tags and restarts.
+Neither creates or updates a CronJob, so a change to `ingest.layers` or to `ingest.enabled`
+reaches a namespace only when somebody runs:
 
-Without it, `map-api-ingest:test` never exists and the CronJob's pods sit `ImagePullBackOff`.
+    helm upgrade --install map-api charts/map-api -f charts/map-api/values.<env>.yaml -n c8b80a-<env>
+
+**Renaming a CronJob deletes the old one and its history.** The layer-per-CronJob change replaced
+`map-api-ingest` with `map-api-ingest-<layer>`, so the upgrade that introduces it removes the old
+object - and with it the retained Failed Jobs that are this pipeline's only alert
+(`failedJobsHistoryLimit: 10`, no TTL, deliberately). Read anything you care about first.
+
+**The footprints need EPIC.Track.** The project dots come from `/projects`, and the EAO
+footprints are filtered to the projects those dots are drawn for - so with `epicTrack.apiUrl`
+empty the layer loads, serves tiles, and draws nothing. `values.dev.yaml` sets it;
+`values.test.yaml` and `values.prod.yaml` do not. That namespace also needs
+`EPIC_TRACK_CLIENT_SECRET` in `map-api-secrets`.
 
 Also confirm the cluster is **OCP 4.14 or newer** (`oc version`). The CronJob sets
 `timeZone: Etc/UTC`, which needs Kubernetes 1.27+; on anything older set `ingest.timeZone: ""`.

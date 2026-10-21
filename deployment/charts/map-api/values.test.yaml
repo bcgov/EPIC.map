@@ -23,9 +23,18 @@ allowedClientIds: "compliance-web,submit-web,track-web,epic-map"
 # valid IDIR token from the shared realm is accepted.
 authRequiredGroup: ""
 
-# EPIC.Track's API base URL for this environment, without /api/v1.
+# EPIC.Track's API base URL for this environment, without /api/v1. The project
+# dots come from it, and the EAO footprints are filtered to the projects those
+# dots are drawn for - so an empty value here draws no footprints either.
 epicTrack:
-  apiUrl: ""
+  apiUrl: "https://epictrack-api-c8b80a-test.apps.gold.devops.gov.bc.ca"
+
+# The hosted-layer ingest. Both layers run, as in dev, so both deliveries have
+# to be in the bucket this namespace's map-ingest-s3 names - PIP's .gpkg and
+# its .lyrx, and EAO's .gpkg. A layer whose delivery is absent fails its
+# CronJob every morning rather than doing nothing.
+ingest:
+  enabled: true
 
 resources:
   cpu:
