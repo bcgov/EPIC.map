@@ -128,6 +128,49 @@ class TestDigest:
 
         assert ingest.digest([first]) != ingest.digest([second])
 
+    def test_an_owned_style_is_part_of_the_hash(self, tmp_path):
+        """A layer whose symbology is ours has no file that changes with it."""
+        extract = write(tmp_path, 'EAOProjectData.gpkg', 'footprints')
+        before = ingest.digest([extract], 'style-one')
+        after = ingest.digest([extract], 'style-two')
+
+        assert before != after
+
+    def test_a_delivered_style_hashes_as_it_did(self, tmp_path):
+        """A digest already stored for PIP keeps its meaning past this change.
+
+        Otherwise the deploy itself would reload a delivery nothing changed in.
+        """
+        extract = write(tmp_path, 'PIP.gpkg', 'boundaries')
+        lyrx = write(tmp_path, 'PIP.lyrx', 'symbology')
+        owned = ingest.owned_style_digest(PIP_CONSULTATION_AREAS)
+
+        assert ingest.digest([extract, lyrx], owned) == ingest.digest([extract, lyrx])
+
+
+class TestOwnedStyleDigest:
+    """What the digest sees of a style that lives in the tree, not the delivery."""
+
+    def test_a_delivered_style_contributes_nothing(self):
+        """There is a .lyrx in the hash already; this is for layers without one."""
+        assert ingest.owned_style_digest(PIP_CONSULTATION_AREAS) == ''
+
+    def test_the_same_style_hashes_the_same(self):
+        """Or every scheduled run would reload the 74MB extract over nothing."""
+        once = ingest.owned_style_digest(EAO_PROJECT_DATA)
+
+        assert ingest.owned_style_digest(EAO_PROJECT_DATA) == once
+
+    def test_a_colour_changed_in_code_is_a_change(self, monkeypatch):
+        """The case the digest could not see: eao_categories.py edited, no delivery."""
+        before = ingest.owned_style_digest(EAO_PROJECT_DATA)
+        recoloured = ingest.eao_style()
+        recoloured['layers'][0]['paint'] = {'fill-color': '#000000',
+                                            'fill-opacity': 1}
+        monkeypatch.setattr(ingest, 'eao_style', lambda: recoloured)
+
+        assert ingest.owned_style_digest(EAO_PROJECT_DATA) != before
+
 
 class TestBuildStyle:
     """What a .lyrx the ingest cannot use is worth."""
@@ -415,6 +458,43 @@ class TestLoadSkipsAnUnchangedDelivery:
         with pytest.raises(StageCalledError):
             ingest.load(make_args(force=True), PIP_CONSULTATION_AREAS,
                         [extract], lyrx, connection, TARGET)
+
+    def test_an_unchanged_eao_delivery_is_still_skipped(self, tmp_path, monkeypatch):
+        """The style hashing in must not make every morning a reload."""
+        extract = write(tmp_path, 'EAOProjectData.gpkg', 'footprints')
+        stored = ingest.digest([extract],
+                               ingest.owned_style_digest(EAO_PROJECT_DATA))
+        connection = FakeConnection(previous=('loaded', stored, None, 1))
+        no_staging(monkeypatch)
+
+        code = ingest.load(make_args(layer='eao'), EAO_PROJECT_DATA,
+                           [extract], None, connection, TARGET)
+
+        assert code == ingest.EXIT_OK
+        assert connection.statuses == ['skipped']
+
+    def test_a_style_changed_in_code_is_loaded(self, tmp_path, monkeypatch):
+        """The delivery is byte-for-byte the one loaded; the symbology is not.
+
+        Skipping here leaves the style in cache.local_layer_styles stale until
+        EAO sends a new file. Reaching ogr2ogr is the assertion.
+        """
+        extract = write(tmp_path, 'EAOProjectData.gpkg', 'footprints')
+        stored = ingest.digest([extract],
+                               ingest.owned_style_digest(EAO_PROJECT_DATA))
+        connection = FakeConnection(previous=('loaded', stored, None, 1))
+        no_staging(monkeypatch)
+
+        recoloured = ingest.eao_style()
+        recoloured['layers'][0]['paint'] = {'fill-color': '#000000',
+                                            'fill-opacity': 1}
+        monkeypatch.setattr(ingest, 'eao_style', lambda: recoloured)
+
+        with pytest.raises(StageCalledError):
+            ingest.load(make_args(layer='eao'), EAO_PROJECT_DATA,
+                        [extract], None, connection, TARGET)
+
+        assert connection.statuses == []
 
 
 class TestLoadRefusesABadStyle:

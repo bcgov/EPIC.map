@@ -293,7 +293,7 @@ def take_lock(connection, spec) -> bool:
         return bool(cursor.fetchone()[0])
 
 
-def digest(paths: list) -> str:
+def digest(paths: list, style: str = '') -> str:
     """Hash the delivery, to recognise a republish of the same files.
 
     Most scheduled runs are handed what is already loaded, and hashing 74MB
@@ -302,6 +302,10 @@ def digest(paths: list) -> str:
 
     Every file the load reads goes in, the .lyrx included: a re-export that
     changed only the symbology is a change.
+
+    `style` is for a layer whose symbology is ours rather than delivered, where
+    no file changes when it does. It is left out of the hash when empty, so a
+    delivered-style layer keeps the digest already stored for it.
     """
     import hashlib  # pylint: disable=import-outside-toplevel
 
@@ -311,6 +315,8 @@ def digest(paths: list) -> str:
         with path.open('rb') as handle:
             for block in iter(lambda: handle.read(1024 * 1024), b''):  # noqa: B023
                 digester.update(block)
+    if style:
+        digester.update(f'style:{style}\0'.encode('utf-8'))
     return digester.hexdigest()
 
 
@@ -504,6 +510,29 @@ def build_style(spec, lyrx_path) -> tuple:
         ) from exc
 
     return _name_source_layers(style, mvt_layer), manifest
+
+
+def owned_style_digest(spec) -> str:
+    """Hash the style a spec builds for itself, or '' where one is delivered.
+
+    The delivery is what the digest normally watches, but for EAO the symbology
+    comes from eao_categories.py and no delivered byte changes when a colour or
+    a width does. Without this, the next scheduled run reads the same digest,
+    skips, and the style in cache.local_layer_styles stays stale until EAO sends
+    a new file or somebody runs with --force.
+
+    Hashes the style as it would be stored, the manifest included, so a renamed
+    MVT layer counts as a change too.
+    """
+    import hashlib  # pylint: disable=import-outside-toplevel
+
+    if not spec.owns_style:
+        return ''
+
+    # build_style cannot refuse for a spec that owns its style, so no .lyrx and
+    # no error path: it is the same call the load makes further down.
+    built = json.dumps(build_style(spec, None), sort_keys=True)
+    return hashlib.sha256(built.encode('utf-8')).hexdigest()
 
 
 def _name_source_layers(style: dict, mvt_layer: str) -> dict:
@@ -849,8 +878,11 @@ def load(args, spec, sources: list, lyrx_path, connection, target) -> int:
 
     source_names = ', '.join(path.name for path in sources)
     # The .lyrx hashes with the extract: a delivery whose symbology changed is a
-    # delivery that changed. See digest().
-    source_digest = digest([*sources] + ([lyrx_path] if lyrx_path else []))
+    # delivery that changed. For a layer whose style is ours, the style itself
+    # hashes in for the same reason - nothing in the delivery moves when it
+    # changes. See digest().
+    source_digest = digest([*sources] + ([lyrx_path] if lyrx_path else []),
+                           owned_style_digest(spec))
     previous = last_load(connection, spec, ('loaded',))
     # Unchanged bytes are only a reason to stop if the rows they produced are
     # still there. Skipping on the digest alone would leave an emptied table
