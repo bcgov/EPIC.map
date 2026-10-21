@@ -41,7 +41,6 @@ import {
   showLocalHighlight,
 } from "@/components/Layers/layerUtils";
 import { useImportedLayersContext } from "@/components/Layers/UserLayers/ImportedLayersContext";
-import { footprintTrackIdAt } from "@/components/Layers/eaoVisibility";
 import { projectIdAt } from "@/components/Projects/projectUtils";
 import type { MapExtent } from "@/types";
 import {
@@ -138,13 +137,15 @@ export default function MetaDataControl() {
     if (!map) return undefined;
 
     const onClick = (event: MapMouseEvent) => {
-      // A project dot opens its own card instead, and so does the footprint
-      // under it: a click that opens a card must not also open a popup beside
-      // it, whatever other layer happens to be on.
-      if (
-        projectIdAt(map, event.point) !== null ||
-        footprintTrackIdAt(map, event.point) !== null
-      ) {
+      // A project dot opens its own card instead of a popup beside it: a
+      // small, deliberate target with nothing of its own to identify.
+      //
+      // Its footprint opens the card as well, but covers whole regions, so it
+      // does not take the click from the layers underneath - suppressing those
+      // too made every boundary a dead zone for identify. The prototype draws
+      // the same line: selecting a project and identifying a data layer are
+      // separate answers to one click.
+      if (projectIdAt(map, event.point) !== null) {
         setClick(null);
         return;
       }

@@ -2,10 +2,10 @@
 //
 // Which clicks the identify popup answers, and which it leaves alone.
 //
-// A click that opens a project card must not also open a popup beside it. The
-// dot was handled; the footprint was not, so once a boundary click started
-// opening the card, a click inside one gave both whenever any other layer was
-// on - which is what the suppression exists to prevent.
+// A dot click is the card's: a small target with nothing of its own to
+// identify. A footprint click opens the card too, but is not the card's alone -
+// suppressing identify over a whole project boundary made it a dead zone for
+// every other layer on the map.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
@@ -101,15 +101,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("what the identify popup answers", () => {
-  it("leaves a footprint click to the project card", () => {
+  it("answers a footprint click, so the layers under it still identify", () => {
     under.footprint = 205;
     const map = fakeMap();
     under.map = map;
 
-    const view = render(<MetaDataControl />);
+    render(<MetaDataControl />);
     clickAt(map);
 
-    expect(view.queryByTestId("identify-popup")).toBeNull();
+    // Measuring the click box is the control taking the click: the card opens
+    // from the same click, and identify runs for whatever else is on.
+    expect(map.unproject).toHaveBeenCalled();
   });
 
   it("leaves a dot click to the project card", () => {
@@ -124,7 +126,7 @@ describe("what the identify popup answers", () => {
   });
 
   it("takes a click on neither, so the suppression is not blanket", () => {
-    // Without this, suppressing every click would pass the two above.
+    // Without this, suppressing every click would pass the dot cases above.
     const map = fakeMap();
     under.map = map;
 
@@ -136,8 +138,8 @@ describe("what the identify popup answers", () => {
     expect(map.unproject).toHaveBeenCalled();
   });
 
-  it("measures nothing when a footprint owns the click", () => {
-    under.footprint = 205;
+  it("measures nothing when a dot owns the click", () => {
+    under.dot = 205;
     const map = fakeMap();
     under.map = map;
 
