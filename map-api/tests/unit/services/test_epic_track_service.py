@@ -281,8 +281,8 @@ def _listed_work(work_id, project_id=1, **overrides):
         'start_date': '2022-01-10T08:00:00+00:00',
         'decision_date': None,
         'work_decision_date': '2023-10-10T07:00:00+00:00',
-        'epic_description': 'Proposes to amend the project.',
-        'report_description': 'Internal summary.',
+        'epic_description': 'A project',
+        'report_description': 'Proposes to raise the tailings facility.',
     }
     work.update(overrides)
     return work
@@ -317,7 +317,7 @@ def test_project_works_are_listed_by_project_name(app):
         'phase_name': 'Decision',
         'start_date': '2022-01-10T08:00:00+00:00',
         'decision_date': '2023-10-10T07:00:00+00:00',
-        'description': 'Proposes to amend the project.',
+        'description': 'Proposes to raise the tailings facility.',
     }]
 
 
@@ -340,17 +340,28 @@ def test_project_works_are_in_card_order(app):
     assert [work['id'] for work in works] == [5, 2, 4, 1, 3]
 
 
-def test_a_work_without_a_simple_title_or_public_description(app):
-    """The title is the work type alone; the report description stands in."""
-    listing = [_listed_work(1, simple_title='', epic_description=None,
+def test_a_work_without_a_simple_title_or_report_description(app):
+    """The title is the work type alone; the EPIC description stands in."""
+    listing = [_listed_work(1, simple_title='', report_description='  ',
+                            epic_description='Proposes to amend the project.',
                             current_work_phase={'name': None, 'phase': {'name': 'Early Engagement'}})]
     with patch(POST, side_effect=_track_with_listing(listing)), \
             patch(GET, side_effect=_track([_project(1)], [])):
         work = TrackService.project_works(1)[0]
 
     assert work['title'] == 'Amendment'
-    assert work['description'] == 'Internal summary.'
+    assert work['description'] == 'Proposes to amend the project.'
     assert work['phase_name'] == 'Early Engagement'
+
+
+def test_a_work_is_not_described_by_its_project(app):
+    """Track fills epic_description with the project's blurb on 57 of the 141 works in dev."""
+    listing = [_listed_work(1, report_description=None, epic_description='A project')]
+    with patch(POST, side_effect=_track_with_listing(listing)), \
+            patch(GET, side_effect=_track([_project(1, description='A project')], [])):
+        work = TrackService.project_works(1)[0]
+
+    assert work['description'] is None
 
 
 def test_project_works_are_cached(app):
@@ -394,14 +405,40 @@ def test_the_epic_url_follows_the_configured_site(app, monkeypatch):
     assert project['epic_url'] == 'https://epic.example/p/5cd9b4b56a15600025df0cc8/project-details'
 
 
-@pytest.mark.parametrize('ea_certificate', [None, '', '   '])
-def test_a_project_without_an_ea_certificate_has_none_issued(app, ea_certificate):
-    """Track holds the certificate number as free text; blank means none."""
+@pytest.mark.parametrize('ea_certificate', [
+    None, '', '   ', 42,
+    # Track's certificate field doubles as a status on over a hundred of the
+    # active projects in dev, misspellings included.
+    'Withdrawn', 'Wtihdrawn', 'In progress', 'Terminated', 'N/A',
+    'Certificate Refused', 'Not designated reviewable',
+    # Near misses: a number is three parts, and nothing else.
+    'M23', 'M2301', 'M231-01', 'EACM23-01', 'M23-01 amended', '23-01',
+])
+def test_a_project_whose_certificate_field_holds_no_number_has_none_issued(app, ea_certificate):
+    """Anything but a certificate number leaves the card's tag and the Certified filter off."""
     with patch(POST, return_value=_token()), \
             patch(GET, side_effect=_track([_project(1, ea_certificate=ea_certificate)], [])):
         project = TrackService.open_project(1)
 
+    assert project['ea_certificate'] is None
     assert project['certificate_issued'] is False
+
+
+@pytest.mark.parametrize('ea_certificate', [
+    'M23-01', 'E96-01', 'X09-02',
+    # Sector prefixes from the older numbering, all still in use in Track.
+    'MD94-01', 'TD04-01', 'WD08-01', 'IND02-01',
+    # Stored with the stray whitespace Track allows.
+    ' M23-01 ',
+])
+def test_a_project_with_a_certificate_number_has_one_issued(app, ea_certificate):
+    """The number is the tag's text, trimmed."""
+    with patch(POST, return_value=_token()), \
+            patch(GET, side_effect=_track([_project(1, ea_certificate=ea_certificate)], [])):
+        project = TrackService.open_project(1)
+
+    assert project['ea_certificate'] == ea_certificate.strip()
+    assert project['certificate_issued'] is True
 
 
 def test_a_project_without_a_type_or_region_has_no_ids(app):
