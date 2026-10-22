@@ -8,6 +8,11 @@ import {
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import { useTheme } from "@mui/material/styles";
+import {
+  rowMenuIconSx,
+  rowMenuItemSx,
+  rowMenuPaperSx,
+} from "@/components/Layers/LayerRow";
 
 /**
  * An imported layer's options menu.
@@ -28,19 +33,7 @@ export default function ImportedLayerMenu({
   onDelete: () => void;
 }) {
   const theme = useTheme();
-
-  const itemSx = {
-    gap: "0.375rem",
-    minHeight: "auto",
-    padding: "0.625rem 1rem",
-    fontSize: theme.typography.body2.fontSize,
-    "&.Mui-focusVisible": {
-      outline: `2px solid ${theme.palette.primary.main}`,
-      outlineOffset: "-2px",
-    },
-  } as const;
-
-  const iconSx = { minWidth: 0, color: "inherit" } as const;
+  const itemSx = rowMenuItemSx(theme);
 
   return (
     <Menu
@@ -56,17 +49,7 @@ export default function ImportedLayerMenu({
         dense: true,
         sx: { paddingY: 0 },
       }}
-      slotProps={{
-        paper: {
-          elevation: 0,
-          sx: {
-            border: `1px solid ${theme.palette.divider}`,
-            borderRadius: "4px",
-            boxShadow: theme.shadows[2],
-            backgroundColor: theme.palette.common.white,
-          },
-        },
-      }}
+      slotProps={{ paper: { elevation: 0, sx: rowMenuPaperSx(theme) } }}
     >
       <MenuItem
         onClick={() => {
@@ -75,7 +58,7 @@ export default function ImportedLayerMenu({
         }}
         sx={{ ...itemSx, color: theme.palette.text.primary }}
       >
-        <ListItemIcon sx={iconSx}>
+        <ListItemIcon sx={rowMenuIconSx}>
           <EditOutlinedIcon fontSize="small" />
         </ListItemIcon>
         <ListItemText
@@ -92,13 +75,16 @@ export default function ImportedLayerMenu({
         }}
         sx={{ ...itemSx, color: theme.palette.error.main }}
       >
-        <ListItemIcon sx={iconSx}>
+        <ListItemIcon sx={rowMenuIconSx}>
           <DeleteOutlineIcon fontSize="small" />
         </ListItemIcon>
         <ListItemText
           primary="Delete layer"
           sx={{ margin: 0 }}
-          primaryTypographyProps={{ fontSize: "inherit", color: "inherit" }}
+          primaryTypographyProps={{
+            fontSize: "inherit",
+            color: theme.palette.error.main,
+          }}
         />
       </MenuItem>
     </Menu>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Box,
   Collapse,
+  Divider,
   IconButton,
   ListItemIcon,
   ListItemText,
@@ -14,19 +15,18 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import FolderOffOutlinedIcon from "@mui/icons-material/FolderOffOutlined";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
-import { useTheme, type Theme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import type { FavouriteFolder } from "@/api/useFavouriteFolders";
 import DashedEmptyState from "@/components/Layers/DashedEmptyState";
 import DropIndicator from "@/components/Layers/Favourites/DropIndicator";
 import FolderNameField from "@/components/Layers/Favourites/FolderNameField";
 import { useFavouriteDropTarget } from "@/components/Layers/Favourites/useFavouriteDropTarget";
-
-const focusRing = (theme: Theme) => ({
-  "&:focus-visible": {
-    outline: `2px solid ${theme.palette.primary.main}`,
-    outlineOffset: "-2px",
-  },
-});
+import {
+  rowIconButtonSx,
+  rowMenuIconSx,
+  rowMenuItemSx,
+  rowMenuPaperSx,
+} from "@/components/Layers/LayerRow";
 
 type FolderRowProps = {
   folder: FavouriteFolder;
@@ -81,6 +81,8 @@ export default function FolderRow({
   }, [focusHeader, onHeaderFocused]);
 
   const bodyId = `epic-map-folder-${folder.folderId}-body`;
+  const menuId = `epic-map-folder-${folder.folderId}-menu`;
+  const itemSx = { ...rowMenuItemSx(theme), color: theme.palette.text.primary };
 
   const name = editing ? (
     // Mounted only while editing, so nothing arriving mid-edit can reseed it.
@@ -135,12 +137,9 @@ export default function FolderRow({
               : `Collapse ${folder.name}`
           }
           sx={{
-            flexShrink: 0,
-            padding: "0.125rem",
-            color: theme.palette.text.primary,
+            ...rowIconButtonSx(theme),
             transition: theme.transitions.create("transform"),
             transform: folder.isCollapsed ? "rotate(-90deg)" : "none",
-            ...focusRing(theme),
           }}
         >
           <KeyboardArrowDownIcon sx={{ fontSize: "1.25rem" }} />
@@ -154,11 +153,11 @@ export default function FolderRow({
             onClick={(event) => setMenuAnchor(event.currentTarget)}
             aria-label={`Actions for ${folder.name}`}
             aria-haspopup="menu"
+            aria-expanded={Boolean(menuAnchor)}
+            aria-controls={menuAnchor ? menuId : undefined}
             sx={{
-              flexShrink: 0,
-              padding: "0.125rem",
-              color: theme.palette.text.primary,
-              ...focusRing(theme),
+              ...rowIconButtonSx(theme),
+              ...(menuAnchor && { backgroundColor: theme.palette.grey[50] }),
             }}
           >
             <MoreVertIcon sx={{ fontSize: "1.25rem" }} />
@@ -166,35 +165,55 @@ export default function FolderRow({
         </Tooltip>
 
         <Menu
+          id={menuId}
           anchorEl={menuAnchor}
           open={Boolean(menuAnchor)}
           onClose={() => setMenuAnchor(null)}
+          variant="menu"
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+          transformOrigin={{ vertical: "top", horizontal: "right" }}
+          MenuListProps={{
+            "aria-label": `Actions for ${folder.name}`,
+            dense: true,
+            sx: { paddingY: 0 },
+          }}
+          slotProps={{ paper: { elevation: 0, sx: rowMenuPaperSx(theme) } }}
         >
           <MenuItem
             onClick={() => {
               setMenuAnchor(null);
               onStartRename();
             }}
+            sx={itemSx}
           >
-            <ListItemIcon>
+            <ListItemIcon sx={rowMenuIconSx}>
               <EditOutlinedIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText primaryTypographyProps={{ variant: "body2" }}>
-              Rename folder
-            </ListItemText>
+            <ListItemText
+              primary="Rename folder"
+              sx={{ margin: 0 }}
+              primaryTypographyProps={{ fontSize: "inherit" }}
+            />
           </MenuItem>
+          <Divider sx={{ "&&": { marginY: 0 } }} />
           <MenuItem
             onClick={() => {
               setMenuAnchor(null);
               onUngroup();
             }}
+            sx={{ ...itemSx, color: theme.palette.error.main }}
           >
-            <ListItemIcon>
+            <ListItemIcon sx={rowMenuIconSx}>
               <FolderOffOutlinedIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText primaryTypographyProps={{ variant: "body2" }}>
-              Ungroup
-            </ListItemText>
+            <ListItemText
+              primary="Ungroup"
+              sx={{ margin: 0 }}
+              primaryTypographyProps={{
+                fontSize: "inherit",
+                color: theme.palette.error.main,
+              }}
+            />
           </MenuItem>
         </Menu>
       </Box>

@@ -40,6 +40,38 @@ export const focusRing = (theme: Theme) => ({
   },
 });
 
+/** Star, kebab and chevron: one size and one rounded-square hover in every section. */
+export const rowIconButtonSx = (theme: Theme) =>
+  ({
+    flexShrink: 0,
+    padding: "0.25rem",
+    borderRadius: `${theme.shape.borderRadius}px`,
+    color: theme.palette.text.primary,
+    ...focusRing(theme),
+  }) as const;
+
+/** A row's kebab menu, so every section's menu looks the same. */
+export const rowMenuPaperSx = (theme: Theme) => ({
+  border: `1px solid ${theme.palette.divider}`,
+  borderRadius: "4px",
+  boxShadow: theme.shadows[2],
+  backgroundColor: theme.palette.common.white,
+});
+
+export const rowMenuItemSx = (theme: Theme) =>
+  ({
+    gap: "0.375rem",
+    minHeight: "auto",
+    padding: "0.625rem 1rem",
+    fontSize: theme.typography.body2.fontSize,
+    "&.Mui-focusVisible": {
+      outline: `2px solid ${theme.palette.primary.main}`,
+      outlineOffset: "-2px",
+    },
+  }) as const;
+
+export const rowMenuIconSx = { minWidth: 0, color: "inherit" } as const;
+
 export const toggleSx = (theme: Theme) => ({
   width: "2.5rem",
   height: "1.25rem",
@@ -169,17 +201,17 @@ export default function LayerRow({
   const starNote = unmappable
     ? "This dataset publishes no mappable layer"
     : restricted
-    ? "This layer is always in your favourites"
-    : starred
-    ? "Remove from favourites"
-    : "Add to favourites";
+      ? "This layer is always in your favourites"
+      : starred
+        ? "Remove from favourites"
+        : "Add to favourites";
 
   const blockedByLimit = !visible && !unmappable && atVisibleLimit;
   const toggleNote = unmappable
     ? "This dataset publishes no mappable layer"
     : blockedByLimit
-    ? `Switch a layer off first: up to ${MAX_VISIBLE_LAYERS} can be shown at once`
-    : "";
+      ? `Switch a layer off first: up to ${MAX_VISIBLE_LAYERS} can be shown at once`
+      : "";
 
   const toggle = (
     <Switch
@@ -386,9 +418,6 @@ export default function LayerRow({
           "&:hover .epic-map-grip, &:focus-within .epic-map-grip": {
             opacity: 1,
           },
-          "&:hover .epic-map-row-menu, &:focus-within .epic-map-row-menu": {
-            opacity: 1,
-          },
         }}
       >
         {draggable && (
@@ -425,94 +454,80 @@ export default function LayerRow({
           {visible && belowFloor && (beyondReach ? unreachableNote : zoomIn)}
         </Box>
 
-        <Tooltip title={starNote}>
-          <Box component="span" sx={{ display: "inline-flex" }}>
-            <IconButton
-              size="small"
-              onClick={() => toggleFavourite(layer)}
-              disabled={unmappable || starSaving || restricted}
-              aria-pressed={starred}
-              aria-label={
-                restricted
-                  ? `${layer.name} is always in your favourites`
-                  : starred
-                  ? `Remove ${layer.name} from favourites`
-                  : `Add ${layer.name} to favourites`
-              }
-              sx={{
-                flexShrink: 0,
-                padding: "0.125rem",
-                color: theme.palette.secondary.main,
-                // Grey rather than a dimmed gold: a star nobody can press is
-                // not a favourite half-set, so it should not read as one. At
-                // full strength, so it does not read as faded either.
-                "&.Mui-disabled": { color: theme.palette.text.disabled },
-                ...focusRing(theme),
-              }}
-            >
-              {starred ? (
-                <StarIcon sx={{ fontSize: "1.25rem" }} />
-              ) : (
-                <StarBorderIcon sx={{ fontSize: "1.25rem" }} />
-              )}
-            </IconButton>
-          </Box>
-        </Tooltip>
-
-        <IconButton
-          ref={menuButtonRef}
-          size="small"
-          aria-label={`Actions for ${layer.name}`}
-          className={menu ? "epic-map-row-menu" : undefined}
-          onClick={
-            menu
-              ? (event) => {
-                  const button = event.currentTarget;
-                  setMenuAnchor((current) => (current ? null : button));
+        <Box sx={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+          <Tooltip title={starNote}>
+            <Box component="span" sx={{ display: "inline-flex" }}>
+              <IconButton
+                size="small"
+                onClick={() => toggleFavourite(layer)}
+                disabled={unmappable || starSaving || restricted}
+                aria-pressed={starred}
+                aria-label={
+                  restricted
+                    ? `${layer.name} is always in your favourites`
+                    : starred
+                      ? `Remove ${layer.name} from favourites`
+                      : `Add ${layer.name} to favourites`
                 }
-              : undefined
-          }
-          aria-haspopup={menu ? "menu" : undefined}
-          aria-expanded={menu ? Boolean(menuAnchor) : undefined}
-          aria-controls={menuAnchor ? menuId : undefined}
-          sx={{
-            flexShrink: 0,
-            padding: "0.125rem",
-            color: theme.palette.text.primary,
-            // Subtle until the row is hovered or focused, but still tabbable.
-            ...(menu && {
-              opacity: menuAnchor ? 1 : 0.6,
-              transition: theme.transitions.create("opacity"),
-            }),
-            ...focusRing(theme),
-          }}
-        >
-          <MoreVertIcon sx={{ fontSize: "1.25rem" }} />
-        </IconButton>
+                sx={{
+                  ...rowIconButtonSx(theme),
+                  color: theme.palette.secondary.main,
+                  "&.Mui-disabled": { color: theme.palette.text.disabled },
+                }}
+              >
+                {starred ? (
+                  <StarIcon sx={{ fontSize: "1.25rem" }} />
+                ) : (
+                  <StarBorderIcon sx={{ fontSize: "1.25rem" }} />
+                )}
+              </IconButton>
+            </Box>
+          </Tooltip>
 
-        {menu?.({
-          id: menuId,
-          anchorEl: menuAnchor,
-          onClose: () => setMenuAnchor(null),
-        })}
+          <IconButton
+            ref={menuButtonRef}
+            size="small"
+            aria-label={`Actions for ${layer.name}`}
+            onClick={
+              menu
+                ? (event) => {
+                    const button = event.currentTarget;
+                    setMenuAnchor((current) => (current ? null : button));
+                  }
+                : undefined
+            }
+            aria-haspopup={menu ? "menu" : undefined}
+            aria-expanded={menu ? Boolean(menuAnchor) : undefined}
+            aria-controls={menuAnchor ? menuId : undefined}
+            sx={{
+              ...rowIconButtonSx(theme),
+              ...(menuAnchor && { backgroundColor: theme.palette.grey[50] }),
+            }}
+          >
+            <MoreVertIcon sx={{ fontSize: "1.25rem" }} />
+          </IconButton>
 
-        <IconButton
-          size="small"
-          onClick={() => toggleExpanded(layer.id)}
-          aria-expanded={expanded}
-          aria-controls={infoId}
-          aria-label={`Layer details for ${layer.name}`}
-          sx={{
-            flexShrink: 0,
-            padding: "0.125rem",
-            color: theme.palette.text.primary,
-            transition: theme.transitions.create("transform"),
-            transform: expanded ? "rotate(180deg)" : "none",
-            ...focusRing(theme),
-          }}
-        >
-          <KeyboardArrowDownIcon sx={{ fontSize: "1.25rem" }} />
-        </IconButton>
+          {menu?.({
+            id: menuId,
+            anchorEl: menuAnchor,
+            onClose: () => setMenuAnchor(null),
+          })}
+
+          <IconButton
+            size="small"
+            onClick={() => toggleExpanded(layer.id)}
+            aria-expanded={expanded}
+            aria-controls={infoId}
+            aria-label={`Layer details for ${layer.name}`}
+            sx={{
+              ...rowIconButtonSx(theme),
+              transition: theme.transitions.create("transform"),
+              transform: expanded ? "rotate(180deg)" : "none",
+            }}
+          >
+            <KeyboardArrowDownIcon sx={{ fontSize: "1.25rem" }} />
+          </IconButton>
+        </Box>
       </Box>
 
       <Collapse in={expanded} id={infoId}>
