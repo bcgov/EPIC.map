@@ -54,6 +54,10 @@ ENV_REGION_ENTITY = 'ENV'
 # EPIC public project ids are Mongo ObjectIds; Track stores them as free text.
 EPIC_GUID = re.compile(r'^[0-9a-fA-F]{24}$')
 
+# An EA certificate number: one to three letters for the sector, the year, and a
+# sequence - E12-03, M23-01, and the older WD08-01, IND02-01, MD94-01, TD04-01.
+EA_CERTIFICATE = re.compile(r'^[A-Za-z]{1,3}\d{2}-\d{2}$')
+
 # One refresh per process at a time; other requests wait for its answer.
 REFRESH_LOCK = threading.Lock()
 
@@ -119,7 +123,7 @@ class TrackService:
             {'filters': [{'id': 'project.name', 'value': [project['name']]}]},
         )
         works = _sorted_works([
-            _to_work(work)
+            _to_work(work, project.get('description'))
             for work in (listing or {}).get('items', [])
             if work.get('project_id') == project_id
         ])
@@ -322,8 +326,21 @@ def _id_of(value) -> Optional[int]:
     return value.get('id') if isinstance(value, dict) else None
 
 
+def _ea_certificate(value) -> Optional[str]:
+    """Return the project's certificate number, or None for whatever else the field holds.
+
+    Track records the number as free text, and the field doubles as a status on
+    over a hundred of the active projects in dev. Only a number is a
+    certificate, so only a number earns the card's certificate tag and answers
+    the filter bar's Certified toggle.
+    """
+    number = value.strip() if isinstance(value, str) else ''
+    return number if EA_CERTIFICATE.match(number) else None
+
+
 def _to_project(project: dict, location: tuple, has_works_in_progress: bool) -> dict:
     longitude, latitude = location
+    certificate = _ea_certificate(project.get('ea_certificate'))
     return {
         'id': project['id'],
         'name': project.get('name'),
@@ -335,8 +352,8 @@ def _to_project(project: dict, location: tuple, has_works_in_progress: bool) -> 
         'proponent_name': _name_of(project.get('proponent')),
         'region_id': _id_of(project.get('region_env')),
         'region_name': _name_of(project.get('region_env')),
-        'ea_certificate': project.get('ea_certificate'),
-        'certificate_issued': bool((project.get('ea_certificate') or '').strip()),
+        'ea_certificate': certificate,
+        'certificate_issued': certificate is not None,
         'has_works_in_progress': has_works_in_progress,
         'epic_url': _epic_url(project.get('epic_guid')),
     }
@@ -351,7 +368,23 @@ def _epic_url(epic_guid) -> Optional[str]:
     return f'{base}/p/{guid}/project-details'
 
 
-def _to_work(work: dict) -> dict:
+def _work_description(work: dict, project_description: Optional[str]) -> Optional[str]:
+    """Return the description of this work, never the project's.
+
+    report_description is the one Track records per work. epic_description is
+    the project's EPIC blurb on 57 of the 141 works in dev - the paragraph the
+    card already shows above the list - so it only stands in where the work has
+    no report description of its own, and never where it repeats the project's.
+    """
+    project_text = (project_description or '').strip()
+    for value in (work.get('report_description'), work.get('epic_description')):
+        description = (value or '').strip()
+        if description and description != project_text:
+            return description
+    return None
+
+
+def _to_work(work: dict, project_description: Optional[str]) -> dict:
     phase = work.get('current_work_phase') or {}
     title = ' - '.join(
         part for part in (_name_of(work.get('work_type')), (work.get('simple_title') or '').strip()) if part
@@ -359,12 +392,12 @@ def _to_work(work: dict) -> dict:
     return {
         'id': work.get('id'),
         'title': title or work.get('title'),
+        # Track's own work_state, which is what Track's work pages show.
         'state': work.get('work_state'),
         'phase_name': phase.get('name') or _name_of(phase.get('phase')),
         'start_date': work.get('start_date'),
         'decision_date': work.get('work_decision_date') or work.get('decision_date'),
-        # The EPIC (public) description where Track has one.
-        'description': work.get('epic_description') or work.get('report_description'),
+        'description': _work_description(work, project_description),
     }
 
 
