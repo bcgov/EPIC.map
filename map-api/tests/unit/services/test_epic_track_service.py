@@ -69,13 +69,16 @@ def _work(project_id, work_state):
     return {'id': project_id * 10, 'project_id': project_id, 'work_state': work_state}
 
 
-def _track(projects, works):
-    """Answer Track's two endpoints, in place of requests.get."""
+def _track(projects, works, phases=None):
+    """Answer Track's GET endpoints, in place of requests.get. phases is keyed by work id."""
     def get(url, params=None, headers=None, timeout=None):  # pylint: disable=unused-argument
         if url == f'{TRACK_URL}/api/v1/projects':
             return _Response(projects)
         if url == f'{TRACK_URL}/api/v1/works':
             return _Response(works)
+        if url.startswith(f'{TRACK_URL}/api/v1/works/') and url.endswith('/phases'):
+            work_id = int(url.split('/')[-2])
+            return _Response((phases or {}).get(work_id, []))
         raise AssertionError(f'unexpected url {url}')
     return get
 
@@ -347,6 +350,7 @@ def test_project_works_are_listed_by_project_name(app):
         'start_date': '2022-01-10T08:00:00+00:00',
         'decision_date': '2023-10-10T07:00:00+00:00',
         'description': 'Proposes to raise the tailings facility.',
+        'decision': None,
     }]
 
 
@@ -391,6 +395,54 @@ def test_a_work_is_not_described_by_its_project(app):
         work = TrackService.project_works(1)[0]
 
     assert work['description'] is None
+
+
+def _phase(decision, decided_on):
+    return {'decision_milestone': 'Amendment Decision', 'decision': decision,
+            'decision_milestone_date': decided_on}
+
+
+def test_a_decided_work_carries_its_latest_decision(app):
+    """The outcome of the most recent decision milestone across the work's phases."""
+    phases = {1: [
+        _phase('Referred', '2023-01-05T08:00:00+00:00'),
+        _phase('Amendment Granted', '2023-10-10T07:00:00+00:00'),
+        _phase(None, None),
+    ]}
+    with patch(POST, side_effect=_track_with_listing([_listed_work(1)])), \
+            patch(GET, side_effect=_track([_project(1)], [], phases)):
+        work = TrackService.project_works(1)[0]
+
+    assert work['decision'] == 'Amendment Granted'
+
+
+def test_only_decided_works_ask_for_their_phases(app):
+    """A work still under way has no decision to fetch."""
+    listing = [_listed_work(1), _listed_work(2, work_state='IN_PROGRESS', work_decision_date=None)]
+    with patch(POST, side_effect=_track_with_listing(listing)), \
+            patch(GET, side_effect=_track([_project(1)], [])) as got:
+        works = TrackService.project_works(1)
+
+    assert [c.args[0] for c in got.call_args_list if c.args[0].endswith('/phases')] == [
+        f'{TRACK_URL}/api/v1/works/1/phases'
+    ]
+    assert [work['decision'] for work in works] == [None, None]
+
+
+def test_a_failed_phases_call_leaves_the_work_without_a_decision(app):
+    """The card still lists the work, with its date."""
+    track = _track([_project(1)], [])
+
+    def get(url, **kwargs):
+        if url.endswith('/phases'):
+            raise requests.ConnectionError('down')
+        return track(url, **kwargs)
+
+    with patch(POST, side_effect=_track_with_listing([_listed_work(1)])), patch(GET, side_effect=get):
+        work = TrackService.project_works(1)[0]
+
+    assert work['decision'] is None
+    assert work['decision_date'] == '2023-10-10T07:00:00+00:00'
 
 
 def test_project_works_are_cached(app):

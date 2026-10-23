@@ -175,6 +175,7 @@ const work = (overrides: Partial<ProjectWork>): ProjectWork => ({
   title: "Amendment",
   state: "COMPLETED",
   phaseName: "Amendment Review (Typical)",
+  decision: null,
   decisionDate: "2023-10-10T07:00:00+00:00",
   description: null,
   ...overrides,
@@ -195,6 +196,15 @@ describe("workMetaLine", () => {
     expect(workMetaLine(work({ state: "TERMINATED" }))).toBe(
       "Decision · 10 Oct 2023",
     );
+  });
+
+  it("names the decision's outcome between the two", () => {
+    expect(workMetaLine(work({ decision: "Amendment Granted" }))).toBe(
+      "Decision · Amendment Granted · 10 Oct 2023",
+    );
+    expect(
+      workMetaLine(work({ decision: "Amendment Granted", decisionDate: "x" })),
+    ).toBe("Decision · Amendment Granted");
   });
 
   it("falls back to the phase when a decided work has no date", () => {
