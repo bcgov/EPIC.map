@@ -3,8 +3,14 @@ import { useTheme, type Theme } from "@mui/material/styles";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import { useLocalLayerInfo } from "@/api/useLocalLayerInfo";
 import { useLayers } from "@/components/Layers/LayersContext";
-import { DEFAULT_LAYER_OPACITY } from "@/utils/config";
-import { isLocalLayer } from "@/utils/localLayers";
+import {
+  DEFAULT_LAYER_LINE_WIDTH,
+  DEFAULT_LAYER_OPACITY,
+  LAYER_LINE_WIDTH_STEP,
+  MAX_LAYER_LINE_WIDTH,
+  MIN_LAYER_LINE_WIDTH,
+} from "@/utils/config";
+import { hasWidthSlider, isLocalLayer } from "@/utils/localLayers";
 import { formatDate } from "@/utils/text";
 
 /**
@@ -55,9 +61,13 @@ export const sliderSx = (theme: Theme) => ({
  */
 export default function LayerInfo({ layer }: { layer: CatalogueLayer }) {
   const theme = useTheme();
-  const { opacities, setOpacity } = useLayers();
+  const { opacities, setOpacity, lineWidths, setLineWidth } = useLayers();
 
   const opacity = opacities[layer.id] ?? DEFAULT_LAYER_OPACITY;
+
+  // One slider, a width instead of an opacity for a layer drawn as outlines.
+  const width = hasWidthSlider(layer.objectName);
+  const lineWidth = lineWidths[layer.id] ?? DEFAULT_LAYER_LINE_WIDTH;
 
   // A hosted layer carries no catalogue record, so its date is the day map-api
   // last loaded the extract it is serving - asked for only for those layers.
@@ -112,23 +122,33 @@ export default function LayerInfo({ layer }: { layer: CatalogueLayer }) {
             gap: "0.5rem",
           }}
         >
-          <Typography component="span" id={`${layer.id}-opacity`} sx={labelSx}>
-            Opacity
+          <Typography component="span" id={`${layer.id}-slider`} sx={labelSx}>
+            {width ? "Line width" : "Opacity"}
           </Typography>
           <Typography
             component="span"
             sx={{ ...valueSx, fontWeight: theme.typography.fontWeightBold }}
           >
-            {opacity}%
+            {width ? `${lineWidth.toFixed(1)} px` : `${opacity}%`}
           </Typography>
         </Box>
 
+        {/* onChange, not onChangeCommitted, so the drag is live. */}
         <Slider
-          value={opacity}
-          onChange={(_, value) => setOpacity(layer.id, value as number)}
+          value={width ? lineWidth : opacity}
+          onChange={(_, value) =>
+            width
+              ? setLineWidth(layer.id, value as number)
+              : setOpacity(layer.id, value as number)
+          }
+          min={width ? MIN_LAYER_LINE_WIDTH : 0}
+          max={width ? MAX_LAYER_LINE_WIDTH : 100}
+          step={width ? LAYER_LINE_WIDTH_STEP : 1}
           disabled={!layer.objectName}
-          aria-labelledby={`${layer.id}-opacity`}
-          getAriaValueText={(value) => `${value} percent`}
+          aria-labelledby={`${layer.id}-slider`}
+          getAriaValueText={(value) =>
+            width ? `${value.toFixed(1)} pixels` : `${value} percent`
+          }
           sx={sliderSx(theme)}
         />
 

@@ -3,13 +3,22 @@ import { useLocalLayerStyle } from "@/api/useLocalLayerStyle";
 import {
   hideLocalVectorLayer,
   setLocalVectorLayerFilters,
+  setLocalVectorLayerLineWidth,
   setLocalVectorLayerOpacity,
   showLocalVectorLayer,
 } from "@/components/Layers/layerUtils";
 import { useHostedLayerFilters } from "@/components/Layers/useHostedLayerFilters";
 import { useLayers } from "@/components/Layers/LayersContext";
-import { DEFAULT_LAYER_OPACITY, localTileUrl } from "@/utils/config";
-import { isAlwaysDrawn, localLayerId } from "@/utils/localLayers";
+import {
+  DEFAULT_LAYER_LINE_WIDTH,
+  DEFAULT_LAYER_OPACITY,
+  localTileUrl,
+} from "@/utils/config";
+import {
+  hasWidthSlider,
+  isAlwaysDrawn,
+  localLayerId,
+} from "@/utils/localLayers";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 
 /**
@@ -24,7 +33,7 @@ import { useMapWidget } from "@/widget/MapWidgetContext";
  * map-api does keep.
  */
 export default function HostedLayer({ objectName }: { objectName: string }) {
-  const { map, visibleIds, opacities } = useLayers();
+  const { map, visibleIds, opacities, lineWidths } = useLayers();
   const { apiBaseUrl } = useMapWidget();
 
   const layerId = localLayerId(objectName);
@@ -32,6 +41,10 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
   // so the panel's set says nothing about whether it should be drawn.
   const visible = isAlwaysDrawn(objectName) || visibleIds.has(layerId);
   const opacity = opacities[layerId] ?? DEFAULT_LAYER_OPACITY;
+  // Null for a layer whose slider is an opacity: its style keeps its widths.
+  const lineWidth = hasWidthSlider(objectName)
+    ? (lineWidths[layerId] ?? DEFAULT_LAYER_LINE_WIDTH)
+    : null;
 
   // Not asked for until wanted: the style is a few hundred classes.
   const { data: style } = useLocalLayerStyle(visible ? objectName : null);
@@ -58,10 +71,23 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
       style,
     );
     setLocalVectorLayerOpacity(map, layerId, style, opacity);
+    if (lineWidth != null) {
+      setLocalVectorLayerLineWidth(map, layerId, style, lineWidth);
+    }
     // After showing: adding a layer takes the style's filter, so the client's
     // reason has to be applied to the layer that now exists.
     setLocalVectorLayerFilters(map, layerId, style, filters);
-  }, [map, layerId, objectName, visible, style, apiBaseUrl, opacity, filters]);
+  }, [
+    map,
+    layerId,
+    objectName,
+    visible,
+    style,
+    apiBaseUrl,
+    opacity,
+    lineWidth,
+    filters,
+  ]);
 
   return null;
 }

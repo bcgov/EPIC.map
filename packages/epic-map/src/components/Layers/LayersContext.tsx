@@ -89,6 +89,8 @@ interface LayersContextValue {
   moveFavourite: (layerId: string, folderId: number | null) => boolean;
   expandedId: string | null;
   opacities: Readonly<Record<string, number>>;
+  /** Outline widths in pixels, for the layers whose slider is a width. */
+  lineWidths: Readonly<Record<string, number>>;
   atVisibleLimit: boolean;
   toggleVisible: (layer: CatalogueLayer) => void;
   /** Switches off every enabled layer that is not a favourite. */
@@ -96,6 +98,7 @@ interface LayersContextValue {
   toggleFavourite: (layer: CatalogueLayer) => void;
   toggleExpanded: (layerId: string) => void;
   setOpacity: (layerId: string, percent: number) => void;
+  setLineWidth: (layerId: string, pixels: number) => void;
 }
 
 const LayersContext = createContext<LayersContextValue | null>(null);
@@ -207,6 +210,11 @@ export function LayersProvider({
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [opacityDrafts, setOpacityDrafts] = useState<
+    Readonly<Record<string, number>>
+  >({});
+
+  // Session state: a hosted layer has no `user_applied_layers` row to hold it.
+  const [lineWidths, setLineWidths] = useState<
     Readonly<Record<string, number>>
   >({});
 
@@ -367,6 +375,11 @@ export function LayersProvider({
     [map, saveOpacity],
   );
 
+  // Nothing painted here: HostedLayer holds the style and follows this.
+  const setLineWidth = useCallback((layerId: string, pixels: number) => {
+    setLineWidths((current) => ({ ...current, [layerId]: pixels }));
+  }, []);
+
   const focusLayer = useCallback(
     (layer: CatalogueLayer) => {
       if (!map || !layer.objectName) return;
@@ -427,12 +440,14 @@ export function LayersProvider({
       moveFavourite,
       expandedId,
       opacities,
+      lineWidths,
       atVisibleLimit,
       toggleVisible,
       turnAllOff,
       toggleFavourite,
       toggleExpanded,
       setOpacity,
+      setLineWidth,
     }),
     [
       map,
@@ -467,12 +482,14 @@ export function LayersProvider({
       moveFavourite,
       expandedId,
       opacities,
+      lineWidths,
       atVisibleLimit,
       toggleVisible,
       turnAllOff,
       toggleFavourite,
       toggleExpanded,
       setOpacity,
+      setLineWidth,
     ],
   );
 

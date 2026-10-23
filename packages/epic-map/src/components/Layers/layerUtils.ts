@@ -607,6 +607,30 @@ export const setLocalVectorLayerOpacity = (
 };
 
 /**
+ * Stroke a hosted layer's outlines at the width the user asked for.
+ *
+ * Assigned, not scaled like the opacity above, so the px shown is the px
+ * drawn. Fills and circles keep the symbology the style gave them.
+ */
+export const setLocalVectorLayerLineWidth = (
+  map: MapLibreMap,
+  layerId: string,
+  style: LocalLayerStyle,
+  pixels: number,
+) => {
+  whenStyleReady(map, () => {
+    style.layers.forEach((spec) => {
+      if (spec.type !== "line") return;
+
+      const drawn = localDrawnId(layerId, spec.id);
+      if (!map.getLayer(drawn)) return;
+
+      map.setPaintProperty(drawn, "line-width", pixels);
+    });
+  });
+};
+
+/**
  * Narrow what a hosted layer draws, without disturbing its symbology.
  *
  * The style's own filter decides which features a spec is *for* - a fill for
