@@ -162,6 +162,7 @@ export default function LayerRow({
     focusErrors,
     focusLayer,
     belowFloorIds,
+    layerFloors,
     beyondReachIds,
     atVisibleLimit,
     toggleVisible,
@@ -193,6 +194,8 @@ export default function LayerRow({
   const beyondReach = beyondReachIds.has(layer.id);
 
   const focusError = focusErrors[layer.id];
+
+  const floor = layerFloors[layer.id];
 
   // Star is pending while the API request is out.
   const starSaving = favouritePendingIds.has(layer.id);
@@ -314,6 +317,14 @@ export default function LayerRow({
   // label wraps around where it used to be.
   const hintIconSx = { flexShrink: 0, fontSize: "0.875rem" } as const;
 
+  // The prompt says which way to zoom, not how far, and the zoom cannot be read
+  // off the map. A failure to move is more urgent, so it wins the tooltip.
+  const zoomNote =
+    focusError ??
+    (floor === undefined
+      ? ""
+      : `This layer draws at zoom ${floor} and closer in`);
+
   const zoomInButton = (
     <Box
       component="button"
@@ -321,8 +332,8 @@ export default function LayerRow({
       onClick={() => focusLayer(layer)}
       disabled={focusing}
       aria-label={
-        focusError
-          ? `Zoom in to view ${layer.name}. ${focusError}`
+        zoomNote
+          ? `Zoom in to view ${layer.name}. ${zoomNote}`
           : `Zoom in to view ${layer.name}`
       }
       sx={{
@@ -355,8 +366,8 @@ export default function LayerRow({
 
   // The button stays pressable after a failure: the warehouse being slow or
   // busy is the usual reason, and a second press is what fixes it.
-  const zoomIn = focusError ? (
-    <Tooltip title={focusError}>{zoomInButton}</Tooltip>
+  const zoomIn = zoomNote ? (
+    <Tooltip title={zoomNote}>{zoomInButton}</Tooltip>
   ) : (
     zoomInButton
   );

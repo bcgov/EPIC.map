@@ -109,6 +109,9 @@ vi.mock("@/api/useLocalLayerStyle", () => {
     useLocalLayerStyle: (objectName: string | null) => ({
       data: objectName ? style : undefined,
     }),
+    // The floor the style above carries, keyed as the real hook keys it.
+    useLocalLayerFloors: (objectNames: readonly string[]) =>
+      Object.fromEntries(objectNames.map((objectName) => [objectName, 6])),
   };
 });
 

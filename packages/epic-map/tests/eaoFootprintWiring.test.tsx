@@ -58,6 +58,7 @@ vi.mock("@/api/useLocalLayerStyle", () => ({
   useLocalLayerStyle: (objectName: string | null) => ({
     data: objectName === null ? undefined : style,
   }),
+  useLocalLayerFloors: () => ({}),
 }));
 
 // Only footprintTrackIdAt is replaced: eaoSpecFilters stays real, because the

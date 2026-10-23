@@ -457,6 +457,19 @@ export interface LocalLayerStyle {
 }
 
 /**
+ * The zoom a hosted layer starts drawing at, gated as `showLocalVectorLayer`
+ * gates it: the shallowest zoom any spec draws at, never below the source's
+ * floor, since under that there is no tile. MIN_ZOOM means no floor.
+ */
+export const localStyleFloor = (style: LocalLayerStyle): number => {
+  const source = style.source.minZoom ?? MIN_ZOOM;
+  if (!style.layers.length) return source;
+  return Math.min(
+    ...style.layers.map((spec) => Math.max(spec.minZoom ?? source, source)),
+  );
+};
+
+/**
  * Layer types that paint the ground rather than label it. `symbol` and
  * `circle` are the basemap's labels, and staying under those is the point.
  */
