@@ -35,6 +35,13 @@ export interface HostedLayerSpec {
    * switched off. A reference layer like PIP is starred, listed and toggled.
    */
   alwaysDrawn?: boolean;
+  /**
+   * Whether the expanded row's slider sets outline width rather than opacity.
+   *
+   * True for PIP: opacity compounds where its outlines overlap and darkens
+   * unevenly, while a pixel width is the same width everywhere.
+   */
+  widthSlider?: boolean;
 }
 
 export const PIP_OBJECT_NAME = "WHSE_ADMIN_BOUNDARIES.PIP_CONSULTATION_AREAS_SP";
@@ -44,6 +51,8 @@ export const EAO_OBJECT_NAME = "EAO.PROJECT_DATA";
 export const HOSTED_LAYERS: readonly HostedLayerSpec[] = [
   {
     objectName: PIP_OBJECT_NAME,
+    // Overlapping outlines, drawn the way iMap draws them: thickness, not fade.
+    widthSlider: true,
     keyProperty: "cnsltn_area_guid",
     nameProperty: "cnsltn_area_name",
     recordNoun: "Nation",
@@ -89,6 +98,11 @@ export const LOCAL_LAYER_OBJECT_NAMES: readonly string[] = HOSTED_LAYERS.map(
  */
 export const localLayerId = (objectName: string): string =>
   `local-${objectName}`;
+
+/** Whether this layer's slider sets outline width instead of opacity. */
+export const hasWidthSlider = (
+  objectName: string | null | undefined,
+): boolean => Boolean(hostedLayer(objectName)?.widthSlider);
 
 /** Whether this layer is drawn whatever the panel says. */
 export const isAlwaysDrawn = (objectName: string | null | undefined): boolean =>

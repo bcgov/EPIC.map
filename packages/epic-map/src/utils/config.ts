@@ -240,6 +240,19 @@ export const CATALOGUE_DESCRIPTION_LIMIT = 220;
 export const DEFAULT_LAYER_OPACITY = 100;
 
 /**
+ * The line-width slider's bounds. Floored above zero, which draws nothing, and
+ * on the step grid below, off which MUI rounds the floor out of reach.
+ */
+export const MIN_LAYER_LINE_WIDTH = 0.3;
+export const MAX_LAYER_LINE_WIDTH = 6;
+
+/** Where the slider starts: the 3pt at 96dpi the .lyrx already strokes. */
+export const DEFAULT_LAYER_LINE_WIDTH = 4;
+
+/** One decimal, matching the px the label shows. */
+export const LAYER_LINE_WIDTH_STEP = 0.1;
+
+/**
  * How many layers may draw at once. Each one is a raster source refetching
  * tiles on every pan and zoom, so the panel stops well short of the row limit
  * the API enforces on stored layers.

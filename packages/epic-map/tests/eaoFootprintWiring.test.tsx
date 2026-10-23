@@ -97,7 +97,12 @@ vi.mock("@/components/Filters/FiltersContext", () => ({
 // Nothing here is switched on from the panel, which is the point: the EAO layer
 // has no row in it.
 vi.mock("@/components/Layers/LayersContext", () => ({
-  useLayers: () => ({ map: {}, visibleIds: new Set<string>(), opacities: {} }),
+  useLayers: () => ({
+    map: {},
+    visibleIds: new Set<string>(),
+    opacities: {},
+    lineWidths: {},
+  }),
 }));
 
 const { default: HostedLayer } = await import(

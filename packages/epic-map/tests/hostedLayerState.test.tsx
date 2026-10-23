@@ -145,27 +145,40 @@ const PIP_LAYER_ID = localLayerId(PIP_OBJECT_NAME);
  * contract the real row uses.
  */
 function HostedLayerRow() {
-  const { visibleIds, toggleVisible } = useLayers();
+  const { visibleIds, toggleVisible, lineWidths, setLineWidth } = useLayers();
   const on = visibleIds.has(PIP_LAYER_ID);
   return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={() =>
-        toggleVisible({
-          id: PIP_LAYER_ID,
-          objectName: PIP_OBJECT_NAME,
-        } as never)
-      }
-    >
-      hosted layer
-    </button>
+    <>
+      <button
+        type="button"
+        aria-pressed={on}
+        onClick={() =>
+          toggleVisible({
+            id: PIP_LAYER_ID,
+            objectName: PIP_OBJECT_NAME,
+          } as never)
+        }
+      >
+        hosted layer
+      </button>
+      {/* The expanded row's slider, reduced to one move. */}
+      <button
+        type="button"
+        aria-valuenow={lineWidths[PIP_LAYER_ID] ?? null}
+        onClick={() => setLineWidth(PIP_LAYER_ID, 1.5)}
+      >
+        line width
+      </button>
+    </>
   );
 }
 
 /** The row as the DOM holds it, since this package has no jest-dom. */
 const toggle = () => screen.getByRole("button", { name: "hosted layer" });
 const isOn = () => toggle().getAttribute("aria-pressed") === "true";
+
+const widthSlider = () => screen.getByRole("button", { name: "line width" });
+const widthShown = () => widthSlider().getAttribute("aria-valuenow");
 
 /**
  * The panel open or shut, over a provider that stays mounted either way.
@@ -223,6 +236,57 @@ const drawsOf = (objectName: string) =>
   ).length;
 
 afterEach(cleanup);
+
+describe("the hosted layer's line width", () => {
+  // Session state like the on/off above: PIP has no row to carry a setting.
+
+  /** A map reporting the layer as drawn, so the width reaches a paint call. */
+  const drawnMap = () => ({
+    ...fakeMap(),
+    getLayer: () => ({}),
+    setFilter: vi.fn(),
+  });
+
+  const widthsPainted = (map: { setPaintProperty: ReturnType<typeof vi.fn> }) =>
+    map.setPaintProperty.mock.calls
+      .filter((call) => call[1] === "line-width")
+      .map((call) => call[2]);
+
+  it("strokes the width the user set", async () => {
+    const map = drawnMap();
+    renderPanel(map);
+    await userEvent.click(toggle());
+
+    await userEvent.click(widthSlider());
+
+    expect(widthsPainted(map)).toContain(1.5);
+  });
+
+  it("keeps the width across a panel close", async () => {
+    const panel = renderPanel(drawnMap());
+    await userEvent.click(toggle());
+    await userEvent.click(widthSlider());
+
+    panel.reopen(false);
+    panel.reopen(true);
+
+    // Held by the provider, which the panel's sections do not unmount.
+    expect(widthShown()).toBe("1.5");
+  });
+
+  it("restrokes the width when the layer is switched off and on again", async () => {
+    const map = drawnMap();
+    renderPanel(map);
+    await userEvent.click(toggle());
+    await userEvent.click(widthSlider());
+
+    await userEvent.click(toggle());
+    map.setPaintProperty.mockClear();
+    await userEvent.click(toggle());
+
+    expect(widthsPainted(map)).toContain(1.5);
+  });
+});
 
 describe("the hosted layer across a panel close", () => {
   it("stays on when the panel is closed and reopened", async () => {

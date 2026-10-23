@@ -4,6 +4,7 @@ import {
   carryWidgetLayers,
   hideLocalVectorLayer,
   localDrawnIds,
+  setLocalVectorLayerLineWidth,
   setLocalVectorLayerOpacity,
   showLocalHighlight,
   showLocalVectorLayer,
@@ -504,6 +505,48 @@ describe("setLocalVectorLayerOpacity", () => {
   it("leaves a layer that is not on the map alone", () => {
     const harness = fakeMap();
     setLocalVectorLayerOpacity(harness.map, LAYER_ID, polygonStyle, 50);
+    harness.fire("styledata");
+
+    expect(harness.paint).toEqual([]);
+  });
+});
+
+describe("setLocalVectorLayerLineWidth", () => {
+  /** Draw the layer, then move the slider. */
+  const slide = (pixels: number, which: LocalLayerStyle = style) => {
+    const harness = fakeMap();
+    show(harness, which);
+    harness.paint.length = 0;
+    setLocalVectorLayerLineWidth(harness.map, LAYER_ID, which, pixels);
+    harness.fire("styledata");
+    return harness;
+  };
+
+  it("strokes the width the slider asks for, not a scaling of the style's", () => {
+    // Assigned, unlike the opacity above, so the px shown is the px drawn.
+    expect(slide(1.5).paint).toEqual([
+      {
+        id: "epic-local-pip-consultation-areas-line",
+        key: "line-width",
+        value: 1.5,
+      },
+    ]);
+  });
+
+  it("leaves a fill and a circle alone", () => {
+    // Only the slider's own property changes; the .lyrx keeps the rest.
+    expect(slide(2, polygonStyle).paint).toEqual([
+      {
+        id: "epic-local-pip-consultation-areas-line",
+        key: "line-width",
+        value: 2,
+      },
+    ]);
+  });
+
+  it("leaves a layer that is not on the map alone", () => {
+    const harness = fakeMap();
+    setLocalVectorLayerLineWidth(harness.map, LAYER_ID, style, 2);
     harness.fire("styledata");
 
     expect(harness.paint).toEqual([]);
