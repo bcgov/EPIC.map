@@ -98,6 +98,7 @@ export interface ProjectWork {
   title: string | null;
   state: string | null;
   phaseName: string | null;
+  decision: string | null;
   decisionDate: string | null;
   description: string | null;
 }
