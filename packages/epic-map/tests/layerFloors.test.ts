@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   layersBelowFloor,
+  localStyleFloor,
   type LayerFloor,
+  type LocalLayerStyle,
 } from "@/components/Layers/layerUtils";
-import { isBeyondMapZoom, MAX_ZOOM } from "@/utils/config";
+import {
+  isBeyondMapZoom,
+  LOCAL_TILE_MAX_ZOOM,
+  MAX_ZOOM,
+  MIN_ZOOM,
+} from "@/utils/config";
 
 // Real published floors: parks draw from z5, reserves z8, lakes z11.
 const floors: LayerFloor[] = [
@@ -98,5 +105,51 @@ describe("isBeyondMapZoom", () => {
     // Past it there is no gesture that brings the layer on screen, so the row
     // must not offer to zoom there.
     expect(isBeyondMapZoom(MAX_ZOOM + 1)).toBe(true);
+  });
+});
+
+describe("localStyleFloor", () => {
+  /** A hosted layer's style as map-api returns it, with the floors varied. */
+  const style = (
+    source: number | null,
+    ...specFloors: (number | null | undefined)[]
+  ): LocalLayerStyle => ({
+    source: { minZoom: source, maxZoom: LOCAL_TILE_MAX_ZOOM },
+    layers: specFloors.map((minZoom, index) => ({
+      id: `spec-${index}`,
+      type: "line",
+      sourceLayer: "pip_consultation_areas",
+      minZoom,
+      paint: {},
+    })),
+  });
+
+  it("reads the floor the .lyrx put on the source", () => {
+    // PIP: one outline layer, gated at 1:6,000,000, which is zoom 6.
+    expect(localStyleFloor(style(6, null))).toBe(6);
+  });
+
+  it("takes a spec's own floor where it draws deeper than the source", () => {
+    expect(localStyleFloor(style(6, 9))).toBe(9);
+  });
+
+  it("takes the shallowest spec, which is where the layer first appears", () => {
+    // A fill from z9 over an outline from z6: something is drawn at z6.
+    expect(localStyleFloor(style(6, 9, null))).toBe(6);
+  });
+
+  it("holds a spec at the source's floor, under which there is no tile", () => {
+    // The source stops the fetch, so a spec asking for z4 draws nothing there.
+    expect(localStyleFloor(style(6, 4))).toBe(6);
+  });
+
+  it("gives a layer with no limit the map's own floor", () => {
+    // The footprints: drawn wherever the map goes, so nothing to prompt about.
+    expect(localStyleFloor(style(null, null))).toBe(MIN_ZOOM);
+  });
+
+  it("falls back to the source for a style that draws nothing", () => {
+    expect(localStyleFloor(style(6))).toBe(6);
+    expect(localStyleFloor(style(null))).toBe(MIN_ZOOM);
   });
 });
