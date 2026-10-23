@@ -13,6 +13,11 @@ import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
 import StarOutlineIcon from "@mui/icons-material/StarOutline";
 import { useTheme } from "@mui/material/styles";
 import type { MoveDestination } from "@/components/Layers/Favourites/grouping";
+import {
+  rowMenuIconSx,
+  rowMenuItemSx,
+  rowMenuPaperSx,
+} from "@/components/Layers/LayerRow";
 import { MAX_FAVOURITE_FOLDERS } from "@/utils/config";
 
 /** The current group, per the design: BC blue, bold, checked. */
@@ -53,19 +58,10 @@ export default function MoveToGroupMenu({
   const theme = useTheme();
 
   const itemSx = {
-    gap: "0.5rem",
-    minHeight: "auto",
-    padding: "0.5rem 1rem",
+    ...rowMenuItemSx(theme),
     // A long folder name wraps rather than truncating.
     whiteSpace: "normal",
-    fontSize: theme.typography.body2.fontSize,
-    "&.Mui-focusVisible": {
-      outline: `2px solid ${theme.palette.primary.main}`,
-      outlineOffset: "-2px",
-    },
   } as const;
-
-  const iconSx = { minWidth: 0, color: "inherit" } as const;
 
   const destinationItem = (destination: MoveDestination) => {
     const { current } = destination;
@@ -89,7 +85,7 @@ export default function MoveToGroupMenu({
             : theme.typography.fontWeightRegular,
         }}
       >
-        <ListItemIcon sx={iconSx}>
+        <ListItemIcon sx={rowMenuIconSx}>
           <Icon fontSize="small" />
         </ListItemIcon>
         <ListItemText
@@ -134,12 +130,9 @@ export default function MoveToGroupMenu({
         paper: {
           elevation: 0,
           sx: {
+            ...rowMenuPaperSx(theme),
             minWidth: "12rem",
             maxWidth: "18rem",
-            border: `1px solid ${theme.palette.divider}`,
-            borderRadius: "4px",
-            boxShadow: theme.shadows[2],
-            backgroundColor: theme.palette.common.white,
           },
         },
       }}
@@ -187,7 +180,7 @@ export default function MoveToGroupMenu({
         }}
         sx={{ ...itemSx, color: theme.palette.text.primary }}
       >
-        <ListItemIcon sx={iconSx}>
+        <ListItemIcon sx={rowMenuIconSx}>
           <CreateNewFolderIcon fontSize="small" />
         </ListItemIcon>
         <ListItemText

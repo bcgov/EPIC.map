@@ -19,7 +19,11 @@ import {
   type ImportedLayer,
 } from "@/api/useImportedLayers";
 import { sliderSx } from "@/components/Layers/LayerInfo";
-import { focusRing, toggleSx } from "@/components/Layers/LayerRow";
+import {
+  focusRing,
+  rowIconButtonSx,
+  toggleSx,
+} from "@/components/Layers/LayerRow";
 import { useLayers } from "@/components/Layers/LayersContext";
 import {
   opacityOf,
@@ -77,13 +81,7 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
   const menuId = `${layer.id}-menu`;
   const opacityLabelId = `${layer.id}-opacity`;
 
-  const iconButtonSx = {
-    flexShrink: 0,
-    padding: "0.25rem",
-    borderRadius: `${theme.shape.borderRadius}px`,
-    color: theme.palette.text.primary,
-    ...focusRing(theme),
-  } as const;
+  const iconButtonSx = rowIconButtonSx(theme);
 
   const captionSx = {
     display: "flex",
