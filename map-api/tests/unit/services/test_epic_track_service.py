@@ -129,6 +129,7 @@ def test_open_projects_are_returned_with_their_works_in_progress(app):
         'region_id': 2,
         'region_name': 'Cariboo',
         'ea_certificate': 'M23-01',
+        'certificate_status': None,
         'certificate_issued': True,
         'has_works_in_progress': True,
         'epic_url': 'https://projects.eao.gov.bc.ca/p/5cd9b4b56a15600025df0cc8/project-details',
@@ -435,7 +436,6 @@ def test_the_epic_url_follows_the_configured_site(app, monkeypatch):
 
 
 @pytest.mark.parametrize('ea_certificate', [
-    None, '', '   ', 42,
     # Track's certificate field doubles as a status on over a hundred of the
     # active projects in dev, misspellings included.
     'Withdrawn', 'Wtihdrawn', 'In progress', 'Terminated', 'N/A',
@@ -443,13 +443,35 @@ def test_the_epic_url_follows_the_configured_site(app, monkeypatch):
     # Near misses: a number is three parts, and nothing else.
     'M23', 'M2301', 'M231-01', 'EACM23-01', 'M23-01 amended', '23-01',
 ])
-def test_a_project_whose_certificate_field_holds_no_number_has_none_issued(app, ea_certificate):
-    """Anything but a certificate number leaves the card's tag and the Certified filter off."""
+def test_a_project_whose_certificate_field_holds_a_status_has_none_issued(app, ea_certificate):
+    """Anything but a number is the card's grey status, and the Certified filter stays off."""
     with patch(POST, return_value=_token()), \
             patch(GET, side_effect=_track([_project(1, ea_certificate=ea_certificate)], [])):
         project = TrackService.open_project(1)
 
     assert project['ea_certificate'] is None
+    assert project['certificate_status'] == ea_certificate
+    assert project['certificate_issued'] is False
+
+
+def test_a_certificate_status_is_trimmed(app):
+    """Track allows stray whitespace around the value; the tag should not show it."""
+    with patch(POST, return_value=_token()), \
+            patch(GET, side_effect=_track([_project(1, ea_certificate='  Withdrawn  ')], [])):
+        project = TrackService.open_project(1)
+
+    assert project['certificate_status'] == 'Withdrawn'
+
+
+@pytest.mark.parametrize('ea_certificate', [None, '', '   ', 42])
+def test_a_project_with_an_empty_certificate_field_has_no_tag(app, ea_certificate):
+    """Nothing to say about the certificate means neither tag, and the filter off."""
+    with patch(POST, return_value=_token()), \
+            patch(GET, side_effect=_track([_project(1, ea_certificate=ea_certificate)], [])):
+        project = TrackService.open_project(1)
+
+    assert project['ea_certificate'] is None
+    assert project['certificate_status'] is None
     assert project['certificate_issued'] is False
 
 
@@ -467,6 +489,7 @@ def test_a_project_with_a_certificate_number_has_one_issued(app, ea_certificate)
         project = TrackService.open_project(1)
 
     assert project['ea_certificate'] == ea_certificate.strip()
+    assert project['certificate_status'] is None
     assert project['certificate_issued'] is True
 
 

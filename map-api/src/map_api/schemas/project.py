@@ -49,6 +49,13 @@ class ProjectSchema(ProjectPointSchema):
         allow_none=True, data_key='regionName', metadata={'description': 'ENV region'}
     )
     ea_certificate = fields.Str(allow_none=True, data_key='eaCertificate')
+    certificate_status = fields.Str(
+        allow_none=True,
+        data_key='certificateStatus',
+        metadata={
+            'description': "The certificate field's value when it holds a status, not a number"
+        },
+    )
     longitude = fields.Float()
     latitude = fields.Float()
     epic_url = fields.Str(
