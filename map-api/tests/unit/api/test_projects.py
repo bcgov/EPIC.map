@@ -34,6 +34,7 @@ PROJECT = {
     'region_id': 2,
     'region_name': 'Cariboo',
     'ea_certificate': 'M23-01',
+    'certificate_status': None,
     'certificate_issued': True,
     'has_works_in_progress': True,
     'epic_url': 'https://projects.eao.gov.bc.ca/p/5cd9b4b56a15600025df0cc8/project-details',
@@ -94,10 +95,25 @@ def test_one_project_is_its_card(app, client, jwt, session):
         'proponentName': 'EVR Operations Limited',
         'regionName': 'Cariboo',
         'eaCertificate': 'M23-01',
+        'certificateStatus': None,
         'longitude': -121.5,
         'latitude': 53.1,
         'epicUrl': 'https://projects.eao.gov.bc.ca/p/5cd9b4b56a15600025df0cc8/project-details',
     }
+
+
+def test_a_certificate_status_travels_in_place_of_a_number(app, client, jwt, session):
+    """A refused or withdrawn certificate still reaches the card, as the grey status tag."""
+    refused = {**PROJECT, 'ea_certificate': None, 'certificate_status': 'Certificate Refused',
+               'certificate_issued': False}
+    with patch(SERVICE) as service:
+        service.open_project.return_value = refused
+        response = client.get(f'{ENDPOINT}/7', headers=factory_auth_header(jwt))
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json['eaCertificate'] is None
+    assert response.json['certificateStatus'] == 'Certificate Refused'
+    assert response.json['certificateIssued'] is False
 
 
 def test_a_closed_or_unknown_project_is_a_404(app, client, jwt, session):

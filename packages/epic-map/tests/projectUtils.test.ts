@@ -3,6 +3,7 @@ import { createExpression } from "@maplibre/maplibre-gl-style-spec";
 import type { ExpressionSpecification, Map as MapLibreMap } from "maplibre-gl";
 import type { ProjectWork } from "@/api/useProjects";
 import {
+  certificateTag,
   formatWorkDate,
   glyphForType,
   keepProjectsOnTop,
@@ -12,6 +13,7 @@ import {
   projectImageId,
   PROJECTS_LAYER_ID,
   projectSortKey,
+  TAG_COLORS,
   workMetaLine,
   workStateBadge,
 } from "@/components/Projects/projectUtils";
@@ -214,5 +216,42 @@ describe("formatWorkDate", () => {
 
   it("is null for something that is not a date", () => {
     expect(formatWorkDate("soon")).toBeNull();
+  });
+});
+
+/**
+ * Which certificate tag a project gets. Track's certificate field doubles as a
+ * status, and only a number has counted as issued since c3b0f6d - but the
+ * status was dropped along with it, so a refused or withdrawn certificate drew
+ * no tag at all. It now reads as itself, without claiming an issued one.
+ */
+describe("certificateTag", () => {
+  it("prefixes a certificate number, in the issued green", () => {
+    expect(certificateTag({ eaCertificate: "M23-01", certificateStatus: null })).toEqual({
+      text: "Certificate # M23-01",
+      colors: TAG_COLORS.certificate,
+    });
+  });
+
+  it.each(["Certificate Refused", "Withdrawn", "Not designated reviewable"])(
+    "shows %s as itself, in neutral grey",
+    (status) => {
+      expect(certificateTag({ eaCertificate: null, certificateStatus: status })).toEqual({
+        text: status,
+        colors: TAG_COLORS.certificateStatus,
+      });
+    },
+  );
+
+  it("is not the issued green for a status", () => {
+    const tag = certificateTag({ eaCertificate: null, certificateStatus: "Withdrawn" });
+
+    expect(tag?.colors).not.toEqual(TAG_COLORS.certificate);
+    expect(tag?.text).not.toMatch(/Certificate #/);
+  });
+
+  it("has no tag for a blank certificate field", () => {
+    expect(certificateTag({ eaCertificate: null, certificateStatus: null })).toBeNull();
+    expect(certificateTag({ eaCertificate: "", certificateStatus: "" })).toBeNull();
   });
 });
