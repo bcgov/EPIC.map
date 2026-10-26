@@ -20,7 +20,7 @@ read live and cached briefly rather than copied: see claude-docs/06.
 import re
 import threading
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 import requests
 from flask import current_app
@@ -326,21 +326,27 @@ def _id_of(value) -> Optional[int]:
     return value.get('id') if isinstance(value, dict) else None
 
 
-def _ea_certificate(value) -> Optional[str]:
-    """Return the project's certificate number, or None for whatever else the field holds.
+def _certificate(value) -> Tuple[Optional[str], Optional[str]]:
+    """Split Track's certificate field into a number and a status.
 
     Track records the number as free text, and the field doubles as a status on
     over a hundred of the active projects in dev. Only a number is a
-    certificate, so only a number earns the card's certificate tag and answers
-    the filter bar's Certified toggle.
+    certificate, so only a number earns the card's green tag and answers the
+    filter bar's Certified toggle. Anything else is a factual outcome worth
+    keeping - "Certificate Refused", "Withdrawn" - so it travels as the status
+    the card shows in grey instead.
     """
-    number = value.strip() if isinstance(value, str) else ''
-    return number if EA_CERTIFICATE.match(number) else None
+    text = value.strip() if isinstance(value, str) else ''
+    if not text:
+        return None, None
+    if EA_CERTIFICATE.match(text):
+        return text, None
+    return None, text
 
 
 def _to_project(project: dict, location: tuple, has_works_in_progress: bool) -> dict:
     longitude, latitude = location
-    certificate = _ea_certificate(project.get('ea_certificate'))
+    certificate, certificate_status = _certificate(project.get('ea_certificate'))
     return {
         'id': project['id'],
         'name': project.get('name'),
@@ -353,6 +359,7 @@ def _to_project(project: dict, location: tuple, has_works_in_progress: bool) -> 
         'region_id': _id_of(project.get('region_env')),
         'region_name': _name_of(project.get('region_env')),
         'ea_certificate': certificate,
+        'certificate_status': certificate_status,
         'certificate_issued': certificate is not None,
         'has_works_in_progress': has_works_in_progress,
         'epic_url': _epic_url(project.get('epic_guid')),

@@ -6,7 +6,7 @@ import type {
   MapStyleImageMissingEvent,
   PointLike,
 } from "maplibre-gl";
-import type { ProjectPoint, ProjectWork } from "@/api/useProjects";
+import type { Project, ProjectPoint, ProjectWork } from "@/api/useProjects";
 import { whenStyleReady } from "@/components/Layers/layerUtils";
 import { WIDGET_ID_PREFIX } from "@/utils/config";
 
@@ -19,6 +19,43 @@ export const LINK_COLOR = "#255a90";
 
 /** 14px body text on a 22px line. */
 export const BODY_TEXT = { fontSize: "0.875rem", lineHeight: "1.375rem" } as const;
+
+/** Fill and border for each kind of identity tag the card's header shows. */
+export const TAG_COLORS = {
+  type: { fill: "#d8eafd", border: "#053662" },
+  region: { fill: "#f3f2f1", border: "#353433" },
+  certificate: { fill: "#f6fff8", border: "#42814a" },
+  // "Refused" and "Withdrawn" are factual EA outcomes, not errors, so the
+  // status reads as neutral rather than as a warning.
+  certificateStatus: { fill: "#f3f2f1", border: "#353433" },
+} as const;
+
+export type TagColors = (typeof TAG_COLORS)[keyof typeof TAG_COLORS];
+
+/**
+ * The certificate tag a project should show, or null for neither.
+ *
+ * Track's certificate field doubles as a status, and map-api splits the two:
+ * only a certificate number is an issued certificate, and it is the one that
+ * reads green, under the "Certificate #" prefix. Any other value - "Certificate
+ * Refused", "Withdrawn" - is a real outcome worth showing, but showing it in
+ * green behind a "#" with no number claims a certificate the project does not
+ * hold, so it reads as itself, in neutral grey.
+ */
+export const certificateTag = (
+  project: Pick<Project, "eaCertificate" | "certificateStatus">,
+): { text: string; colors: TagColors } | null => {
+  if (project.eaCertificate) {
+    return {
+      text: `Certificate # ${project.eaCertificate}`,
+      colors: TAG_COLORS.certificate,
+    };
+  }
+  if (project.certificateStatus) {
+    return { text: project.certificateStatus, colors: TAG_COLORS.certificateStatus };
+  }
+  return null;
+};
 
 // --- Project dots: glyphs and images ---
 

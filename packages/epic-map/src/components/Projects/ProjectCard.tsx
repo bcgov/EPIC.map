@@ -17,9 +17,12 @@ import WaterDropIcon from "@mui/icons-material/WaterDrop";
 import { useProject, type ProjectPoint } from "@/api/useProjects";
 import {
   BODY_TEXT,
+  certificateTag,
   glyphForType,
   type ProjectGlyph,
   SECONDARY_TEXT_COLOR,
+  TAG_COLORS,
+  type TagColors,
   TEXT_COLOR,
 } from "@/components/Projects/projectUtils";
 import ExpandableText from "@/components/Projects/ExpandableText";
@@ -39,21 +42,15 @@ const GLYPH_ICONS: Record<ProjectGlyph, ElementType> = {
   category: CategoryIcon,
 };
 
-const TAG_COLORS = {
-  type: { fill: "#d8eafd", border: "#053662" },
-  region: { fill: "#f3f2f1", border: "#353433" },
-  certificate: { fill: "#f6fff8", border: "#42814a" },
-} as const;
-
 const DESCRIPTION_LINES = 2;
 
 type ProjectTagProps = {
-  colors: (typeof TAG_COLORS)[keyof typeof TAG_COLORS];
+  colors: TagColors;
   icon?: ReactNode;
   children: ReactNode;
 };
 
-/** A 24px identity tag: type, region or certificate. */
+/** A 24px identity tag: type, region, or the certificate number or status. */
 const ProjectTag = ({ colors, icon, children }: ProjectTagProps) => (
   <Box
     component="span"
@@ -102,6 +99,7 @@ export default function ProjectCard({
   const name = project?.name ?? point?.name;
   const typeName = project?.typeName ?? point?.typeName ?? null;
   const TypeIcon = GLYPH_ICONS[glyphForType(typeName)];
+  const certificate = project ? certificateTag(project) : null;
   const notOpen =
     axios.isAxiosError(error) && error.response?.status === 404;
 
@@ -210,9 +208,9 @@ export default function ProjectCard({
                     {project.regionName}
                   </ProjectTag>
                 )}
-                {project.eaCertificate && (
-                  <ProjectTag colors={TAG_COLORS.certificate}>
-                    {`Certificate # ${project.eaCertificate}`}
+                {certificate && (
+                  <ProjectTag colors={certificate.colors}>
+                    {certificate.text}
                   </ProjectTag>
                 )}
               </Box>
