@@ -18,7 +18,7 @@
     "preview:widget": "npm run preview --workspace @bcgov/epic-map",
     "lint": "npm run lint --workspace @bcgov/epic-map && npm run lint --workspace map-web",
     "typecheck": "npm run typecheck --workspace @bcgov/epic-map-types && npm run typecheck --workspace @bcgov/epic-map",
-    "test": "npm test --workspace @bcgov/epic-map"
+    "test": "npm test --workspace @bcgov/epic-map && npm test --workspace map-web"
   },
   "devDependencies": {
     "npm-run-all2": "^7.0.2"

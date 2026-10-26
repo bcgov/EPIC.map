@@ -17,14 +17,15 @@ export const Route = createFileRoute("/_authenticated")({
  * react-oidc-context reports `isAuthenticated: false` while it is still
  * restoring a session from storage, so a guard that fired before `isLoading`
  * cleared would bounce an already signed-in user on every page refresh.
+ *
+ * Swapping the tree out once signed in unmounts the map, so the states below
+ * read from whether there is a session, not from what is in flight (MAP-87).
+ *
+ * Exported for tests.
  */
-function Authenticated() {
+export function Authenticated() {
   const { isAuthenticated, isLoading, signinRedirect, user } = useAuth();
-  const {
-    isLoading: isLoadingCurrentUser,
-    isAccessDenied,
-    user: currentUser,
-  } = useCurrentUser();
+  const { isAccessDenied, user: currentUser } = useCurrentUser();
 
   useEffect(() => {
     if (isLoading || isAuthenticated) return;
@@ -37,7 +38,8 @@ function Authenticated() {
     signinRedirect();
   }, [isAuthenticated, isLoading, signinRedirect]);
 
-  if (isLoading || !isAuthenticated) {
+  // A renewal sets `isLoading`, not `isAuthenticated`.
+  if (!isAuthenticated) {
     return <LoadingPage isLoading message="Signing in" />;
   }
 
@@ -46,7 +48,8 @@ function Authenticated() {
     return <Unauthorized username={user?.profile?.preferred_username} />;
   }
 
-  if (isLoadingCurrentUser || !currentUser) {
+  // Only before the first one arrives: react-query keeps data across refetches.
+  if (!currentUser) {
     return <LoadingPage isLoading />;
   }
 

@@ -63,10 +63,9 @@ export const OidcConfig = {
   post_logout_redirect_uri: `${APP_URL}/`,
   scope: "openid profile email",
   response_type: "code",
-  // Renewal is driven explicitly from the accessTokenExpiring event in
-  // router.tsx, so that a failure to renew can be turned into a visible
-  // "session expired" screen rather than a silent 401 on the next request.
-  automaticSilentRenew: false,
+  // Background renewal. Calling signinSilent by hand holds `isLoading` true,
+  // which the route guard read, rebuilding the map on every renewal (MAP-87).
+  automaticSilentRenew: true,
   revokeTokensOnSignout: true,
   // Skip Keycloak's identity provider chooser and go straight to IDIR. EPIC.map
   // is a staff application; there is no second provider to choose.
