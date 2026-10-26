@@ -12,6 +12,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import { useAppliedLayers, type AppliedLayer } from "@/api/useAppliedLayers";
 import { useLayerFocus } from "@/api/useLayerFocus";
 import { useLayerMinZooms } from "@/api/useLayerMinZooms";
+import { useLocalLayerFloors } from "@/api/useLocalLayerStyle";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
 import {
   useFavouriteFolders,
@@ -37,10 +38,16 @@ import { ImportedLayersProvider } from "@/components/Layers/UserLayers/ImportedL
 import {
   DEFAULT_LAYER_OPACITY,
   effectiveMinZoom,
+  FOCUS_FLY_MS,
   isBeyondMapZoom,
   MAX_VISIBLE_LAYERS,
+  MIN_ZOOM,
 } from "@/utils/config";
-import { isLocalLayer, LOCAL_LAYER_OBJECT_NAMES } from "@/utils/localLayers";
+import {
+  isLocalLayer,
+  localLayerId,
+  LOCAL_LAYER_OBJECT_NAMES,
+} from "@/utils/localLayers";
 
 interface LayersContextValue {
   map: MapLibreMap | null;
@@ -137,52 +144,6 @@ export function LayersProvider({
 
   const minZooms = useLayerMinZooms(appliedObjectNames);
 
-  const floors = useMemo(
-    () =>
-      appliedLayers.map((layer) => ({
-        id: layer.id,
-        floor: effectiveMinZoom(
-          layer.objectName ? minZooms[layer.objectName] : undefined,
-        ),
-      })),
-    [appliedLayers, minZooms],
-  );
-
-  const layerFloors = useMemo(
-    () => Object.fromEntries(floors.map(({ id, floor }) => [id, floor])),
-    [floors],
-  );
-
-  const [belowFloorIds, setBelowFloorIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-
-  useEffect(() => {
-    if (!map) return undefined;
-
-    const sync = () => {
-      setBelowFloorIds((current) =>
-        layersBelowFloor(floors, map.getZoom(), current),
-      );
-    };
-
-    sync();
-    map.on("zoom", sync);
-    return () => {
-      map.off("zoom", sync);
-    };
-  }, [map, floors]);
-
-  const beyondReachIds = useMemo(
-    () =>
-      new Set(
-        floors
-          .filter(({ floor }) => isBeyondMapZoom(floor))
-          .map(({ id }) => id),
-      ),
-    [floors],
-  );
-
   const {
     favourites,
     isPending: favouritesPending,
@@ -230,6 +191,15 @@ export function LayersProvider({
     () => new Set(),
   );
 
+  /** Which hosted layers are on, by object name: what a style is keyed on. */
+  const localVisibleObjectNames = useMemo(
+    () =>
+      LOCAL_LAYER_OBJECT_NAMES.filter((objectName) =>
+        localVisibleIds.has(localLayerId(objectName)),
+      ),
+    [localVisibleIds],
+  );
+
   const visibleIds = useMemo(
     () =>
       new Set([
@@ -237,6 +207,68 @@ export function LayersProvider({
         ...localVisibleIds,
       ]),
     [appliedLayers, localVisibleIds],
+  );
+
+  /** Read off the style, which is where a hosted layer's floor is published. */
+  const localFloors = useLocalLayerFloors(localVisibleObjectNames);
+
+  /**
+   * The zoom below which each enabled layer draws nothing.
+   *
+   * Two sources: a catalogue layer's floor is the warehouse's scale limit, a
+   * hosted layer's is in its symbology. One list from here on, so a row prompts
+   * the same either way.
+   */
+  const floors = useMemo(
+    () => [
+      ...appliedLayers.map((layer) => ({
+        id: layer.id,
+        floor: effectiveMinZoom(
+          layer.objectName ? minZooms[layer.objectName] : undefined,
+        ),
+      })),
+      ...localVisibleObjectNames.map((objectName) => ({
+        id: localLayerId(objectName),
+        // No floor claimed until the style arrives: nothing is drawn yet anyway.
+        floor: localFloors[objectName] ?? MIN_ZOOM,
+      })),
+    ],
+    [appliedLayers, minZooms, localVisibleObjectNames, localFloors],
+  );
+
+  const layerFloors = useMemo(
+    () => Object.fromEntries(floors.map(({ id, floor }) => [id, floor])),
+    [floors],
+  );
+
+  const [belowFloorIds, setBelowFloorIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  useEffect(() => {
+    if (!map) return undefined;
+
+    const sync = () => {
+      setBelowFloorIds((current) =>
+        layersBelowFloor(floors, map.getZoom(), current),
+      );
+    };
+
+    sync();
+    map.on("zoom", sync);
+    return () => {
+      map.off("zoom", sync);
+    };
+  }, [map, floors]);
+
+  const beyondReachIds = useMemo(
+    () =>
+      new Set(
+        floors
+          .filter(({ floor }) => isBeyondMapZoom(floor))
+          .map(({ id }) => id),
+      ),
+    [floors],
   );
 
   const opacities = useMemo(() => {
@@ -383,9 +415,19 @@ export function LayersProvider({
   const focusLayer = useCallback(
     (layer: CatalogueLayer) => {
       if (!map || !layer.objectName) return;
+
+      // A hosted layer is province-wide, so fitting its features would frame
+      // all of BC and draw the same blank map. The zoom is the whole promise.
+      if (isLocalLayer(layer.objectName)) {
+        const floor = layerFloors[layer.id];
+        if (floor === undefined) return;
+        map.easeTo({ zoom: floor, duration: FOCUS_FLY_MS });
+        return;
+      }
+
       focusLayerAt(layer.id, layer.objectName, map, minZooms[layer.objectName]);
     },
-    [map, focusLayerAt, minZooms],
+    [map, focusLayerAt, minZooms, layerFloors],
   );
 
   const toggleExpanded = useCallback((layerId: string) => {
