@@ -25,13 +25,7 @@ export default function RouterProviderWithAuthContext() {
   const [isSessionExpired, setIsSessionExpired] = useState(false);
 
   useEffect(() => {
-    // Renew shortly before the access token lapses. Doing this by hand rather
-    // than with automaticSilentRenew means a failed renewal is something the
-    // user is told about, instead of surfacing later as an unexplained 401.
-    const removeExpiring = authentication.events.addAccessTokenExpiring(() => {
-      authentication.signinSilent().catch(() => setIsSessionExpired(true));
-    });
-
+    // automaticSilentRenew does the renewing; these are how it reports failure.
     const removeSilentRenewError = authentication.events.addSilentRenewError(() =>
       setIsSessionExpired(true),
     );
@@ -41,7 +35,6 @@ export default function RouterProviderWithAuthContext() {
     );
 
     return () => {
-      removeExpiring();
       removeSilentRenewError();
       removeExpired();
     };
