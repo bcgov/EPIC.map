@@ -201,7 +201,7 @@ export default function FolderRow({
               setMenuAnchor(null);
               onUngroup();
             }}
-            sx={{ ...itemSx, color: theme.palette.error.main }}
+            sx={itemSx}
           >
             <ListItemIcon sx={rowMenuIconSx}>
               <FolderOffOutlinedIcon fontSize="small" />
@@ -211,7 +211,6 @@ export default function FolderRow({
               sx={{ margin: 0 }}
               primaryTypographyProps={{
                 fontSize: "inherit",
-                color: theme.palette.error.main,
               }}
             />
           </MenuItem>

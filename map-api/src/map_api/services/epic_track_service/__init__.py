@@ -127,8 +127,29 @@ class TrackService:
             for work in (listing or {}).get('items', [])
             if work.get('project_id') == project_id
         ])
+        for work in works:
+            work['decision'] = cls._decision(work)
         cache.set(key, works, timeout=EPIC_TRACK_PROJECTS_CACHE_TTL_SECONDS)
         return works
+
+    @classmethod
+    def _decision(cls, work: dict) -> Optional[str]:
+        """Return the outcome of a decided work's latest decision milestone, e.g. Amendment Granted.
+
+        Track keeps it on the milestone, not the work, so it costs one call per
+        decided work. One that fails leaves its card the date without the outcome.
+        """
+        if not work['decision_date']:
+            return None
+        try:
+            phases = cls._get(f"works/{work['id']}/phases", {})
+        except ServiceUnavailableError:
+            return None
+        decided = [phase for phase in phases or [] if phase.get('decision')]
+        if not decided:
+            return None
+        latest = max(decided, key=lambda phase: _when(phase.get('decision_milestone_date')))
+        return latest['decision']
 
     @classmethod
     def filter_options(cls) -> dict:

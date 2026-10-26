@@ -91,6 +91,10 @@ class ProjectWorkSchema(Schema):
         metadata={'description': 'EPIC.Track work state, e.g. IN_PROGRESS or COMPLETED'},
     )
     phase_name = fields.Str(allow_none=True, data_key='phaseName')
+    decision = fields.Str(
+        allow_none=True,
+        metadata={'description': 'Latest decision milestone outcome, e.g: Amendment Granted'},
+    )
     decision_date = fields.Str(allow_none=True, data_key='decisionDate')
     description = fields.Str(allow_none=True)
 

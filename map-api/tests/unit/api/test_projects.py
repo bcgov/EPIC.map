@@ -142,6 +142,7 @@ def test_works_are_listed_for_the_card(app, client, jwt, session):
         'state': 'IN_PROGRESS',
         'phase_name': 'Amendment Review (Typical)',
         'start_date': '2024-01-01T00:00:00+00:00',
+        'decision': None,
         'decision_date': None,
         'description': 'Proposes to amend.',
     }
@@ -156,6 +157,7 @@ def test_works_are_listed_for_the_card(app, client, jwt, session):
         'title': 'Amendment - Transmission line',
         'state': 'IN_PROGRESS',
         'phaseName': 'Amendment Review (Typical)',
+        'decision': None,
         'decisionDate': None,
         'description': 'Proposes to amend.',
     }]

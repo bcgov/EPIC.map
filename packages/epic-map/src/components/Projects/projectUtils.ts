@@ -374,13 +374,14 @@ export const formatWorkDate = (value: string): string | null => {
   return `${parts.day} ${parts.month} ${parts.year}`;
 };
 
-/** The phase for an active work, or "Decision · <date>" for a decided one. */
+/** The phase for an active work, or "Decision · <outcome> · <date>" for a decided one. */
 export const workMetaLine = (work: ProjectWork): string | null => {
   const state = (work.state ?? "").trim().toUpperCase();
   if (ACTIVE_STATES.has(state)) return work.phaseName;
   if (work.decisionDate) {
-    const date = formatWorkDate(work.decisionDate);
-    return date ? `Decision · ${date}` : "Decision";
+    return ["Decision", work.decision?.trim(), formatWorkDate(work.decisionDate)]
+      .filter(Boolean)
+      .join(" · ");
   }
   return work.phaseName;
 };
