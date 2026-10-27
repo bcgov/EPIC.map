@@ -41,7 +41,7 @@ import {
   showLocalHighlight,
 } from "@/components/Layers/layerUtils";
 import { useImportedLayersContext } from "@/components/Layers/UserLayers/ImportedLayersContext";
-import { projectIdAt } from "@/components/Projects/projectUtils";
+import { hasProjectAt } from "@/components/Projects/projectUtils";
 import type { MapExtent } from "@/types";
 import {
   FOCUS_FLY_MS,
@@ -145,7 +145,7 @@ export default function MetaDataControl() {
       // too made every boundary a dead zone for identify. The prototype draws
       // the same line: selecting a project and identifying a data layer are
       // separate answers to one click.
-      if (projectIdAt(map, event.point) !== null) {
+      if (hasProjectAt(map, event.point)) {
         setClick(null);
         return;
       }
