@@ -316,16 +316,42 @@ export const addMissingProjectImage = (
   if (data) map.addImage(event.id, data, { pixelRatio });
 };
 
+/** The dot under a point, preferring the one drawn on top. */
+const topProjectAt = (map: MapLibreMap, point: PointLike) => {
+  if (!map.getLayer(PROJECTS_LAYER_ID)) return undefined;
+  const hits = map.queryRenderedFeatures(point, { layers: [PROJECTS_LAYER_ID] });
+  return hits.find((hit) => hit.properties?.hasWorksInProgress === true) ?? hits[0];
+};
+
 /** The project under a point, preferring the one drawn on top. */
 export const projectIdAt = (
   map: MapLibreMap,
   point: PointLike,
 ): number | null => {
-  if (!map.getLayer(PROJECTS_LAYER_ID)) return null;
-  const hits = map.queryRenderedFeatures(point, { layers: [PROJECTS_LAYER_ID] });
-  const top =
-    hits.find((hit) => hit.properties?.hasWorksInProgress === true) ?? hits[0];
+  const top = topProjectAt(map, point);
   return typeof top?.id === "number" ? top.id : null;
+};
+
+// --- Project dots: the name on hover ---
+
+/** What the hover tooltip draws, and where. */
+export interface HoveredProject {
+  id: number;
+  name: string;
+  lngLat: [number, number];
+}
+
+/** The project under the pointer, anchored at its dot rather than the cursor. */
+export const hoveredProjectAt = (
+  map: MapLibreMap,
+  point: PointLike,
+): HoveredProject | null => {
+  const top = topProjectAt(map, point);
+  if (typeof top?.id !== "number" || top.geometry.type !== "Point") return null;
+  const name = top.properties?.name;
+  if (typeof name !== "string" || !name) return null;
+  const [longitude, latitude] = top.geometry.coordinates;
+  return { id: top.id, name, lngLat: [longitude, latitude] };
 };
 
 // --- Work state badges and meta line ---
