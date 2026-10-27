@@ -10,7 +10,7 @@
 // back - the camera moves and the panel does not open - with every other test
 // in the suite still green.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MapProject } from "@/components/Filters/filterUtils";
@@ -44,14 +44,18 @@ vi.mock("maplibre-gl", () => ({
   Marker: class {},
 }));
 
-const project = (id: number, name: string): MapProject => ({
+const project = (
+  id: number,
+  name: string,
+  certificateIssued = false,
+): MapProject => ({
   id,
   name,
   latitude: 53,
   longitude: -122,
   typeId: 1,
   regionId: 1,
-  certificateIssued: false,
+  certificateIssued,
   inProgressWorks: false,
 });
 
@@ -73,14 +77,15 @@ const feature = (
   },
 });
 
-const CARIBOU = project(7, "Caribou Gold Project");
+// Only Caribou has its certificate, so the bar's "Certificate issued" toggle
+// hides Cariboo Creek - through the real FiltersProvider, which is the only way
+// `visibleProjects` actually moves.
+const CARIBOU = project(7, "Caribou Gold Project", true);
 const CARIBOO = project(8, "Cariboo Creek Project");
 
-/** Which projects the filters are letting through to the map. */
-const state = { visible: [CARIBOU, CARIBOO] as MapProject[] };
-
 // One mock for both: useProjects derives its flat list from useProjectFeatures,
-// so the filter bar and the dots on the map read the same two projects.
+// so the filter bar and the dots on the map read the same two projects. This is
+// the unfiltered list - what the filters narrow, and what search matches over.
 vi.mock("@/api/useProjects", () => ({
   useProjectFeatures: () => ({
     data: {
@@ -92,7 +97,7 @@ vi.mock("@/api/useProjects", () => ({
     },
   }),
   useProjects: () => ({
-    projects: state.visible,
+    projects: [CARIBOU, CARIBOO],
     isPending: false,
     error: null,
     retry: vi.fn(),
@@ -181,9 +186,6 @@ const row = (name: string) =>
     .getAllByRole("option")
     .find((option) => option.textContent?.startsWith(name))!;
 
-beforeEach(() => {
-  state.visible = [CARIBOU, CARIBOO];
-});
 afterEach(cleanup);
 
 describe("picking a project out of the search", () => {
@@ -221,13 +223,20 @@ describe("picking a project out of the search", () => {
 
   // A project the filters are hiding has no dot to highlight and gets no panel,
   // but the panel open on another project may not be left behind either.
+  // Search matches over the unfiltered list, which is what makes this reachable.
   it("closes the panel for a project the filters are hiding", async () => {
     render(widget());
     const first = await search("cari", 2);
     await first.click(row("Caribou Gold Project"));
     expect(screen.getByTestId("project-card")).toBeDefined();
 
-    state.visible = [CARIBOU];
+    // Cariboo Creek has no certificate, so this takes its dot off the map while
+    // Caribou keeps both its dot and the open panel.
+    await first.click(screen.getByRole("button", { name: "Certificate issued" }));
+    expect(screen.getByTestId("project-card").textContent).toBe(
+      String(CARIBOU.id),
+    );
+
     const next = await search("cariboo", 1);
     await next.click(row("Cariboo Creek Project"));
 
