@@ -166,3 +166,69 @@ describe("the project panel's Map Layers", () => {
     expect(screen.queryByRole("heading", { level: 4 })).toBeNull();
   });
 });
+
+describe("a long submission", () => {
+  const labels = (count: number) =>
+    Array.from({ length: count }, (_, index) =>
+      component({ featureId: `{L${index}}`, label: `Component ${index + 1}` }),
+    );
+
+  it("shows the first 5 components and collapses the rest", () => {
+    state.components = labels(7);
+    renderSection();
+
+    expect(screen.getByText("Component 5")).toBeDefined();
+    expect(screen.queryByText("Component 6")).toBeNull();
+    expect(screen.getByRole("button", { name: "Show all 7 components" })).toBeDefined();
+  });
+
+  it("counts merged rows, not features", () => {
+    state.components = [
+      ...labels(6),
+      component({ featureId: "{X1}", label: "Component 1" }),
+      component({ featureId: "{X2}", label: "Component 1" }),
+    ];
+    renderSection();
+
+    expect(screen.getByRole("button", { name: "Show all 6 components" })).toBeDefined();
+  });
+
+  it("shows all, then fewer", () => {
+    state.components = labels(7);
+    renderSection();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all 7 components" }));
+    expect(screen.getByText("Component 7")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show fewer" }));
+    expect(screen.queryByText("Component 7")).toBeNull();
+  });
+
+  it("keeps collapsed components on the map", () => {
+    state.components = labels(7);
+    renderSection();
+
+    expect(revealed.ids).toHaveLength(7);
+  });
+
+  it("has no control at 5 components or fewer", () => {
+    state.components = labels(5);
+    renderSection();
+
+    expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull();
+  });
+});
+
+describe("row flags", () => {
+  it("shows Sensitive and Adjusted by GIS where they apply", () => {
+    state.components = [
+      component({ featureId: "{S1}", label: "Laydown Area", sensitive: true }),
+      component({ featureId: "{A1}", label: "Step-Up Station", adjusted: true }),
+      component({ featureId: "{N1}", label: "Access Route" }),
+    ];
+    renderSection();
+
+    expect(screen.getAllByText("Sensitive")).toHaveLength(1);
+    expect(screen.getAllByText("Adjusted by GIS")).toHaveLength(1);
+  });
+});

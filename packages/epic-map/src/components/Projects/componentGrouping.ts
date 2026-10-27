@@ -6,14 +6,17 @@ const COMPONENT_TYPE_SECTIONS: ReadonlyArray<{
   type: ComponentType;
   title: string;
 }> = [
-  { type: "Project component", title: "Project Components" },
-  { type: "Value component", title: "Value Components" },
-];
+    { type: "Project component", title: "Project Components" },
+    { type: "Value component", title: "Value Components" },
+  ];
+
+export type ComponentFlag = "sensitive" | "adjusted";
 
 /** A label's features that share one comment, shown as one row. */
 export interface CommentVariant {
   comment: string | null;
   features: ProjectComponent[];
+  flag: ComponentFlag | null;
 }
 
 export interface LabelGroup {
@@ -25,7 +28,6 @@ export interface Submission {
   key: string;
   category: string | null;
   subcategory: string | null;
-  /** Shown only for an amendment. */
   number: string | null;
   /** The latest date among its features, YYYY-MM-DD. */
   date: string | null;
@@ -66,8 +68,18 @@ const subcategoryOf = ({ subcategory }: ProjectComponent): string | null =>
 const isAmendment = (subcategory: string | null) =>
   subcategory?.trim().toLowerCase() === "amendment";
 
+const amendmentNumber = (component: ProjectComponent) =>
+  isAmendment(subcategoryOf(component)) ? component.number : null;
+
 const submissionKey = (component: ProjectComponent) =>
-  [component.componentType, component.category ?? "", subcategoryOf(component) ?? ""].join("|");
+  [
+    component.componentType,
+    component.category,
+    subcategoryOf(component),
+    amendmentNumber(component),
+  ]
+    .map((part) => (part ?? "").trim().toLowerCase())
+    .join("|");
 
 const latestDate = (features: readonly ProjectComponent[]): string | null =>
   features.reduce<string | null>(
@@ -75,13 +87,28 @@ const latestDate = (features: readonly ProjectComponent[]): string | null =>
     null,
   );
 
+/** Sensitive wins: a sensitive row is never also shown as adjusted. */
+const flagOf = (features: readonly ProjectComponent[]): ComponentFlag | null => {
+  if (features.some(({ sensitive }) => sensitive)) return "sensitive";
+  if (features.some(({ adjusted }) => adjusted)) return "adjusted";
+  return null;
+};
+
 const toLabelGroup = (features: ProjectComponent[]): LabelGroup => ({
   label: features[0].label,
   variants: groupBy(features, ({ comment }) => comment ?? "").map((same) => ({
     comment: same[0].comment,
     features: same,
+    flag: flagOf(same),
   })),
 });
+
+const isFootprint = ({ variants }: LabelGroup) =>
+  variants.some(({ features }) => features.some(({ footprint }) => footprint));
+
+/** The project's boundary first; sort is stable, so the rest keep their order. */
+const footprintFirst = (labels: LabelGroup[]) =>
+  labels.sort((a, b) => Number(isFootprint(b)) - Number(isFootprint(a)));
 
 const toSubmission = (features: ProjectComponent[]): Submission => {
   const subcategory = subcategoryOf(features[0]);
@@ -89,13 +116,11 @@ const toSubmission = (features: ProjectComponent[]): Submission => {
     key: submissionKey(features[0]),
     category: features[0].category,
     subcategory,
-    number: isAmendment(subcategory)
-      ? unique(features.map(({ number }) => number)).join(", ") || null
-      : null,
+    number: amendmentNumber(features[0]),
     date: latestDate(features),
     sources: unique(features.map(({ source }) => source)),
     featureIds: features.map(({ featureId }) => featureId),
-    labels: groupBy(features, ({ label }) => label).map(toLabelGroup),
+    labels: footprintFirst(groupBy(features, ({ label }) => label).map(toLabelGroup)),
   };
 };
 

@@ -66,7 +66,7 @@ describe("component type sections", () => {
 });
 
 describe("submissions", () => {
-  it("groups by the category and subcategory pair", () => {
+  it("groups by the category and subcategory pair, in first-met order", () => {
     const [group] = groupComponents([
       component({ category: "Post Decision", subcategory: "Amendment" }),
       component({ category: "Project Notification", subcategory: "Pre EA" }),
@@ -78,6 +78,17 @@ describe("submissions", () => {
       "Project Notification · Pre EA",
     ]);
     expect(group.submissions[0].featureIds).toHaveLength(2);
+  });
+
+  it("treats differently cased spellings as one submission", () => {
+    const [group] = groupComponents([
+      component({ subcategory: "Early engagement" }),
+      component({ subcategory: "Early Engagement" }),
+    ]);
+
+    expect(group.submissions.map(submissionTitle)).toEqual([
+      "Project Notification · Early engagement",
+    ]);
   });
 
   it("treats a 'none' subcategory as no subcategory", () => {
@@ -106,6 +117,28 @@ describe("submissions", () => {
       "Post Decision · Amendment · Transmission line Amendment",
     );
     expect(submissionTitle(other)).toBe("Project Notification · Care and Maintenance");
+  });
+
+  it("makes each amendment its own submission, by its number", () => {
+    const [group] = groupComponents([
+      component({ category: "Post Decision", subcategory: "Amendment", number: "East Amendment" }),
+      component({ category: "Post Decision", subcategory: "Amendment", number: "Marine Amendment" }),
+      component({ category: "Post Decision", subcategory: "Amendment", number: "East Amendment" }),
+    ]);
+
+    expect(group.submissions.map(submissionTitle)).toEqual([
+      "Post Decision · Amendment · East Amendment",
+      "Post Decision · Amendment · Marine Amendment",
+    ]);
+  });
+
+  it("does not split a non-amendment submission by number", () => {
+    const [group] = groupComponents([
+      component({ subcategory: "Care and Maintenance", number: "Amendment 1" }),
+      component({ subcategory: "Care and Maintenance", number: null }),
+    ]);
+
+    expect(group.submissions).toHaveLength(1);
   });
 
   it("dates the submission D Mon YYYY, by its latest feature", () => {
@@ -179,5 +212,57 @@ describe("labels and their comments", () => {
       "Data sensitive",
       "Pacific Water Shrew",
     ]);
+  });
+});
+
+describe("label order", () => {
+  it("puts the footprint first and leaves the rest in their order", () => {
+    const submission = onlySubmission([
+      component({ label: "Access Route" }),
+      component({ label: "Falls Reservoir" }),
+      component({ label: "Project Boundary", footprint: true }),
+      component({ label: "Pumphouse" }),
+    ]);
+
+    expect(submission.labels.map(({ label }) => label)).toEqual([
+      "Project Boundary",
+      "Access Route",
+      "Falls Reservoir",
+      "Pumphouse",
+    ]);
+  });
+});
+
+describe("row flags", () => {
+  const flagOf = (features: ProjectComponent[]) =>
+    onlySubmission(features).labels[0].variants[0].flag;
+
+  it("flags a sensitive row", () => {
+    expect(flagOf([component({ sensitive: true })])).toBe("sensitive");
+  });
+
+  it("flags a GIS-adjusted row", () => {
+    expect(flagOf([component({ adjusted: true })])).toBe("adjusted");
+  });
+
+  it("shows only Sensitive where a row is both", () => {
+    expect(flagOf([component({ sensitive: true, adjusted: true })])).toBe("sensitive");
+  });
+
+  it("flags a merged row by any of its features", () => {
+    expect(flagOf([component(), component({ adjusted: true })])).toBe("adjusted");
+  });
+
+  it("leaves an unflagged row without one", () => {
+    expect(flagOf([component()])).toBeNull();
+  });
+
+  it("flags each comment row on its own", () => {
+    const [{ variants }] = onlySubmission([
+      component({ comment: "Data sensitive", sensitive: true }),
+      component({ comment: "Pacific Water Shrew" }),
+    ]).labels;
+
+    expect(variants.map(({ flag }) => flag)).toEqual(["sensitive", null]);
   });
 });
