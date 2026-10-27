@@ -20,7 +20,13 @@ import { BORDER_DEFAULT } from "@/components/Filters/filterTokens";
  * map, so it is independent of the filters either side of it and "Clear filters"
  * leaves it alone.
  */
-export default function MapSearchBar({ map }: { map: MapLibreMap | null }) {
+export default function MapSearchBar({
+  map,
+  onProjectSelect,
+}: {
+  map: MapLibreMap | null;
+  onProjectSelect: (projectId: number | null) => void;
+}) {
   const theme = useTheme();
   const {
     types,
@@ -52,7 +58,7 @@ export default function MapSearchBar({ map }: { map: MapLibreMap | null }) {
         zIndex: 4,
       }}
     >
-      <MapSearch map={map} />
+      <MapSearch map={map} onProjectSelect={onProjectSelect} />
 
       <FilterDropdown
         label="Type"

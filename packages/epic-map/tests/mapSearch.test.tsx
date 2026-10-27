@@ -33,6 +33,9 @@ const places: PlaceResult[] = [
 const goTo = vi.fn();
 const clearMarker = vi.fn();
 
+/** Stands in for the widget's project selection, which owns the panel. */
+const onProjectSelect = vi.fn();
+
 // The marker is mocked rather than exercised: it is the one part of this
 // component that reaches for maplibre, which wants a WebGL context jsdom has
 // no way to give it.
@@ -111,6 +114,7 @@ beforeEach(() => {
   showAt.mockClear();
   goTo.mockClear();
   clearMarker.mockClear();
+  onProjectSelect.mockClear();
   filterState.visible = [caribou];
   placeSearch.results = places;
   placeSearch.isLoading = false;
@@ -120,7 +124,7 @@ afterEach(cleanup);
 
 describe("the field", () => {
   it("starts empty, with the placeholder and no dropdown", () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
 
     expect(field().getAttribute("placeholder")).toBe(
       "Search projects and places…",
@@ -134,13 +138,13 @@ describe("the field", () => {
   // wording and broken on a copy edit. Pinned here so that seam cannot be cut
   // from this side without a failure that says why.
   it("carries the role map-web's federation test selects on", () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
 
     expect(field().getAttribute("role")).toBe("combobox");
   });
 
   it("offers a clear button once it has a value", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     await search("car");
 
     expect(screen.getByLabelText("Clear search")).toBeDefined();
@@ -149,7 +153,7 @@ describe("the field", () => {
   // Saying "no places match" after one character would be a claim about a
   // search that was never run.
   it("stays shut below the length the geocoder is asked at", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = userEvent.setup();
     await user.click(field());
     await user.type(field(), "c");
@@ -159,7 +163,7 @@ describe("the field", () => {
   });
 
   it("empties the field and closes the dropdown when cleared", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
     expect(screen.getByRole("listbox")).toBeDefined();
 
@@ -172,7 +176,7 @@ describe("the field", () => {
 
 describe("the keyboard", () => {
   it("walks the rows with Down, across both groups", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     // Projects first, then places: one project and two places here.
@@ -188,7 +192,7 @@ describe("the keyboard", () => {
   });
 
   it("returns to the input above the first row", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     await user.keyboard("{ArrowDown}{ArrowUp}");
@@ -197,7 +201,7 @@ describe("the keyboard", () => {
   });
 
   it("wraps from the last row round to the first", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     // Three rows: one project, two places.
@@ -207,7 +211,7 @@ describe("the keyboard", () => {
   });
 
   it("selects the active row on Enter and closes the dropdown", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     // Past the one project, onto the first place.
@@ -218,7 +222,7 @@ describe("the keyboard", () => {
   });
 
   it("does nothing on Enter with no row active", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     await user.keyboard("{Enter}");
@@ -229,7 +233,7 @@ describe("the keyboard", () => {
   });
 
   it("closes on Escape without clearing what was typed", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     await user.keyboard("{Escape}");
@@ -239,7 +243,7 @@ describe("the keyboard", () => {
   });
 
   it("reopens on an arrow key after Escape", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
     await user.keyboard("{Escape}");
 
@@ -253,7 +257,7 @@ describe("selecting", () => {
   // The query is the user's, and "Douglas St" matching four cities is exactly
   // when replacing it would cost them the other three.
   it("keeps the typed query rather than the chosen result's name", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     await user.click(screen.getAllByRole("option")[1]);
@@ -262,7 +266,7 @@ describe("selecting", () => {
   });
 
   it("flies to a place at the zoom its precision implies", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     await user.click(screen.getAllByRole("option")[2]);
@@ -273,13 +277,54 @@ describe("selecting", () => {
   // A project is already a dot carrying its own glyph and colour, so a pin
   // beside it would be a second symbol for one thing.
   it("flies to a project's own coordinate without pinning it", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     await user.click(screen.getAllByRole("option")[0]);
 
     expect(goTo).toHaveBeenCalledWith([-122, 53], expect.any(Number));
     expect(showAt).not.toHaveBeenCalled();
+  });
+
+  // The gap this closes: the camera went, the panel stayed behind.
+  it("opens the chosen project's panel", async () => {
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
+    const user = await search("car");
+
+    await user.click(screen.getAllByRole("option")[0]);
+
+    expect(onProjectSelect).toHaveBeenCalledWith(caribou.id);
+  });
+
+  it("opens it on Enter as well as on a click", async () => {
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
+    const user = await search("car");
+
+    // The project is the first row.
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    expect(onProjectSelect).toHaveBeenCalledWith(caribou.id);
+  });
+
+  // A place is not a project, so it says nothing about which panel is open.
+  it("leaves the panel alone when a place is picked", async () => {
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
+    const user = await search("car");
+
+    await user.click(screen.getAllByRole("option")[1]);
+
+    expect(onProjectSelect).not.toHaveBeenCalled();
+  });
+
+  // No panel for a project the map is not drawing, but not a stale one either.
+  it("closes the panel rather than opening one for a hidden project", async () => {
+    filterState.visible = [];
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
+    const user = await search("car");
+
+    await user.click(screen.getAllByRole("option")[0]);
+
+    expect(onProjectSelect).toHaveBeenCalledWith(null);
   });
 
   /**
@@ -289,7 +334,7 @@ describe("selecting", () => {
    */
   it("pins a project the filters are hiding", async () => {
     filterState.visible = [];
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     await user.click(screen.getAllByRole("option")[0]);
@@ -301,7 +346,7 @@ describe("selecting", () => {
   // Otherwise the field would be showing two answers at once: a pin on the
   // place picked before, and the project it has just flown to.
   it("takes down a place's pin when a project is picked next", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     await user.click(screen.getAllByRole("option")[1]);
@@ -326,7 +371,7 @@ describe("the active row across an update", () => {
    * highlight the moment they did, and Enter then did nothing.
    */
   it("keeps the highlighted project when the places arrive beneath it", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = userEvent.setup();
     await user.click(field());
     await user.type(field(), "car");
@@ -358,7 +403,7 @@ describe("the active row across an update", () => {
    * chose, so Enter would take that one.
    */
   it("drops the highlight when the row it was on is replaced", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
 
     // Past the project match, onto the first place.
@@ -401,7 +446,7 @@ describe("clearing", () => {
   // The pin answers the query being cleared, and nothing else on screen can
   // remove it.
   it("takes the pin off the map", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = await search("car");
     // A place, so that there is a pin to take off.
     await user.click(screen.getAllByRole("option")[1]);
@@ -421,7 +466,7 @@ describe("when the geocoder does not answer", () => {
   it("says the places search failed rather than that nothing matched", async () => {
     placeSearch.results = [];
     placeSearch.error = new Error("geocoder unreachable");
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = userEvent.setup();
     await user.click(field());
     await user.type(field(), "zzz");
@@ -436,7 +481,7 @@ describe("when the geocoder does not answer", () => {
   it("still lists the projects that matched", async () => {
     placeSearch.results = [];
     placeSearch.error = new Error("geocoder unreachable");
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = userEvent.setup();
     await user.click(field());
     await user.type(field(), "car");
@@ -453,7 +498,7 @@ describe("the combobox contract", () => {
   // status message, not a listbox.
   it("names no listbox when none is rendered", async () => {
     placeSearch.results = [];
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     const user = userEvent.setup();
     await user.click(field());
     await user.type(field(), "zzz");
@@ -467,7 +512,7 @@ describe("the combobox contract", () => {
   });
 
   it("names the listbox while one is rendered", async () => {
-    render(<MapSearch map={null} />);
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
     await search("car");
 
     expect(field().getAttribute("aria-controls")).toBe(

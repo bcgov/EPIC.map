@@ -108,6 +108,12 @@ export const MapWidget = ({
   // two are siblings.
   const [map, setMap] = useState<MapLibreMap | null>(null);
 
+  // Which project's panel is open, held here for the same reason: the search
+  // opens it and the map draws it.
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(
+    null,
+  );
+
   const contextValue = useMemo<MapWidgetContextValue>(
     () => ({
       apiBaseUrl,
@@ -170,9 +176,13 @@ export const MapWidget = ({
               the message saying their combination matches nothing is drawn
               over the map. */}
           <FiltersProvider>
-            <MapSearchBar map={map} />
+            <MapSearchBar map={map} onProjectSelect={setSelectedProjectId} />
             <Box sx={{ flex: 1, minHeight: 0 }}>
-              <MapSurface onMapReady={setMap} />
+              <MapSurface
+                onMapReady={setMap}
+                selectedProjectId={selectedProjectId}
+                onProjectSelect={setSelectedProjectId}
+              />
             </Box>
           </FiltersProvider>
         </Box>
