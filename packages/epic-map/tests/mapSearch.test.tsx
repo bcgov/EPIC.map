@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PlaceResult } from "@/components/Search/searchUtils";
+import { PROJECT_CARD_WIDTH_PX } from "@/utils/config";
 
 const showAt = vi.fn();
 const places: PlaceResult[] = [
@@ -282,7 +283,11 @@ describe("selecting", () => {
 
     await user.click(screen.getAllByRole("option")[0]);
 
-    expect(goTo).toHaveBeenCalledWith([-122, 53], expect.any(Number));
+    expect(goTo).toHaveBeenCalledWith(
+      [-122, 53],
+      expect.any(Number),
+      expect.any(Array),
+    );
     expect(showAt).not.toHaveBeenCalled();
   });
 
@@ -304,6 +309,20 @@ describe("selecting", () => {
     await user.keyboard("{ArrowDown}{Enter}");
 
     expect(onProjectSelect).toHaveBeenCalledWith(caribou.id);
+  });
+
+  // The panel docks over the right edge, so centring in the whole container
+  // would put the dot it just flew to underneath the panel it just opened.
+  it("leaves room for the panel it opens", async () => {
+    render(<MapSearch map={null} onProjectSelect={onProjectSelect} />);
+    const user = await search("car");
+
+    await user.click(screen.getAllByRole("option")[0]);
+
+    expect(goTo).toHaveBeenCalledWith([-122, 53], expect.any(Number), [
+      -PROJECT_CARD_WIDTH_PX / 2,
+      0,
+    ]);
   });
 
   // A place is not a project, so it says nothing about which panel is open.
@@ -360,7 +379,11 @@ describe("selecting", () => {
     );
     await user.click(screen.getAllByRole("option")[0]);
 
-    expect(goTo).toHaveBeenCalledWith([-122, 53], expect.any(Number));
+    expect(goTo).toHaveBeenCalledWith(
+      [-122, 53],
+      expect.any(Number),
+      expect.any(Array),
+    );
   });
 });
 
@@ -394,7 +417,11 @@ describe("the active row across an update", () => {
     );
 
     await user.keyboard("{Enter}");
-    expect(goTo).toHaveBeenCalledWith([-122, 53], expect.any(Number));
+    expect(goTo).toHaveBeenCalledWith(
+      [-122, 53],
+      expect.any(Number),
+      expect.any(Array),
+    );
   });
 
   /**

@@ -28,7 +28,16 @@ import {
 import {
   MIN_PLACE_QUERY_LENGTH,
   PLACE_SEARCH_DEBOUNCE_MS,
+  PROJECT_CARD_WIDTH_PX,
 } from "@/utils/config";
+
+/**
+ * Where a project lands when its panel is about to cover the right edge:
+ * half the card to the left of centre, which is the middle of what stays
+ * visible. Centring in the whole container would put the dot under the panel
+ * on anything narrower than twice the card.
+ */
+const PANEL_CAMERA_OFFSET: [number, number] = [-PROJECT_CARD_WIDTH_PX / 2, 0];
 
 /**
  * Search for an EAO project or a place, and go to it.
@@ -146,7 +155,7 @@ export default function MapSearch({
     } else if (isDrawn(row.project.id)) {
       // Its own dot already says where it is, and opens the same panel.
       onProjectSelect(row.project.id);
-      goTo(row.project.coordinates, row.project.zoom);
+      goTo(row.project.coordinates, row.project.zoom, PANEL_CAMERA_OFFSET);
     } else {
       // A filter is hiding it, so no panel: ProjectsControl closes one the map
       // is not drawing. Any panel open is the wrong project even so.
