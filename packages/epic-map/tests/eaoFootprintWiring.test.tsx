@@ -7,12 +7,17 @@
 // three separate breaks left the whole suite green: the hook forced to return
 // nothing, the apply call dropped from HostedLayer, and the footprint click
 // fallback removed from ProjectsControl. Any of the first two draws every EAO
-// feature - filtered-out projects and the component layers this iteration hides.
+// feature - filtered-out projects and the components no panel has revealed.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useEffect } from "react";
 import { cleanup, render } from "@testing-library/react";
 import type { MapProject } from "@/components/Filters/filterUtils";
 import type { ProjectFeatures } from "@/api/useProjects";
+import {
+  RevealedComponentsProvider,
+  useRevealedComponents,
+} from "@/components/Projects/RevealedComponentsContext";
 import { EAO_OBJECT_NAME, localLayerId, PIP_OBJECT_NAME } from "@/utils/localLayers";
 
 const project = (id: number): MapProject => ({
@@ -127,6 +132,13 @@ const fakeMap = () => ({
   panBy: vi.fn(),
 });
 
+/** Stands in for the project panel, which reveals its components this way. */
+const RevealFeatures = ({ ids }: { ids: string[] }) => {
+  const { setFeatureIds } = useRevealedComponents();
+  useEffect(() => setFeatureIds(ids), [ids, setFeatureIds]);
+  return null;
+};
+
 /** The filter the footprint specs were given on the last apply. */
 const appliedTo = (specId: string) => {
   const last = setLocalVectorLayerFilters.mock.calls.at(-1);
@@ -191,9 +203,24 @@ describe("the filter bar reaching the footprints", () => {
       expect(appliedTo(specId)).toEqual([
         "all",
         ["in", ["get", "track_id"], ["literal", [205, 368]]],
-        ["==", ["literal", 1], ["literal", 0]],
+        ["in", ["get", "feature_id"], ["literal", []]],
       ]);
     }
+  });
+
+  it("draws the components the project panel reveals", () => {
+    render(
+      <RevealedComponentsProvider>
+        <RevealFeatures ids={["{A1}"]} />
+        <HostedLayer objectName={EAO_OBJECT_NAME} />
+      </RevealedComponentsProvider>,
+    );
+
+    expect(appliedTo("point")).toContainEqual([
+      "in",
+      ["get", "feature_id"],
+      ["literal", ["{A1}"]],
+    ]);
   });
 
   it("is drawn without being switched on in the panel", () => {

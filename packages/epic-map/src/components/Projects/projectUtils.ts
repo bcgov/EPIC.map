@@ -233,23 +233,23 @@ const hasWorksInProgress: ExpressionSpecification = [
 export const projectIconImage = (
   selectedId: number | null,
 ): ExpressionSpecification => [
-  "concat",
-  PROJECT_IMAGE_ID_PREFIX,
-  ["get", "glyph"],
-  "-",
-  ["case", hasWorksInProgress, "wip", "idle"],
-  "-",
-  ["case", isSelected(selectedId), "selected", "default"],
-];
+    "concat",
+    PROJECT_IMAGE_ID_PREFIX,
+    ["get", "glyph"],
+    "-",
+    ["case", hasWorksInProgress, "wip", "idle"],
+    "-",
+    ["case", isSelected(selectedId), "selected", "default"],
+  ];
 
 /** Higher draws later, so on top: green over blue, the selected dot over both. */
 export const projectSortKey = (
   selectedId: number | null,
 ): ExpressionSpecification => [
-  "+",
-  ["case", hasWorksInProgress, 1, 0],
-  ["case", isSelected(selectedId), 2, 0],
-];
+    "+",
+    ["case", hasWorksInProgress, 1, 0],
+    ["case", isSelected(selectedId), 2, 0],
+  ];
 
 export const showProjects = (
   map: MapLibreMap,
@@ -357,8 +357,8 @@ export const workStateBadge = (state: string | null | undefined) =>
 /** Works still under way show their phase rather than a decision. */
 const ACTIVE_STATES = new Set(["IN_PROGRESS", "SUSPENDED"]);
 
-/** "10 Oct 2023", in BC time. */
-export const formatWorkDate = (value: string): string | null => {
+/** "10 Oct 2023", as the day falls in `timeZone`. */
+const formatDay = (value: string, timeZone: string): string | null => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   const parts = Object.fromEntries(
@@ -366,13 +366,20 @@ export const formatWorkDate = (value: string): string | null => {
       day: "numeric",
       month: "short",
       year: "numeric",
-      timeZone: "America/Vancouver",
+      timeZone,
     })
       .formatToParts(date)
       .map(({ type, value: part }) => [type, part]),
   );
   return `${parts.day} ${parts.month} ${parts.year}`;
 };
+
+
+export const formatWorkDate = (value: string) =>
+  formatDay(value, "America/Vancouver");
+
+/** A date with no time is parsed as UTC midnight, so it is read back in UTC. */
+export const formatCalendarDate = (value: string) => formatDay(value, "UTC");
 
 /** The phase for an active work, or "Decision · <outcome> · <date>" for a decided one. */
 export const workMetaLine = (work: ProjectWork): string | null => {

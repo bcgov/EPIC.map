@@ -19,8 +19,10 @@ from flask_restx import Namespace, Resource
 
 from map_api.auth import auth
 from map_api.exceptions import ResourceNotFoundError
-from map_api.schemas.project import ProjectFilterOptionsSchema, ProjectSchema, ProjectWorkSchema, to_feature_collection
+from map_api.schemas.project import (
+    ProjectComponentSchema, ProjectFilterOptionsSchema, ProjectSchema, ProjectWorkSchema, to_feature_collection)
 from map_api.services.epic_track_service import TrackService
+from map_api.services.project_component_service import ProjectComponentService
 from map_api.utils.util import cors_preflight
 
 from .apihelper import Api as ApiHelper
@@ -30,6 +32,9 @@ API = Namespace('projects', description='EPIC.Track projects shown on the map')
 
 project_model = ApiHelper.convert_ma_schema_to_restx_model(API, ProjectSchema(), 'Project')
 work_model = ApiHelper.convert_ma_schema_to_restx_model(API, ProjectWorkSchema(), 'ProjectWork')
+component_model = ApiHelper.convert_ma_schema_to_restx_model(
+    API, ProjectComponentSchema(), 'ProjectComponent'
+)
 # No restx model for the filter options: the schema is two lists of nested
 # objects, and convert_ma_schema_to_restx_model maps only scalar fields - it
 # would publish an empty model, which documents less than naming no model at
@@ -108,3 +113,20 @@ class ProjectWorks(Resource):
         if works is None:
             raise ResourceNotFoundError(f'Project {project_id} is not an open EPIC.Track project.')
         return ProjectWorkSchema(many=True).dump(works), HTTPStatus.OK
+
+
+@cors_preflight('GET, OPTIONS')
+@API.route('/<int:project_id>/components', methods=['GET', 'OPTIONS'])
+class ProjectComponents(Resource):
+    """Every submitted component feature of one project, for its card."""
+
+    @staticmethod
+    @auth.require
+    @ApiHelper.swagger_decorators(
+        API, endpoint_description="A project's submitted component features, flat"
+    )
+    @API.response(code=200, model=[component_model], description='Success')
+    def get(project_id: int):
+        """Return one project's component features."""
+        components = ProjectComponentService.for_project(project_id)
+        return ProjectComponentSchema(many=True).dump(components), HTTPStatus.OK

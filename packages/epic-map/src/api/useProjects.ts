@@ -119,3 +119,39 @@ export const useProjectWorks = (projectId: number) => {
     staleTime: PROJECTS_REFRESH_MS,
   });
 };
+
+export type ComponentType = "Project component" | "Value component";
+
+/** One submitted component feature, as map-api lists a project's. */
+export interface ProjectComponent {
+  featureId: string;
+  label: string;
+  componentType: ComponentType;
+  category: string | null;
+  subcategory: string | null;
+  number: string | null;
+  source: string | null;
+  comment: string | null;
+  /** The submission date, YYYY-MM-DD. */
+  date: string | null;
+  styleCategory: string;
+  sensitive: boolean;
+  adjusted: boolean;
+  footprint: boolean;
+}
+
+export const useProjectComponents = (projectId: number) => {
+  const { api } = useMapWidget();
+
+  return useQuery({
+    queryKey: epicMapQueryKey("projects", projectId, "components"),
+    queryFn: async ({ signal }) =>
+      (
+        await api.get<ProjectComponent[]>(
+          `${PROJECTS_PATH}/${projectId}/components`,
+          { signal },
+        )
+      ).data,
+    staleTime: PROJECTS_REFRESH_MS,
+  });
+};

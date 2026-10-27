@@ -10,21 +10,16 @@ import { EAO_OBJECT_NAME, localLayerId } from "@/utils/localLayers";
  * all at once. Footprints are tied to the project dots: a project whose dot the
  * filter bar has hidden has no boundary drawn either, so the two always agree.
  *
- * Components - the orange, green and purple of the style - stay off in this
- * iteration. The prototype reveals them per project once its panel is open,
- * which is panel state this does not model yet; `componentSpecIds` is here so
- * that work has one place to change. They are filtered by project regardless,
- * so revealing them cannot leave a component behind when its project is
- * filtered out.
+ * Components - the orange, green and purple of the style - are drawn only
+ * where the open project's panel reveals them, by feature id. They are filtered
+ * by project as well, so revealing them cannot leave a component behind when
+ * its project is filtered out.
  */
-
-/** Matches nothing, which is how a spec is left on the map but not drawn. */
-const NEVER: unknown = ["==", ["literal", 1], ["literal", 0]];
 
 /** The specs drawing a project's overall boundary, as eao_style() names them. */
 export const FOOTPRINT_SPEC_IDS = ["footprint-fill", "footprint-outline"];
 
-/** The specs drawing everything that is not a boundary. Off for now. */
+/** The specs drawing everything that is not a boundary. */
 export const componentSpecIds = (style: LocalLayerStyle): string[] =>
   style.layers
     .map((spec) => spec.id)
@@ -39,6 +34,7 @@ export const componentSpecIds = (style: LocalLayerStyle): string[] =>
 export const eaoSpecFilters = (
   style: LocalLayerStyle,
   visibleTrackIds: readonly number[],
+  revealedFeatureIds: readonly string[],
 ): Record<string, unknown> => {
   const filters: Record<string, unknown> = {};
 
@@ -54,11 +50,12 @@ export const eaoSpecFilters = (
     filters[id] = onVisibleProject;
   });
 
-  // Components carry the project filter as well as their own reveal
-  // condition, so that a component can never outlive the dot and footprint it
-  // belongs to. `revealed` is what changes when the panel can turn a
-  // project's components on; the project filter beside it already holds.
-  const revealed: unknown = NEVER;
+
+  const revealed: unknown = [
+    "in",
+    ["get", "feature_id"],
+    ["literal", [...revealedFeatureIds]],
+  ];
   componentSpecIds(style).forEach((id) => {
     filters[id] = ["all", onVisibleProject, revealed];
   });

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Tests for the project endpoints."""
+from datetime import date
 from http import HTTPStatus
 from unittest.mock import patch
 
@@ -21,6 +22,7 @@ from tests.utilities.factory_utils import factory_auth_header
 
 ENDPOINT = '/api/projects'
 SERVICE = 'map_api.resources.project.TrackService'
+COMPONENT_SERVICE = 'map_api.resources.project.ProjectComponentService'
 
 PROJECT = {
     'id': 7,
@@ -212,3 +214,48 @@ def test_filter_options_unavailable_is_a_503(app, client, jwt, session):
         response = client.get(f'{ENDPOINT}/filter-options', headers=factory_auth_header(jwt))
 
     assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+
+
+def test_components_require_a_token(app, client, session):
+    """The panel's component list is not public either."""
+    assert client.get(f'{ENDPOINT}/7/components').status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_components_are_listed_for_the_card(app, client, jwt, session):
+    """Camel cased, flat, in the order the service returned them."""
+    component = {
+        'feature_id': '{A1}',
+        'label': 'Access Route',
+        'component_type': 'Project component',
+        'category': 'Post Decision',
+        'subcategory': 'Amendment',
+        'number': 'Transmission line Amendment',
+        'source': 'Proponent',
+        'comment': 'Realigned',
+        'date': date(2026, 8, 25),
+        'style_category': 'amendment',
+        'sensitive': False,
+        'adjusted': True,
+        'footprint': False,
+    }
+    with patch(COMPONENT_SERVICE) as service:
+        service.for_project.return_value = [component]
+        response = client.get(f'{ENDPOINT}/7/components', headers=factory_auth_header(jwt))
+
+    assert response.status_code == HTTPStatus.OK
+    service.for_project.assert_called_once_with(7)
+    assert response.json == [{
+        'featureId': '{A1}',
+        'label': 'Access Route',
+        'componentType': 'Project component',
+        'category': 'Post Decision',
+        'subcategory': 'Amendment',
+        'number': 'Transmission line Amendment',
+        'source': 'Proponent',
+        'comment': 'Realigned',
+        'date': '2026-08-25',
+        'styleCategory': 'amendment',
+        'sensitive': False,
+        'adjusted': True,
+        'footprint': False,
+    }]

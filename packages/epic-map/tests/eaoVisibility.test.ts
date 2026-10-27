@@ -76,7 +76,7 @@ describe("what the EAO layer draws", () => {
   });
 
   it("draws footprints only for the projects whose dots are drawn", () => {
-    const filters = eaoSpecFilters(style, [205, 368]);
+    const filters = eaoSpecFilters(style, [205, 368], []);
 
     for (const id of FOOTPRINT_SPEC_IDS) {
       expect(filters[id]).toEqual([
@@ -87,8 +87,8 @@ describe("what the EAO layer draws", () => {
     }
   });
 
-  it("draws no components at all in this iteration", () => {
-    const filters = eaoSpecFilters(style, [205]);
+  it("draws no components until a panel reveals them", () => {
+    const filters = eaoSpecFilters(style, [205], []);
 
     for (const id of componentSpecIds(style)) {
       // A filter that cannot match, rather than a hidden layer: the components
@@ -96,16 +96,38 @@ describe("what the EAO layer draws", () => {
       expect(filters[id]).toEqual([
         "all",
         ["in", ["get", "track_id"], ["literal", [205]]],
-        ["==", ["literal", 1], ["literal", 0]],
+        ["in", ["get", "feature_id"], ["literal", []]],
       ]);
     }
+  });
+
+  it("draws the components a panel reveals, by feature id", () => {
+    const filters = eaoSpecFilters(style, [205], ["{A1}", "{A2}"]);
+
+    for (const id of componentSpecIds(style)) {
+      expect(filters[id]).toContainEqual([
+        "in",
+        ["get", "feature_id"],
+        ["literal", ["{A1}", "{A2}"]],
+      ]);
+    }
+  });
+
+  it("leaves footprints to the filter bar whatever is revealed", () => {
+    const filters = eaoSpecFilters(style, [205], ["{A1}"]);
+
+    expect(filters["footprint-fill"]).toEqual([
+      "in",
+      ["get", "track_id"],
+      ["literal", [205]],
+    ]);
   });
 
   it("filters components by project as well as by their reveal", () => {
     // So that revealing them cannot leave a component behind when its project
     // has been filtered out - the dot, the footprint and the components go
     // together.
-    const filters = eaoSpecFilters(style, [205, 368]);
+    const filters = eaoSpecFilters(style, [205, 368], []);
     const projectFilter = ["in", ["get", "track_id"], ["literal", [205, 368]]];
 
     for (const id of componentSpecIds(style)) {
@@ -114,7 +136,7 @@ describe("what the EAO layer draws", () => {
   });
 
   it("draws nothing where the filter bar matches no project", () => {
-    const filters = eaoSpecFilters(style, []);
+    const filters = eaoSpecFilters(style, [], []);
 
     expect(filters["footprint-fill"]).toEqual([
       "in",
@@ -144,7 +166,7 @@ describe("applying a filter without losing the style's own", () => {
       map as never,
       LAYER_ID,
       style,
-      eaoSpecFilters(style, [205]),
+      eaoSpecFilters(style, [205], []),
     );
 
     const applied = Object.values(map.set)[0] as unknown[];
@@ -236,7 +258,7 @@ describe("the default view on load", () => {
   it("draws components only once something reveals them", () => {
     // The footprint is the default representation; components wait for the
     // project panel.
-    const filters = eaoSpecFilters(style, [205]);
+    const filters = eaoSpecFilters(style, [205], []);
     for (const id of componentSpecIds(style)) {
       expect(filters[id]).toBeDefined();
     }
@@ -250,7 +272,7 @@ describe("the default view on load", () => {
   it("shows nothing for a project the filter bar has hidden", () => {
     // The dot and the footprint are driven by one list, so they cannot
     // diverge: no project visible, no footprint drawn.
-    const filters = eaoSpecFilters(style, []);
+    const filters = eaoSpecFilters(style, [], []);
     expect(filters["footprint-fill"]).toEqual([
       "in",
       ["get", "track_id"],

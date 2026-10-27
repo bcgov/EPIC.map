@@ -99,6 +99,32 @@ class ProjectWorkSchema(Schema):
     description = fields.Str(allow_none=True)
 
 
+class ProjectComponentSchema(Schema):
+    """One submitted component feature, as the panel's Map Layers lists it."""
+
+    feature_id = fields.Str(data_key='featureId')
+    label = fields.Str(metadata={'description': 'Component name'})
+    component_type = fields.Str(
+        data_key='componentType',
+        metadata={'description': "'Project component' or 'Value component'"},
+    )
+    category = fields.Str(allow_none=True, metadata={'description': 'Submission phase'})
+    subcategory = fields.Str(allow_none=True)
+    number = fields.Str(
+        allow_none=True, metadata={'description': "An amendment's number or name"}
+    )
+    source = fields.Str(allow_none=True, metadata={'description': 'Source of the spatial data'})
+    comment = fields.Str(allow_none=True)
+    date = fields.Date(allow_none=True, metadata={'description': 'When the submission was received'})
+    style_category = fields.Str(
+        data_key='styleCategory',
+        metadata={'description': 'The category the map colours this feature by'},
+    )
+    sensitive = fields.Bool()
+    adjusted = fields.Bool(metadata={'description': 'Whether GIS adjusted the geometry'})
+    footprint = fields.Bool(metadata={'description': "Whether this is the project's overall boundary"})
+
+
 def to_feature_collection(projects: list) -> dict:
     """Build the GeoJSON the map adds as a source."""
     point_schema = ProjectPointSchema()

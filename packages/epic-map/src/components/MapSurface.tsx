@@ -13,6 +13,7 @@ import MetaDataControl from "@/components/MetaData/MetaDataControl";
 import LayersControl from "@/components/Layers/LayersControl";
 import ProjectsControl from "@/components/Projects/ProjectsControl";
 import { LayersProvider } from "@/components/Layers/LayersContext";
+import { RevealedComponentsProvider } from "@/components/Projects/RevealedComponentsContext";
 import { carryWidgetLayers } from "@/components/Layers/layerUtils";
 import {
   DEFAULT_BASEMAP,
@@ -162,15 +163,17 @@ export default function MapSurface({
       ) : (
         <>
           <Box ref={containerRef} sx={{ width: "100%", height: "100%" }} />
-          <LayersProvider map={map}>
-            <LayersControl />
-            <MetaDataControl />
-          </LayersProvider>
-          <ProjectsControl
-            map={map}
-            selectedId={selectedProjectId}
-            onSelect={setSelectedProjectId}
-          />
+          <RevealedComponentsProvider>
+            <LayersProvider map={map}>
+              <LayersControl />
+              <MetaDataControl />
+            </LayersProvider>
+            <ProjectsControl
+              map={map}
+              selectedId={selectedProjectId}
+              onSelect={setSelectedProjectId}
+            />
+          </RevealedComponentsProvider>
           <BasemapSwitch
             current={basemap}
             onSelect={setBasemap}
