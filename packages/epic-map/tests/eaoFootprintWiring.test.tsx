@@ -50,14 +50,14 @@ const style = {
 
 const setLocalVectorLayerFilters = vi.fn();
 const showLocalVectorLayer = vi.fn();
-const showLocalHighlight = vi.fn();
+const showComponentHighlight = vi.fn();
 
 vi.mock("@/components/Layers/layerUtils", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   showLocalVectorLayer,
   setLocalVectorLayerFilters,
-  showLocalHighlight,
-  hideHighlight: vi.fn(),
+  showComponentHighlight,
+  hideComponentHighlight: vi.fn(),
   setLocalVectorLayerOpacity: vi.fn(),
   hideLocalVectorLayer: vi.fn(),
 }));
@@ -142,6 +142,13 @@ const RevealFeatures = ({ ids }: { ids: string[] }) => {
   return null;
 };
 
+/** Stands in for the project panel switching features off. */
+const HideFeatures = ({ ids }: { ids: string[] }) => {
+  const { setHiddenFeatureIds } = useRevealedComponents();
+  useEffect(() => setHiddenFeatureIds(ids), [ids, setHiddenFeatureIds]);
+  return null;
+};
+
 /** Stands in for the project panel selecting a component. */
 const SelectFeatures = ({ ids }: { ids: string[] }) => {
   const { setSelectedFeatureIds } = useRevealedComponents();
@@ -158,7 +165,7 @@ const appliedTo = (specId: string) => {
 beforeEach(() => {
   setLocalVectorLayerFilters.mockClear();
   showLocalVectorLayer.mockClear();
-  showLocalHighlight.mockClear();
+  showComponentHighlight.mockClear();
   state.visible = [project(205), project(368)];
   state.hit = null;
 });
@@ -234,6 +241,20 @@ describe("the filter bar reaching the footprints", () => {
     ]);
   });
 
+  it("takes off a footprint the project panel switched off", () => {
+    render(
+      <RevealedComponentsProvider>
+        <HideFeatures ids={["{F1}"]} />
+        <HostedLayer objectName={EAO_OBJECT_NAME} />
+      </RevealedComponentsProvider>,
+    );
+
+    expect(appliedTo("footprint-fill")).toContainEqual([
+      "!",
+      ["in", ["get", "feature_id"], ["literal", ["{F1}"]]],
+    ]);
+  });
+
   it("highlights the component the project panel selects", () => {
     render(
       <RevealedComponentsProvider>
@@ -242,7 +263,7 @@ describe("the filter bar reaching the footprints", () => {
       </RevealedComponentsProvider>,
     );
 
-    expect(showLocalHighlight).toHaveBeenLastCalledWith(expect.anything(), {
+    expect(showComponentHighlight).toHaveBeenLastCalledWith(expect.anything(), {
       layerId: localLayerId(EAO_OBJECT_NAME),
       sourceLayer: "eao",
       keyProperty: "feature_id",
@@ -253,7 +274,7 @@ describe("the filter bar reaching the footprints", () => {
   it("highlights nothing while no component is selected", () => {
     render(<HostedLayer objectName={EAO_OBJECT_NAME} />);
 
-    expect(showLocalHighlight).not.toHaveBeenCalled();
+    expect(showComponentHighlight).not.toHaveBeenCalled();
   });
 
   it("is drawn without being switched on in the panel", () => {

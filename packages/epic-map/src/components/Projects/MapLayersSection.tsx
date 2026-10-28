@@ -17,13 +17,12 @@ import {
 import { useRevealedComponents } from "@/components/Projects/RevealedComponentsContext";
 import SubmissionGroup, {
   type ComponentControls,
+  listSx,
 } from "@/components/Projects/SubmissionGroup";
 
 const EMPTY_TEXT_COLOR = "#757371";
 
 const NO_COMPONENTS: readonly ProjectComponent[] = [];
-
-const listSx = { margin: 0, padding: 0, listStyle: "none" } as const;
 
 /** Tells the map what the panel shows, hides and selects; clears it all when the panel closes. */
 const useShowOnMap = (
@@ -58,14 +57,14 @@ const useShowOnMap = (
 
 type ComponentTypeSectionProps = {
   group: ComponentTypeGroup;
-  hidden: ReadonlySet<string>;
+  hiddenSubmissions: ReadonlySet<string>;
   onToggle: (submissionKey: string) => void;
   controls: ComponentControls;
 };
 
 const ComponentTypeSection = ({
   group,
-  hidden,
+  hiddenSubmissions,
   onToggle,
   controls,
 }: ComponentTypeSectionProps) => {
@@ -112,7 +111,7 @@ const ComponentTypeSection = ({
             <SubmissionGroup
               key={submission.key}
               submission={submission}
-              shown={!hidden.has(submission.key)}
+              shown={!hiddenSubmissions.has(submission.key)}
               onToggle={() => onToggle(submission.key)}
               controls={controls}
             />
@@ -132,7 +131,9 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
   } = useProjectComponents(projectId);
   const groups = useMemo(() => groupComponents(components ?? []), [components]);
   // Submissions switched off. Everything starts on.
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const [hiddenSubmissions, setHiddenSubmissions] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [hiddenByUser, setHiddenByUser] = useState<ReadonlySet<string> | null>(
     null,
   );
@@ -153,10 +154,10 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
     () =>
       groups
         .flatMap(({ submissions }) => submissions)
-        .filter(({ key }) => !hidden.has(key))
+        .filter(({ key }) => !hiddenSubmissions.has(key))
         .flatMap(({ featureIds }) => featureIds)
         .filter((id) => !hiddenFeatures.has(id)),
-    [groups, hidden, hiddenFeatures],
+    [groups, hiddenSubmissions, hiddenFeatures],
   );
 
   // Only what is drawn: a hidden component has nothing on the map to highlight.
@@ -181,7 +182,7 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
   };
 
   const toggle = (submissionKey: string) =>
-    setHidden((current) => {
+    setHiddenSubmissions((current) => {
       const next = new Set(current);
       if (!next.delete(submissionKey)) next.add(submissionKey);
       return next;
@@ -251,7 +252,7 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
           <ComponentTypeSection
             key={group.type}
             group={group}
-            hidden={hidden}
+            hiddenSubmissions={hiddenSubmissions}
             onToggle={toggle}
             controls={controls}
           />

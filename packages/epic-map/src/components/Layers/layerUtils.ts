@@ -238,6 +238,7 @@ const HIGHLIGHT_LAYERS = [
   // these carry no geometry of their own - but they are cleared with the rest.
   "local-fill",
   "local-line",
+  "local-point",
 ].map((part) => `${WIDGET_ID_PREFIX}highlight-${part}`);
 const [
   HIGHLIGHT_FILL,
@@ -247,6 +248,7 @@ const [
   HIGHLIGHT_RASTER,
   HIGHLIGHT_LOCAL_FILL,
   HIGHLIGHT_LOCAL_LINE,
+  HIGHLIGHT_LOCAL_POINT,
 ] = HIGHLIGHT_LAYERS;
 
 export interface FeatureHighlight {
@@ -366,36 +368,96 @@ export interface LocalFeatureHighlight {
  */
 export const showLocalHighlight = (
   map: MapLibreMap,
-  { layerId, sourceLayer, keyProperty, keys }: LocalFeatureHighlight,
+  highlight: LocalFeatureHighlight,
 ) => {
   whenStyleReady(map, () => {
     removeHighlight(map);
-
-    const source = localSourceId(layerId);
-    if (!map.getSource(source)) return;
-
-    const filter = ["in", ["get", keyProperty], ["literal", [...keys]]];
-    const shared = { source, "source-layer": sourceLayer, filter } as const;
-
-    map.addLayer({
-      ...shared,
-      id: HIGHLIGHT_LOCAL_FILL,
-      type: "fill",
-      paint: {
-        "fill-color": HIGHLIGHT_COLOR,
-        "fill-opacity": HIGHLIGHT_FILL_OPACITY,
-      },
-    } as Parameters<MapLibreMap["addLayer"]>[0]);
-    map.addLayer({
-      ...shared,
-      id: HIGHLIGHT_LOCAL_LINE,
-      type: "line",
-      paint: {
-        "line-color": HIGHLIGHT_COLOR,
-        "line-width": HIGHLIGHT_WIDTH_PX,
-      },
-    } as Parameters<MapLibreMap["addLayer"]>[0]);
+    drawLocalHighlight(
+      map,
+      [HIGHLIGHT_LOCAL_FILL, HIGHLIGHT_LOCAL_LINE, HIGHLIGHT_LOCAL_POINT],
+      highlight,
+    );
   });
+};
+
+/** The fill, line and point layers one local highlight is drawn with. */
+type LocalHighlightIds = readonly [string, string, string];
+
+const drawLocalHighlight = (
+  map: MapLibreMap,
+  [fillId, lineId, pointId]: LocalHighlightIds,
+  { layerId, sourceLayer, keyProperty, keys }: LocalFeatureHighlight,
+) => {
+  const source = localSourceId(layerId);
+  if (!map.getSource(source)) return;
+
+  const filter: unknown = ["in", ["get", keyProperty], ["literal", [...keys]]];
+  const shared = { source, "source-layer": sourceLayer, filter } as const;
+
+  map.addLayer({
+    ...shared,
+    id: fillId,
+    type: "fill",
+    paint: {
+      "fill-color": HIGHLIGHT_COLOR,
+      "fill-opacity": HIGHLIGHT_FILL_OPACITY,
+    },
+  } as Parameters<MapLibreMap["addLayer"]>[0]);
+  map.addLayer({
+    ...shared,
+    id: lineId,
+    type: "line",
+    paint: {
+      "line-color": HIGHLIGHT_COLOR,
+      "line-width": HIGHLIGHT_WIDTH_PX,
+    },
+  } as Parameters<MapLibreMap["addLayer"]>[0]);
+  // Points only: a circle layer would otherwise dot every vertex of a shape.
+  map.addLayer({
+    ...shared,
+    id: pointId,
+    type: "circle",
+    filter: ["all", filter, ["==", ["geometry-type"], "Point"]],
+    paint: {
+      "circle-radius": HIGHLIGHT_POINT_SIZE_PX / 2,
+      "circle-color": HIGHLIGHT_COLOR,
+      "circle-opacity": HIGHLIGHT_FILL_OPACITY,
+      "circle-stroke-color": HIGHLIGHT_COLOR,
+      "circle-stroke-width": HIGHLIGHT_WIDTH_PX,
+    },
+  } as Parameters<MapLibreMap["addLayer"]>[0]);
+};
+
+// The component the project panel selected
+
+/**
+ * Apart from the metadata highlight, so a map click and the panel's selection
+ * cannot clear each other.
+ */
+const COMPONENT_HIGHLIGHT_LAYERS: LocalHighlightIds = [
+  `${WIDGET_ID_PREFIX}component-highlight-fill`,
+  `${WIDGET_ID_PREFIX}component-highlight-line`,
+  `${WIDGET_ID_PREFIX}component-highlight-point`,
+];
+
+const removeComponentHighlight = (map: MapLibreMap) => {
+  for (const id of COMPONENT_HIGHLIGHT_LAYERS) {
+    if (map.getLayer(id)) map.removeLayer(id);
+  }
+};
+
+export const showComponentHighlight = (
+  map: MapLibreMap,
+  highlight: LocalFeatureHighlight,
+) => {
+  whenStyleReady(map, () => {
+    removeComponentHighlight(map);
+    drawLocalHighlight(map, COMPONENT_HIGHLIGHT_LAYERS, highlight);
+  });
+};
+
+export const hideComponentHighlight = (map: MapLibreMap) => {
+  whenStyleReady(map, () => removeComponentHighlight(map));
 };
 
 /**

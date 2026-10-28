@@ -16,8 +16,8 @@ interface RevealedComponents {
 }
 
 /**
- * Shared between the project panel, which switches components on, and the
- * EAO layer, which draws them - two branches of the map surface's tree.
+ * Shared between the project panel, which switches components on and off and
+ * selects one, and the EAO layer, which draws them
  *
  * The default reveals nothing, which is right wherever no panel is mounted.
  */

@@ -6,6 +6,7 @@ import {
   localDrawnIds,
   setLocalVectorLayerLineWidth,
   setLocalVectorLayerOpacity,
+  showComponentHighlight,
   showLocalHighlight,
   showLocalVectorLayer,
   type LocalLayerStyle,
@@ -578,17 +579,27 @@ describe("showLocalHighlight", () => {
     expect(harness.added.map((spec) => spec.id)).toEqual([
       "epic-highlight-local-fill",
       "epic-highlight-local-line",
+      "epic-highlight-local-point",
     ]);
+    const byKey = [
+      "in",
+      ["get", "cnsltn_area_guid"],
+      ["literal", ["0123456789abcdef0123456789abcdef"]],
+    ];
     for (const spec of harness.added) {
       // The filter is the whole of "which feature": wrong highlights
       // nothing, absent highlights the lot.
-      expect(spec.filter).toEqual([
-        "in",
-        ["get", "cnsltn_area_guid"],
-        ["literal", ["0123456789abcdef0123456789abcdef"]],
-      ]);
+      expect(JSON.stringify(spec.filter)).toContain(JSON.stringify(byKey));
       expect(spec["source-layer"]).toBe("pip_consultation_areas");
     }
+  });
+
+  it("rings a point, and only a point, in a circle", () => {
+    const harness = pick();
+
+    const point = harness.added.find((spec) => spec.id === "epic-highlight-local-point");
+    expect(point?.type).toBe("circle");
+    expect(point?.filter).toContainEqual(["==", ["geometry-type"], "Point"]);
   });
 
   it("outlines every feature it is given", () => {
@@ -617,11 +628,13 @@ describe("showLocalHighlight", () => {
     expect(harness.removed).toEqual([
       "epic-highlight-local-fill",
       "epic-highlight-local-line",
+      "epic-highlight-local-point",
     ]);
-    // The two it removed, replaced by two carrying the new key.
+    // The ones it removed, replaced by ones carrying the new key.
     expect(harness.added.map((spec) => spec.id)).toEqual([
       "epic-highlight-local-fill",
       "epic-highlight-local-line",
+      "epic-highlight-local-point",
     ]);
     expect(harness.added[0].filter).toEqual([
       "in",
@@ -637,6 +650,37 @@ describe("showLocalHighlight", () => {
     harness.fire("styledata");
 
     expect(harness.added).toEqual([]);
+  });
+});
+
+describe("showComponentHighlight", () => {
+  const highlight = {
+    layerId: LAYER_ID,
+    sourceLayer: "pip_consultation_areas",
+    keyProperty: "cnsltn_area_guid",
+    keys: ["a"],
+  };
+
+  it("draws in layers of its own, leaving a metadata highlight in place", () => {
+    const harness = fakeMap();
+    show(harness);
+    showLocalHighlight(harness.map, highlight);
+    harness.fire("styledata");
+    // `added` is what getLayer answers from, so it is kept: the metadata
+    // highlight has to be there for leaving it alone to mean anything.
+    const drawn = harness.added.length;
+    harness.removed.length = 0;
+
+    showComponentHighlight(harness.map, { ...highlight, keys: ["b"] });
+    harness.fire("styledata");
+
+    expect(harness.removed).toEqual([]);
+    expect(harness.added.map((spec) => spec.id)).toContain("epic-highlight-local-fill");
+    expect(harness.added.slice(drawn).map((spec) => spec.id)).toEqual([
+      "epic-component-highlight-fill",
+      "epic-component-highlight-line",
+      "epic-component-highlight-point",
+    ]);
   });
 });
 

@@ -41,7 +41,7 @@ const BULLET_COLORS: Record<string, string> = {
 
 const LABEL_TEXT = { fontSize: "0.75rem", lineHeight: "1.125rem" } as const;
 
-const listSx = { margin: 0, padding: 0, listStyle: "none" } as const;
+export const listSx = { margin: 0, padding: 0, listStyle: "none" } as const;
 
 const Bullet = ({ category }: { category: string }) => (
   <Box
@@ -127,6 +127,7 @@ const EyeToggle = ({
         padding: "0.125rem",
         color: TEXT_COLOR,
         opacity: shown ? 0 : 1,
+        "@media (hover: none)": { opacity: 1 },
       })}
     >
       <Icon sx={{ fontSize: "1rem" }} />

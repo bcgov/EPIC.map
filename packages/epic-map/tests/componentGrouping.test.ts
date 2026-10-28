@@ -92,6 +92,12 @@ describe("submissions", () => {
     ]);
   });
 
+  it("ignores spaces around a subcategory", () => {
+    const [group] = groupComponents([component({ subcategory: " Pre EA " })]);
+
+    expect(submissionTitle(group.submissions[0])).toBe("Project Notification · Pre EA");
+  });
+
   it("treats a 'none' subcategory as no subcategory", () => {
     const [group] = groupComponents([
       component({ category: "Post Decision", subcategory: "None" }),

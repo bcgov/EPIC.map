@@ -233,23 +233,23 @@ const hasWorksInProgress: ExpressionSpecification = [
 export const projectIconImage = (
   selectedId: number | null,
 ): ExpressionSpecification => [
-    "concat",
-    PROJECT_IMAGE_ID_PREFIX,
-    ["get", "glyph"],
-    "-",
-    ["case", hasWorksInProgress, "wip", "idle"],
-    "-",
-    ["case", isSelected(selectedId), "selected", "default"],
-  ];
+  "concat",
+  PROJECT_IMAGE_ID_PREFIX,
+  ["get", "glyph"],
+  "-",
+  ["case", hasWorksInProgress, "wip", "idle"],
+  "-",
+  ["case", isSelected(selectedId), "selected", "default"],
+];
 
 /** Higher draws later, so on top: green over blue, the selected dot over both. */
 export const projectSortKey = (
   selectedId: number | null,
 ): ExpressionSpecification => [
-    "+",
-    ["case", hasWorksInProgress, 1, 0],
-    ["case", isSelected(selectedId), 2, 0],
-  ];
+  "+",
+  ["case", hasWorksInProgress, 1, 0],
+  ["case", isSelected(selectedId), 2, 0],
+];
 
 export const showProjects = (
   map: MapLibreMap,
@@ -374,7 +374,7 @@ const formatDay = (value: string, timeZone: string): string | null => {
   return `${parts.day} ${parts.month} ${parts.year}`;
 };
 
-
+/** In BC time. */
 export const formatWorkDate = (value: string) =>
   formatDay(value, "America/Vancouver");
 

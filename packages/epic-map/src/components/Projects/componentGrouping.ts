@@ -6,9 +6,9 @@ const COMPONENT_TYPE_SECTIONS: ReadonlyArray<{
   type: ComponentType;
   title: string;
 }> = [
-    { type: "Project component", title: "Project Components" },
-    { type: "Value component", title: "Value Components" },
-  ];
+  { type: "Project component", title: "Project Components" },
+  { type: "Value component", title: "Value Components" },
+];
 
 export type ComponentFlag = "sensitive" | "adjusted";
 
@@ -66,8 +66,10 @@ const unique = (values: ReadonlyArray<string | null>): string[] => [
 ];
 
 /** The delivery writes "none" where there is no subcategory. */
-const subcategoryOf = ({ subcategory }: ProjectComponent): string | null =>
-  subcategory && subcategory.trim().toLowerCase() !== "none" ? subcategory : null;
+const subcategoryOf = ({ subcategory }: ProjectComponent): string | null => {
+  const value = subcategory?.trim();
+  return value && value.toLowerCase() !== "none" ? value : null;
+};
 
 const isAmendment = (subcategory: string | null) =>
   subcategory?.trim().toLowerCase() === "amendment";

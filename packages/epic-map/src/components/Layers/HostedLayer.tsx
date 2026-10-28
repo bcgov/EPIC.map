@@ -1,12 +1,12 @@
 import { useEffect } from "react";
 import { useLocalLayerStyle } from "@/api/useLocalLayerStyle";
 import {
-  hideHighlight,
+  hideComponentHighlight,
   hideLocalVectorLayer,
   setLocalVectorLayerFilters,
   setLocalVectorLayerLineWidth,
   setLocalVectorLayerOpacity,
-  showLocalHighlight,
+  showComponentHighlight,
   showLocalVectorLayer,
 } from "@/components/Layers/layerUtils";
 import { useHostedLayerFilters } from "@/components/Layers/useHostedLayerFilters";
@@ -101,8 +101,8 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
     if (!map || !visible || !sourceLayer || !keyProperty || !highlighted.length) {
       return undefined;
     }
-    showLocalHighlight(map, { layerId, sourceLayer, keyProperty, keys: highlighted });
-    return () => hideHighlight(map);
+    showComponentHighlight(map, { layerId, sourceLayer, keyProperty, keys: highlighted });
+    return () => hideComponentHighlight(map);
   }, [map, visible, layerId, sourceLayer, keyProperty, highlighted]);
 
   return null;

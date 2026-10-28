@@ -11,10 +11,10 @@ import { EAO_OBJECT_NAME, localLayerId } from "@/utils/localLayers";
  * filter bar has hidden has no boundary drawn either, so the two always agree.
  *
  * Components - the orange, green and purple of the style - are drawn only
- * where the open project's panel reveals them, by feature id. A footprint is
- * drawn unless that panel has switched it off. They are filtered
+ * where the open project's panel reveals them, by feature id. They are filtered
  * by project as well, so revealing them cannot leave a component behind when
- * its project is filtered out.
+ * its project is filtered out. A footprint is drawn unless that panel has
+ * switched it off.
  */
 
 /** The specs drawing a project's overall boundary, as eao_style() names them. */
