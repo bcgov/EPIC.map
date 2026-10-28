@@ -57,6 +57,14 @@ def test_ops_is_reachable_without_a_token(client):
     assert response.status_code != HTTPStatus.UNAUTHORIZED
 
 
+@pytest.mark.parametrize('path', ['/ops/delay/1', '/ops/db-delay/1', '/ops/random-message'])
+def test_ops_serves_no_test_endpoints(client, path):
+    """/ops is unauthenticated, so anything that holds a thread open there is a DoS."""
+    response = client.get(path)
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
 def test_missing_authorization_header_is_rejected(client):
     """A request with no token never reaches a handler."""
     response = client.get(ENDPOINT)
