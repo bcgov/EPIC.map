@@ -456,6 +456,53 @@ export interface LocalLayerStyle {
   layers: LocalLayerSpec[];
 }
 
+const HIT_SPEC_SUFFIX = "-hit";
+
+/** A layer to draw, and the spec it takes its client filter from. */
+interface DrawnSpec {
+  spec: LocalLayerSpec;
+  filterKey: string;
+}
+
+/**
+ * A transparent fill under an outline-only polygon layer (MAP-84).
+ *
+ * A click is tested against what MapLibre drew, and a fill at zero opacity
+ * still hit-tests. One per line spec, carrying its source layer, floor and
+ * filter; none where the style already fills that tile layer.
+ */
+const hitTargetSpecs = (style: LocalLayerStyle): DrawnSpec[] => {
+  const filled = new Set(
+    style.layers
+      .filter((spec) => spec.type === "fill")
+      .map((spec) => spec.sourceLayer),
+  );
+
+  return style.layers
+    .filter((spec) => spec.type === "line" && !filled.has(spec.sourceLayer))
+    .map((spec) => ({
+      filterKey: spec.id,
+      spec: {
+        id: `${spec.id}${HIT_SPEC_SUFFIX}`,
+        type: "fill" as const,
+        sourceLayer: spec.sourceLayer,
+        minZoom: spec.minZoom,
+        filter: spec.filter,
+        // Not the outline's layout, which a fill rejects.
+        paint: { "fill-opacity": 0 },
+      },
+    }));
+};
+
+/** Every layer a hosted style draws, each hit target under its own outline. */
+const drawnSpecs = (style: LocalLayerStyle): DrawnSpec[] => {
+  const hits = hitTargetSpecs(style);
+  return style.layers.flatMap((spec) => [
+    ...hits.filter((hit) => hit.filterKey === spec.id),
+    { spec, filterKey: spec.id },
+  ]);
+};
+
 /**
  * The zoom a hosted layer starts drawing at, gated as `showLocalVectorLayer`
  * gates it: the shallowest zoom any spec draws at, never below the source's
@@ -549,7 +596,7 @@ export const showLocalVectorLayer = (
     // order among themselves.
     const before = beforeLabelBlock(map);
 
-    style.layers.forEach((spec) => {
+    drawnSpecs(style).forEach(({ spec }) => {
       const drawn = localDrawnId(layerId, spec.id);
 
       if (map.getLayer(drawn)) {
@@ -592,6 +639,8 @@ export const showLocalVectorLayer = (
  *
  * Takes the style because the base opacities are in it: MapLibre reports the
  * current value, so reading it back would compound every move of the slider.
+ *
+ * The style's own specs: a hit target has no appearance to scale.
  */
 export const setLocalVectorLayerOpacity = (
   map: MapLibreMap,
@@ -650,6 +699,8 @@ export const setLocalVectorLayerLineWidth = (
  * polygons, a circle for points - and is the server's. This adds the client's
  * reason on top of it, so the two cannot overwrite each other: a spec given no
  * extra filter keeps the style's unchanged.
+ *
+ * A hit target takes its outline's filter, so identify cannot outlive the draw.
  */
 export const setLocalVectorLayerFilters = (
   map: MapLibreMap,
@@ -658,12 +709,12 @@ export const setLocalVectorLayerFilters = (
   extra: Record<string, unknown>,
 ) => {
   whenStyleReady(map, () => {
-    style.layers.forEach((spec) => {
+    drawnSpecs(style).forEach(({ spec, filterKey }) => {
       const drawn = localDrawnId(layerId, spec.id);
       if (!map.getLayer(drawn)) return;
 
       const own = spec.filter ?? null;
-      const added = extra[spec.id] ?? null;
+      const added = extra[filterKey] ?? null;
       const combined =
         own && added ? ["all", own, added] : (added ?? own ?? null);
 
