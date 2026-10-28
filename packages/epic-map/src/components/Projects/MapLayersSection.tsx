@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Box, ButtonBase, Collapse, Skeleton, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
-import { useProjectComponents } from "@/api/useProjects";
+import { type ProjectComponent, useProjectComponents } from "@/api/useProjects";
 import {
   type ComponentTypeGroup,
+  findVariant,
   groupComponents,
 } from "@/components/Projects/componentGrouping";
 import {
@@ -14,41 +15,60 @@ import {
   TEXT_COLOR,
 } from "@/components/Projects/projectUtils";
 import { useRevealedComponents } from "@/components/Projects/RevealedComponentsContext";
-import SubmissionGroup from "@/components/Projects/SubmissionGroup";
+import SubmissionGroup, {
+  type ComponentControls,
+} from "@/components/Projects/SubmissionGroup";
 
 const EMPTY_TEXT_COLOR = "#757371";
 
+const NO_COMPONENTS: readonly ProjectComponent[] = [];
+
 const listSx = { margin: 0, padding: 0, listStyle: "none" } as const;
 
-/** Puts every submission not switched off on the map, and takes them off when the panel closes. */
-const useRevealOnMap = (
-  groups: readonly ComponentTypeGroup[],
-  hidden: ReadonlySet<string>,
+/** Tells the map what the panel shows, hides and selects; clears it all when the panel closes. */
+const useShowOnMap = (
+  components: readonly ProjectComponent[],
+  revealed: readonly string[],
+  selected: readonly string[],
 ) => {
-  const { setFeatureIds } = useRevealedComponents();
+  const { setFeatureIds, setHiddenFeatureIds, setSelectedFeatureIds } =
+    useRevealedComponents();
 
-  const revealed = useMemo(
-    () =>
-      groups
-        .flatMap(({ submissions }) => submissions)
-        .filter(({ key }) => !hidden.has(key))
-        .flatMap(({ featureIds }) => featureIds),
-    [groups, hidden],
-  );
+  const hidden = useMemo(() => {
+    const shown = new Set(revealed);
+    return components
+      .map(({ featureId }) => featureId)
+      .filter((id) => !shown.has(id));
+  }, [components, revealed]);
 
   useEffect(() => {
     setFeatureIds(revealed);
-    return () => setFeatureIds([]);
-  }, [revealed, setFeatureIds]);
+    setHiddenFeatureIds(hidden);
+    return () => {
+      setFeatureIds([]);
+      setHiddenFeatureIds([]);
+    };
+  }, [revealed, hidden, setFeatureIds, setHiddenFeatureIds]);
+
+  useEffect(() => {
+    setSelectedFeatureIds(selected);
+    return () => setSelectedFeatureIds([]);
+  }, [selected, setSelectedFeatureIds]);
 };
 
 type ComponentTypeSectionProps = {
   group: ComponentTypeGroup;
   hidden: ReadonlySet<string>;
   onToggle: (submissionKey: string) => void;
+  controls: ComponentControls;
 };
 
-const ComponentTypeSection = ({ group, hidden, onToggle }: ComponentTypeSectionProps) => {
+const ComponentTypeSection = ({
+  group,
+  hidden,
+  onToggle,
+  controls,
+}: ComponentTypeSectionProps) => {
   const [open, setOpen] = useState(true);
   const bodyId = `epic-map-project-${group.type.replace(/\s+/g, "-").toLowerCase()}`;
 
@@ -64,7 +84,10 @@ const ComponentTypeSection = ({ group, hidden, onToggle }: ComponentTypeSectionP
           gap: "0.25rem",
           paddingBottom: "0.5rem",
           borderRadius: "0.25rem",
-          "&:focus-visible": { outline: `2px solid ${LINK_COLOR}`, outlineOffset: "2px" },
+          "&:focus-visible": {
+            outline: `2px solid ${LINK_COLOR}`,
+            outlineOffset: "2px",
+          },
         }}
       >
         <ExpandMoreIcon
@@ -91,6 +114,7 @@ const ComponentTypeSection = ({ group, hidden, onToggle }: ComponentTypeSectionP
               submission={submission}
               shown={!hidden.has(submission.key)}
               onToggle={() => onToggle(submission.key)}
+              controls={controls}
             />
           ))}
         </Box>
@@ -101,12 +125,60 @@ const ComponentTypeSection = ({ group, hidden, onToggle }: ComponentTypeSectionP
 
 /** A project's submitted project and value components, and their map toggles. */
 export default function MapLayersSection({ projectId }: { projectId: number }) {
-  const { data: components, isLoading, isError } = useProjectComponents(projectId);
+  const {
+    data: components,
+    isLoading,
+    isError,
+  } = useProjectComponents(projectId);
   const groups = useMemo(() => groupComponents(components ?? []), [components]);
   // Submissions switched off. Everything starts on.
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const [hiddenByUser, setHiddenByUser] = useState<ReadonlySet<string> | null>(
+    null,
+  );
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
-  useRevealOnMap(groups, hidden);
+  const startHidden = useMemo(
+    () =>
+      new Set(
+        (components ?? [])
+          .filter(({ sensitive }) => sensitive)
+          .map(({ featureId }) => featureId),
+      ),
+    [components],
+  );
+  const hiddenFeatures = hiddenByUser ?? startHidden;
+
+  const revealed = useMemo(
+    () =>
+      groups
+        .flatMap(({ submissions }) => submissions)
+        .filter(({ key }) => !hidden.has(key))
+        .flatMap(({ featureIds }) => featureIds)
+        .filter((id) => !hiddenFeatures.has(id)),
+    [groups, hidden, hiddenFeatures],
+  );
+
+  // Only what is drawn: a hidden component has nothing on the map to highlight.
+  const highlighted = useMemo(() => {
+    const selected = findVariant(groups, selectedKey);
+    return (selected?.featureIds ?? []).filter((id) => revealed.includes(id));
+  }, [groups, selectedKey, revealed]);
+
+  useShowOnMap(components ?? NO_COMPONENTS, revealed, highlighted);
+
+  const controls: ComponentControls = {
+    isShown: (featureIds) => featureIds.some((id) => !hiddenFeatures.has(id)),
+    setShown: (featureIds, shown) =>
+      setHiddenByUser((current) => {
+        const next = new Set(current ?? startHidden);
+        featureIds.forEach((id) => (shown ? next.delete(id) : next.add(id)));
+        return next;
+      }),
+    selectedKey,
+    select: (key) =>
+      setSelectedKey((current) => (current === key ? null : key)),
+  };
 
   const toggle = (submissionKey: string) =>
     setHidden((current) => {
@@ -119,14 +191,26 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
     <Box
       component="section"
       aria-labelledby="epic-map-project-layers"
-      sx={{ padding: "1rem", borderBottom: "1px solid", borderColor: "divider" }}
+      sx={{
+        padding: "1rem",
+        borderBottom: "1px solid",
+        borderColor: "divider",
+      }}
     >
       <Box sx={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-        <LayersOutlinedIcon aria-hidden sx={{ fontSize: "1.25rem", color: TEXT_COLOR }} />
+        <LayersOutlinedIcon
+          aria-hidden
+          sx={{ fontSize: "1.25rem", color: TEXT_COLOR }}
+        />
         <Typography
           id="epic-map-project-layers"
           component="h3"
-          sx={{ fontSize: "1rem", fontWeight: 700, lineHeight: 1.5, color: TEXT_COLOR }}
+          sx={{
+            fontSize: "1rem",
+            fontWeight: 700,
+            lineHeight: 1.5,
+            color: TEXT_COLOR,
+          }}
         >
           Map Layers
         </Typography>
@@ -139,7 +223,13 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
           <Skeleton />
         </Box>
       ) : isError ? (
-        <Typography sx={{ marginTop: "0.75rem", ...BODY_TEXT, color: SECONDARY_TEXT_COLOR }}>
+        <Typography
+          sx={{
+            marginTop: "0.75rem",
+            ...BODY_TEXT,
+            color: SECONDARY_TEXT_COLOR,
+          }}
+        >
           Map layers could not be loaded. Please try again.
         </Typography>
       ) : groups.length === 0 ? (
@@ -163,6 +253,7 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
             group={group}
             hidden={hidden}
             onToggle={toggle}
+            controls={controls}
           />
         ))
       )}

@@ -1,13 +1,16 @@
 import { useEffect } from "react";
 import { useLocalLayerStyle } from "@/api/useLocalLayerStyle";
 import {
+  hideHighlight,
   hideLocalVectorLayer,
   setLocalVectorLayerFilters,
   setLocalVectorLayerLineWidth,
   setLocalVectorLayerOpacity,
+  showLocalHighlight,
   showLocalVectorLayer,
 } from "@/components/Layers/layerUtils";
 import { useHostedLayerFilters } from "@/components/Layers/useHostedLayerFilters";
+import { useHostedLayerHighlight } from "@/components/Layers/useHostedLayerHighlight";
 import { useLayers } from "@/components/Layers/LayersContext";
 import {
   DEFAULT_LAYER_LINE_WIDTH,
@@ -16,6 +19,7 @@ import {
 } from "@/utils/config";
 import {
   hasWidthSlider,
+  hostedLayer,
   isAlwaysDrawn,
   localLayerId,
 } from "@/utils/localLayers";
@@ -50,6 +54,9 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
   const { data: style } = useLocalLayerStyle(visible ? objectName : null);
   // Narrows what is drawn, where the layer has a reason beyond its symbology.
   const filters = useHostedLayerFilters(objectName, style);
+  const highlighted = useHostedLayerHighlight(objectName);
+  const sourceLayer = style?.layers[0]?.sourceLayer;
+  const keyProperty = hostedLayer(objectName)?.keyProperty;
 
   useEffect(() => {
     if (!map) return;
@@ -88,6 +95,15 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
     lineWidth,
     filters,
   ]);
+
+  // After the layer's own effect, so its tiles are there to filter.
+  useEffect(() => {
+    if (!map || !visible || !sourceLayer || !keyProperty || !highlighted.length) {
+      return undefined;
+    }
+    showLocalHighlight(map, { layerId, sourceLayer, keyProperty, keys: highlighted });
+    return () => hideHighlight(map);
+  }, [map, visible, layerId, sourceLayer, keyProperty, highlighted]);
 
   return null;
 }

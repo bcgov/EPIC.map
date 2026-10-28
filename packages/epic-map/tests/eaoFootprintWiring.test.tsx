@@ -50,11 +50,14 @@ const style = {
 
 const setLocalVectorLayerFilters = vi.fn();
 const showLocalVectorLayer = vi.fn();
+const showLocalHighlight = vi.fn();
 
 vi.mock("@/components/Layers/layerUtils", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   showLocalVectorLayer,
   setLocalVectorLayerFilters,
+  showLocalHighlight,
+  hideHighlight: vi.fn(),
   setLocalVectorLayerOpacity: vi.fn(),
   hideLocalVectorLayer: vi.fn(),
 }));
@@ -139,6 +142,13 @@ const RevealFeatures = ({ ids }: { ids: string[] }) => {
   return null;
 };
 
+/** Stands in for the project panel selecting a component. */
+const SelectFeatures = ({ ids }: { ids: string[] }) => {
+  const { setSelectedFeatureIds } = useRevealedComponents();
+  useEffect(() => setSelectedFeatureIds(ids), [ids, setSelectedFeatureIds]);
+  return null;
+};
+
 /** The filter the footprint specs were given on the last apply. */
 const appliedTo = (specId: string) => {
   const last = setLocalVectorLayerFilters.mock.calls.at(-1);
@@ -148,6 +158,7 @@ const appliedTo = (specId: string) => {
 beforeEach(() => {
   setLocalVectorLayerFilters.mockClear();
   showLocalVectorLayer.mockClear();
+  showLocalHighlight.mockClear();
   state.visible = [project(205), project(368)];
   state.hit = null;
 });
@@ -221,6 +232,28 @@ describe("the filter bar reaching the footprints", () => {
       ["get", "feature_id"],
       ["literal", ["{A1}"]],
     ]);
+  });
+
+  it("highlights the component the project panel selects", () => {
+    render(
+      <RevealedComponentsProvider>
+        <SelectFeatures ids={["{A1}", "{A2}"]} />
+        <HostedLayer objectName={EAO_OBJECT_NAME} />
+      </RevealedComponentsProvider>,
+    );
+
+    expect(showLocalHighlight).toHaveBeenLastCalledWith(expect.anything(), {
+      layerId: localLayerId(EAO_OBJECT_NAME),
+      sourceLayer: "eao",
+      keyProperty: "feature_id",
+      keys: ["{A1}", "{A2}"],
+    });
+  });
+
+  it("highlights nothing while no component is selected", () => {
+    render(<HostedLayer objectName={EAO_OBJECT_NAME} />);
+
+    expect(showLocalHighlight).not.toHaveBeenCalled();
   });
 
   it("is drawn without being switched on in the panel", () => {

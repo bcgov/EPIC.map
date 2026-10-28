@@ -19,7 +19,7 @@ export const useHostedLayerFilters = (
 ): Record<string, unknown> => {
   // Called for every hosted layer, used by one: a hook cannot be conditional.
   const { visibleProjects } = useFilters();
-  const { featureIds } = useRevealedComponents();
+  const { featureIds, hiddenFeatureIds } = useRevealedComponents();
 
   return useMemo(() => {
     if (objectName !== EAO_OBJECT_NAME || !style) return {};
@@ -27,6 +27,7 @@ export const useHostedLayerFilters = (
       style,
       visibleProjects.map((project) => project.id),
       featureIds,
+      hiddenFeatureIds,
     );
-  }, [objectName, style, visibleProjects, featureIds]);
+  }, [objectName, style, visibleProjects, featureIds, hiddenFeatureIds]);
 };

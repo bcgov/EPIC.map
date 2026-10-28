@@ -9,6 +9,10 @@ import {
 interface RevealedComponents {
   featureIds: readonly string[];
   setFeatureIds: (ids: readonly string[]) => void;
+  hiddenFeatureIds: readonly string[];
+  setHiddenFeatureIds: (ids: readonly string[]) => void;
+  selectedFeatureIds: readonly string[];
+  setSelectedFeatureIds: (ids: readonly string[]) => void;
 }
 
 /**
@@ -20,6 +24,10 @@ interface RevealedComponents {
 const RevealedComponentsContext = createContext<RevealedComponents>({
   featureIds: [],
   setFeatureIds: () => {},
+  hiddenFeatureIds: [],
+  setHiddenFeatureIds: () => {},
+  selectedFeatureIds: [],
+  setSelectedFeatureIds: () => {},
 });
 
 export const RevealedComponentsProvider = ({
@@ -28,7 +36,23 @@ export const RevealedComponentsProvider = ({
   children: ReactNode;
 }) => {
   const [featureIds, setFeatureIds] = useState<readonly string[]>([]);
-  const value = useMemo(() => ({ featureIds, setFeatureIds }), [featureIds]);
+  const [hiddenFeatureIds, setHiddenFeatureIds] = useState<readonly string[]>(
+    [],
+  );
+  const [selectedFeatureIds, setSelectedFeatureIds] = useState<
+    readonly string[]
+  >([]);
+  const value = useMemo(
+    () => ({
+      featureIds,
+      setFeatureIds,
+      hiddenFeatureIds,
+      setHiddenFeatureIds,
+      selectedFeatureIds,
+      setSelectedFeatureIds,
+    }),
+    [featureIds, hiddenFeatureIds, selectedFeatureIds],
+  );
 
   return (
     <RevealedComponentsContext.Provider value={value}>

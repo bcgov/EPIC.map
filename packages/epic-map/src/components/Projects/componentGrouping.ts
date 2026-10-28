@@ -14,13 +14,17 @@ export type ComponentFlag = "sensitive" | "adjusted";
 
 /** A label's features that share one comment, shown as one row. */
 export interface CommentVariant {
+  /** Its first feature's id: a feature belongs to one variant only. */
+  key: string;
   comment: string | null;
   features: ProjectComponent[];
+  featureIds: string[];
   flag: ComponentFlag | null;
 }
 
 export interface LabelGroup {
   label: string;
+  featureIds: string[];
   variants: CommentVariant[];
 }
 
@@ -81,6 +85,9 @@ const submissionKey = (component: ProjectComponent) =>
     .map((part) => (part ?? "").trim().toLowerCase())
     .join("|");
 
+const idsOf = (features: readonly ProjectComponent[]) =>
+  features.map(({ featureId }) => featureId);
+
 const latestDate = (features: readonly ProjectComponent[]): string | null =>
   features.reduce<string | null>(
     (latest, { date }) => (date && (!latest || date > latest) ? date : latest),
@@ -96,9 +103,12 @@ const flagOf = (features: readonly ProjectComponent[]): ComponentFlag | null => 
 
 const toLabelGroup = (features: ProjectComponent[]): LabelGroup => ({
   label: features[0].label,
+  featureIds: idsOf(features),
   variants: groupBy(features, ({ comment }) => comment ?? "").map((same) => ({
+    key: same[0].featureId,
     comment: same[0].comment,
     features: same,
+    featureIds: idsOf(same),
     flag: flagOf(same),
   })),
 });
@@ -119,7 +129,7 @@ const toSubmission = (features: ProjectComponent[]): Submission => {
     number: amendmentNumber(features[0]),
     date: latestDate(features),
     sources: unique(features.map(({ source }) => source)),
-    featureIds: features.map(({ featureId }) => featureId),
+    featureIds: idsOf(features),
     labels: footprintFirst(groupBy(features, ({ label }) => label).map(toLabelGroup)),
   };
 };
@@ -136,6 +146,16 @@ export const groupComponents = (
       submissionKey,
     ).map(toSubmission),
   })).filter(({ submissions }) => submissions.length > 0);
+
+export const findVariant = (
+  groups: readonly ComponentTypeGroup[],
+  key: string | null,
+): CommentVariant | undefined =>
+  groups
+    .flatMap(({ submissions }) => submissions)
+    .flatMap(({ labels }) => labels)
+    .flatMap(({ variants }) => variants)
+    .find((variant) => variant.key === key);
 
 /** "Category · Subcategory · Number", leaving out whichever is absent. */
 export const submissionTitle = ({ category, subcategory, number }: Submission) =>

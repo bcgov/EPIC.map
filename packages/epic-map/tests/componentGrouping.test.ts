@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectComponent } from "@/api/useProjects";
 import {
+  findVariant,
   groupBy,
   groupComponents,
   submissionDate,
@@ -212,6 +213,33 @@ describe("labels and their comments", () => {
       "Data sensitive",
       "Pacific Water Shrew",
     ]);
+  });
+});
+
+describe("variants", () => {
+  it("are keyed by their first feature and list every feature", () => {
+    const submission = onlySubmission([
+      component({ featureId: "{A}", comment: "Data sensitive" }),
+      component({ featureId: "{B}", comment: "Pacific Water Shrew" }),
+      component({ featureId: "{C}", comment: "Data sensitive" }),
+    ]);
+
+    const [label] = submission.labels;
+    expect(label.featureIds).toEqual(["{A}", "{B}", "{C}"]);
+    expect(label.variants.map(({ key, featureIds }) => [key, featureIds])).toEqual([
+      ["{A}", ["{A}", "{C}"]],
+      ["{B}", ["{B}"]],
+    ]);
+  });
+
+  it("are found by key across every group", () => {
+    const groups = groupComponents([
+      component({ featureId: "{P}" }),
+      component({ featureId: "{V}", componentType: "Value component" }),
+    ]);
+
+    expect(findVariant(groups, "{V}")?.featureIds).toEqual(["{V}"]);
+    expect(findVariant(groups, null)).toBeUndefined();
   });
 });
 

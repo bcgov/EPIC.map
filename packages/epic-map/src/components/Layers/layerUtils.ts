@@ -344,19 +344,19 @@ export const hideHighlight = (map: MapLibreMap) => {
   whenStyleReady(map, () => removeHighlight(map));
 };
 
-/** One feature of a layer we host, as the highlight addresses it. */
+/** Features of a layer we host, as the highlight addresses them. */
 export interface LocalFeatureHighlight {
   /** The hosted layer's id in the panel, which names its tile source. */
   layerId: string;
   /** The layer's name inside the vector tile. */
   sourceLayer: string;
-  /** The tile property holding the key, and the key to match on it. */
+  /** The tile property holding the key, and the keys to match on it. */
   keyProperty: string;
-  key: string;
+  keys: readonly string[];
 }
 
 /**
- * Outline one feature of a hosted layer, by filtering its own tiles.
+ * Outline features of a hosted layer, by filtering its own tiles.
  *
  * Not drawn from geometry, as a warehouse feature is: a vector tile clips
  * shapes at its edge, so the copy the client was handed is a few pieces of the
@@ -366,7 +366,7 @@ export interface LocalFeatureHighlight {
  */
 export const showLocalHighlight = (
   map: MapLibreMap,
-  { layerId, sourceLayer, keyProperty, key }: LocalFeatureHighlight,
+  { layerId, sourceLayer, keyProperty, keys }: LocalFeatureHighlight,
 ) => {
   whenStyleReady(map, () => {
     removeHighlight(map);
@@ -374,7 +374,7 @@ export const showLocalHighlight = (
     const source = localSourceId(layerId);
     if (!map.getSource(source)) return;
 
-    const filter = ["==", ["get", keyProperty], key];
+    const filter = ["in", ["get", keyProperty], ["literal", [...keys]]];
     const shared = { source, "source-layer": sourceLayer, filter } as const;
 
     map.addLayer({

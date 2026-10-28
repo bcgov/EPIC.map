@@ -558,7 +558,7 @@ describe("showLocalHighlight", () => {
     layerId: LAYER_ID,
     sourceLayer: "pip_consultation_areas",
     keyProperty: "cnsltn_area_guid",
-    key: "0123456789abcdef0123456789abcdef",
+    keys: ["0123456789abcdef0123456789abcdef"],
   };
 
   /** Draw the layer, then highlight one of its features. */
@@ -583,12 +583,26 @@ describe("showLocalHighlight", () => {
       // The filter is the whole of "which feature": wrong highlights
       // nothing, absent highlights the lot.
       expect(spec.filter).toEqual([
-        "==",
+        "in",
         ["get", "cnsltn_area_guid"],
-        "0123456789abcdef0123456789abcdef",
+        ["literal", ["0123456789abcdef0123456789abcdef"]],
       ]);
       expect(spec["source-layer"]).toBe("pip_consultation_areas");
     }
+  });
+
+  it("outlines every feature it is given", () => {
+    const harness = fakeMap();
+    show(harness);
+    harness.added.length = 0;
+    showLocalHighlight(harness.map, { ...highlight, keys: ["a", "b"] });
+    harness.fire("styledata");
+
+    expect(harness.added[0].filter).toEqual([
+      "in",
+      ["get", "cnsltn_area_guid"],
+      ["literal", ["a", "b"]],
+    ]);
   });
 
   it("replaces the previous highlight rather than stacking on it", () => {
@@ -597,7 +611,7 @@ describe("showLocalHighlight", () => {
     // the first highlight and pass for the wrong reason.
     harness.removed.length = 0;
 
-    showLocalHighlight(harness.map, { ...highlight, key: "f".repeat(32) });
+    showLocalHighlight(harness.map, { ...highlight, keys: ["f".repeat(32)] });
     harness.fire("styledata");
 
     expect(harness.removed).toEqual([
@@ -610,9 +624,9 @@ describe("showLocalHighlight", () => {
       "epic-highlight-local-line",
     ]);
     expect(harness.added[0].filter).toEqual([
-      "==",
+      "in",
       ["get", "cnsltn_area_guid"],
-      "f".repeat(32),
+      ["literal", ["f".repeat(32)]],
     ]);
   });
 

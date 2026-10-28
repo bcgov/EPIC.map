@@ -58,11 +58,18 @@ const { default: MapLayersSection } = await import(
   "@/components/Projects/MapLayersSection"
 );
 
-/** What the EAO layer would be told to draw. */
-const revealed: { ids: readonly string[] } = { ids: [] };
+/** What the EAO layer would be told to draw, and to highlight. */
+const revealed: {
+  ids: readonly string[];
+  hidden: readonly string[];
+  selected: readonly string[];
+} = { ids: [], hidden: [], selected: [] };
 
 const Probe = () => {
-  revealed.ids = useRevealedComponents().featureIds;
+  const { featureIds, hiddenFeatureIds, selectedFeatureIds } = useRevealedComponents();
+  revealed.ids = featureIds;
+  revealed.hidden = hiddenFeatureIds;
+  revealed.selected = selectedFeatureIds;
   return null;
 };
 
@@ -77,6 +84,8 @@ const renderSection = () =>
 beforeEach(() => {
   state.components = COMPONENTS;
   revealed.ids = [];
+  revealed.hidden = [];
+  revealed.selected = [];
 });
 afterEach(cleanup);
 
@@ -230,5 +239,117 @@ describe("row flags", () => {
 
     expect(screen.getAllByText("Sensitive")).toHaveLength(1);
     expect(screen.getAllByText("Adjusted by GIS")).toHaveLength(1);
+  });
+});
+
+describe("a component's eye", () => {
+  const eye = (name: string) =>
+    screen.getByRole("button", { name: `Show ${name} on the map` });
+
+  it("takes a row off the map, and back on", () => {
+    renderSection();
+
+    fireEvent.click(eye("Access Route"));
+    expect(revealed.ids).toEqual(["{V1}", "{V2}"]);
+    expect(revealed.hidden).toEqual(["{P1}"]);
+    expect(eye("Access Route").getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(eye("Access Route"));
+    expect(revealed.ids).toEqual(["{P1}", "{V1}", "{V2}"]);
+  });
+
+  it("starts sensitive features off the map", () => {
+    state.components = [
+      component({ featureId: "{S1}", label: "Laydown Area", sensitive: true }),
+      component({ featureId: "{N1}", label: "Access Route" }),
+    ];
+    renderSection();
+
+    expect(revealed.ids).toEqual(["{N1}"]);
+    expect(eye("Laydown Area").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("takes a whole label off the map from the label's eye", () => {
+    renderSection();
+
+    fireEvent.click(eye("Wildlife Habitat Area"));
+
+    expect(revealed.ids).toEqual(["{P1}"]);
+    expect(eye("Wildlife Habitat Area: Data sensitive").getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    expect(
+      eye("Wildlife Habitat Area: Pacific Water Shrew").getAttribute("aria-pressed"),
+    ).toBe("false");
+  });
+
+  it("keeps the label's eye on until its last variant is hidden", () => {
+    renderSection();
+    const label = eye("Wildlife Habitat Area");
+
+    fireEvent.click(eye("Wildlife Habitat Area: Data sensitive"));
+    expect(revealed.ids).toEqual(["{P1}", "{V2}"]);
+    expect(label.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(eye("Wildlife Habitat Area: Pacific Water Shrew"));
+    expect(label.getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+describe("selecting a component", () => {
+  const row = (name: string) => screen.getByRole("button", { name });
+
+  it("selects a row and highlights it on the map", () => {
+    renderSection();
+
+    fireEvent.click(row("Access Route Amendment 1"));
+
+    expect(row("Access Route Amendment 1").getAttribute("aria-pressed")).toBe("true");
+    expect(revealed.selected).toEqual(["{P1}"]);
+  });
+
+  it("selects one variant of a label", () => {
+    renderSection();
+
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(revealed.selected).toEqual(["{V2}"]);
+  });
+
+  it("clears the selection when the row is clicked again", () => {
+    renderSection();
+
+    fireEvent.click(row("Pacific Water Shrew"));
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(row("Pacific Water Shrew").getAttribute("aria-pressed")).toBe("false");
+    expect(revealed.selected).toEqual([]);
+  });
+
+  it("highlights nothing while the selection is off the map", () => {
+    renderSection();
+
+    fireEvent.click(row("Pacific Water Shrew"));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show Wildlife Habitat Area: Pacific Water Shrew on the map",
+      }),
+    );
+
+    expect(revealed.selected).toEqual([]);
+  });
+
+  it("keeps the selection in view when the list collapses", () => {
+    state.components = Array.from({ length: 7 }, (_, index) =>
+      component({ featureId: `{L${index}}`, label: `Component ${index + 1}` }),
+    );
+    renderSection();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all 7 components" }));
+    fireEvent.click(row("Component 7"));
+    fireEvent.click(screen.getByRole("button", { name: "Show fewer" }));
+
+    expect(screen.getByText("Component 7")).toBeDefined();
+    expect(screen.queryByText("Component 6")).toBeNull();
   });
 });

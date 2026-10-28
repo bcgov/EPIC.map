@@ -11,7 +11,8 @@ import { EAO_OBJECT_NAME, localLayerId } from "@/utils/localLayers";
  * filter bar has hidden has no boundary drawn either, so the two always agree.
  *
  * Components - the orange, green and purple of the style - are drawn only
- * where the open project's panel reveals them, by feature id. They are filtered
+ * where the open project's panel reveals them, by feature id. A footprint is
+ * drawn unless that panel has switched it off. They are filtered
  * by project as well, so revealing them cannot leave a component behind when
  * its project is filtered out.
  */
@@ -35,6 +36,7 @@ export const eaoSpecFilters = (
   style: LocalLayerStyle,
   visibleTrackIds: readonly number[],
   revealedFeatureIds: readonly string[],
+  hiddenFeatureIds: readonly string[],
 ): Record<string, unknown> => {
   const filters: Record<string, unknown> = {};
 
@@ -46,10 +48,16 @@ export const eaoSpecFilters = (
     ["literal", [...visibleTrackIds]],
   ];
 
+  const footprint: unknown = hiddenFeatureIds.length
+    ? [
+        "all",
+        onVisibleProject,
+        ["!", ["in", ["get", "feature_id"], ["literal", [...hiddenFeatureIds]]]],
+      ]
+    : onVisibleProject;
   FOOTPRINT_SPEC_IDS.forEach((id) => {
-    filters[id] = onVisibleProject;
+    filters[id] = footprint;
   });
-
 
   const revealed: unknown = [
     "in",
