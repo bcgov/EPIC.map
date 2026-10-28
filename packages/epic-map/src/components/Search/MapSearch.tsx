@@ -28,7 +28,16 @@ import {
 import {
   MIN_PLACE_QUERY_LENGTH,
   PLACE_SEARCH_DEBOUNCE_MS,
+  PROJECT_CARD_WIDTH_PX,
 } from "@/utils/config";
+
+/**
+ * Where a project lands when its panel is about to cover the right edge:
+ * half the card to the left of centre, which is the middle of what stays
+ * visible. Centring in the whole container would put the dot under the panel
+ * on anything narrower than twice the card.
+ */
+const PANEL_CAMERA_OFFSET: [number, number] = [-PROJECT_CARD_WIDTH_PX / 2, 0];
 
 /**
  * Search for an EAO project or a place, and go to it.
@@ -43,7 +52,14 @@ import {
  * replacing it with the one that was picked would make going back for a
  * different one a retype rather than a reopen.
  */
-export default function MapSearch({ map }: { map: MapLibreMap | null }) {
+export default function MapSearch({
+  map,
+  onProjectSelect,
+}: {
+  map: MapLibreMap | null;
+  /** Opens the chosen project's panel, or closes whichever one is open. */
+  onProjectSelect: (projectId: number | null) => void;
+}) {
   const theme = useTheme();
   const { projects: allProjects, visibleProjects, types } = useFilters();
 
@@ -137,12 +153,16 @@ export default function MapSearch({ map }: { map: MapLibreMap | null }) {
       // The geocoder's results belong to no layer, so a place is always pinned.
       showAt(row.place.coordinates, row.place.zoom);
     } else if (isDrawn(row.project.id)) {
-      // Its own dot already says where it is.
-      goTo(row.project.coordinates, row.project.zoom);
+      // Its own dot already says where it is, and opens the same panel.
+      onProjectSelect(row.project.id);
+      goTo(row.project.coordinates, row.project.zoom, PANEL_CAMERA_OFFSET);
     } else {
-      // A filter is hiding it. Projects are searched over the whole list on
-      // purpose - being unable to find something a forgotten filter hid is the
-      // worst case - so without a pin this would fly to an empty patch of map.
+      // A filter is hiding it, so no panel: ProjectsControl closes one the map
+      // is not drawing. Any panel open is the wrong project even so.
+      onProjectSelect(null);
+      // Projects are searched over the whole list on purpose - being unable to
+      // find something a forgotten filter hid is the worst case - so without a
+      // pin this would fly to an empty patch of map.
       showAt(row.project.coordinates, row.project.zoom);
     }
 
