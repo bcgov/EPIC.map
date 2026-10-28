@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 //
-// What the selection does when the filters move under it. The map itself is not
-// exercised - it wants a WebGL context jsdom cannot give - so this renders with
-// no map and checks the one rule that does not need one.
+// What the selection and the hover do when the filters move under them. The
+// drawing helpers want a WebGL context jsdom cannot give, so they are stubbed
+// and the rest runs against a fake map that captures the handlers.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import type { MapProject } from "@/components/Filters/filterUtils";
 import type { ProjectFeatures } from "@/api/useProjects";
 
@@ -45,6 +45,16 @@ vi.mock("@/api/useProjects", () => ({
   useProject: () => ({ data: undefined, error: null, isLoading: false }),
 }));
 
+// hoveredProjectAt and projectIdAt stay real: what they read off the map is
+// what these tests are about.
+vi.mock("@/components/Projects/projectUtils", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  showProjects: vi.fn(),
+  setSelectedProject: vi.fn(),
+  addMissingProjectImage: vi.fn(),
+  keepProjectsOnTop: vi.fn(),
+}));
+
 vi.mock("@/components/Filters/FiltersContext", () => ({
   useFilters: () => ({ visibleProjects: state.visible }),
 }));
@@ -62,6 +72,36 @@ const features = (ids: number[]): ProjectFeatures => ({
   type: "FeatureCollection",
   features: ids.map(feature),
 });
+
+/** A dot under the pointer, as queryRenderedFeatures hands it back. */
+const dot = (id: number) => ({
+  id,
+  properties: { name: `Project ${id}`, hasWorksInProgress: false },
+  geometry: { type: "Point", coordinates: [-123, 50] },
+});
+
+/** `dots` is read on every query, so a test can take them away mid-run. */
+const fakeMap = (dots: unknown[]) => ({
+  on: vi.fn(),
+  off: vi.fn(),
+  getLayer: (id: string) => ({ id }),
+  queryRenderedFeatures: () => dots,
+  project: () => ({ x: 120, y: 80 }),
+  getCanvas: () => ({ style: {} }),
+  getContainer: () => ({ clientWidth: 1200 }),
+});
+
+type FakeMap = ReturnType<typeof fakeMap>;
+
+/** The handler the component registered for a map event. */
+const handlerFor = (map: FakeMap, event: string) => {
+  const call = map.on.mock.calls.find((args) => args[0] === event);
+  expect(call).toBeDefined();
+  return call?.at(-1) as (event?: unknown) => void;
+};
+
+const hoverOver = (map: FakeMap) =>
+  act(() => handlerFor(map, "mousemove")({ point: { x: 1, y: 1 } }));
 
 beforeEach(() => {
   state.data = features([1, 2]);
@@ -107,5 +147,61 @@ describe("the selection against the filters", () => {
     render(<ProjectsControl map={null} selectedId={null} onSelect={onSelect} />);
 
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Both rules take the name back down, and both were invisible to the suite: the
+ * reviewer removed either one and every test still passed.
+ */
+describe("the name on hover", () => {
+  it("names the hovered project, and takes it down on mouse-out", () => {
+    const map = fakeMap([dot(1)]);
+    render(
+      <ProjectsControl map={map as never} selectedId={null} onSelect={vi.fn()} />,
+    );
+
+    hoverOver(map);
+    expect(screen.getByText("Project 1")).toBeDefined();
+
+    act(() => handlerFor(map, "mouseleave")());
+    expect(screen.queryByText("Project 1")).toBeNull();
+  });
+
+  // A basemap switch rebuilds the style; the dots are carried over, but if one
+  // is not, its name must not be left behind over an empty patch of map.
+  it("takes the name down when a style change loses the dot", () => {
+    const dots = [dot(1)];
+    const map = fakeMap(dots);
+    render(
+      <ProjectsControl map={map as never} selectedId={null} onSelect={vi.fn()} />,
+    );
+
+    hoverOver(map);
+    expect(screen.getByText("Project 1")).toBeDefined();
+
+    dots.length = 0;
+    act(() => handlerFor(map, "styledata")());
+
+    expect(screen.queryByText("Project 1")).toBeNull();
+  });
+
+  // A dot filtered out from under a still pointer sends no mouseleave, so the
+  // name would be left over an empty patch of map.
+  it("takes the name down when a filter excludes the hovered project", () => {
+    const map = fakeMap([dot(1)]);
+    const view = render(
+      <ProjectsControl map={map as never} selectedId={null} onSelect={vi.fn()} />,
+    );
+
+    hoverOver(map);
+    expect(screen.getByText("Project 1")).toBeDefined();
+
+    state.visible = [project(2)];
+    view.rerender(
+      <ProjectsControl map={map as never} selectedId={null} onSelect={vi.fn()} />,
+    );
+
+    expect(screen.queryByText("Project 1")).toBeNull();
   });
 });

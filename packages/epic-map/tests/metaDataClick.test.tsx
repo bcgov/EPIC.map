@@ -21,7 +21,7 @@ const popup = vi.fn();
 
 vi.mock("@/components/Projects/projectUtils", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  projectIdAt: () => under.dot,
+  hasProjectAt: () => under.dot !== null,
 }));
 
 vi.mock("@/components/Layers/eaoVisibility", async (importOriginal) => ({
