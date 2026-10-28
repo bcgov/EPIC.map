@@ -17,11 +17,7 @@ import {
 const SOURCE_ID = "epic-import-preview";
 /** Room, in pixels, between the features and the edge of the preview. */
 const PREVIEW_PADDING_PX = 24;
-/**
- * The preview takes whatever height the form leaves it, down to this - past
- * which a map says nothing and the fields are better off scrolling.
- */
-export const MIN_PREVIEW_HEIGHT = "16rem";
+export const PREVIEW_HEIGHT = "308px";
 
 /**
  * What the file looks like on a map, before it is imported.
@@ -124,9 +120,8 @@ export default function ImportPreviewMap({
       role="img"
       aria-label={`Preview of the ${geojson.features.length} features in this file`}
       sx={{
-        // Fills what the dialog has left after the summary and the form.
-        flex: "1 1 auto",
-        minHeight: MIN_PREVIEW_HEIGHT,
+        flexShrink: 0,
+        height: PREVIEW_HEIGHT,
         borderRadius: `${theme.shape.borderRadius}px`,
         border: `1px solid ${theme.palette.divider}`,
         overflow: "hidden",

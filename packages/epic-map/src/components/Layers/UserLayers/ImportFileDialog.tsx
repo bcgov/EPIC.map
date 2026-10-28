@@ -25,7 +25,7 @@ import {
   type ImportedLayerChanges,
 } from "@/api/useImportedLayers";
 import ImportPreviewMap, {
-  MIN_PREVIEW_HEIGHT,
+  PREVIEW_HEIGHT,
 } from "@/components/Layers/UserLayers/ImportPreviewMap";
 import {
   hasProblem,
@@ -196,8 +196,8 @@ export default function ImportFileDialog(
   /** Held to one height so the form does not move as the file is read. */
   const previewArea = {
     display: "flex",
-    flex: "1 1 auto",
-    minHeight: MIN_PREVIEW_HEIGHT,
+    flexShrink: 0,
+    height: PREVIEW_HEIGHT,
     alignItems: "center",
     justifyContent: "center",
   } as const;
@@ -221,13 +221,16 @@ export default function ImportFileDialog(
       open
       onClose={saving ? undefined : onClose}
       aria-labelledby={TITLE_ID}
-      maxWidth="md"
-      fullWidth
-      // As tall as the viewport allows, so the preview has room to be read.
-      // MUI's own maxHeight - calc(100% - 64px) - keeps the standard margin
-      // around it. PaperProps rather than slotProps: v5's Dialog forwards only
-      // the modal's own slots and drops anything else, silently.
-      PaperProps={{ sx: { height: "100%" } }}
+      maxWidth={false}
+      // Prototype size. PaperProps, as v5 drops unknown slotProps silently.
+      PaperProps={{
+        sx: {
+          width: "640px",
+          maxWidth: "calc(100% - 32px)",
+          maxHeight: "calc(100% - 48px)",
+          margin: "1rem",
+        },
+      }}
     >
       <DialogTitle
         id={TITLE_ID}
@@ -312,8 +315,6 @@ export default function ImportFileDialog(
           </Box>
         )}
 
-        {/* The form keeps its natural height; the preview above takes whatever
-            is left, and the dialog scrolls once the preview is at its floor. */}
         <Box sx={{ flexShrink: 0 }}>
           <Box
             sx={{
