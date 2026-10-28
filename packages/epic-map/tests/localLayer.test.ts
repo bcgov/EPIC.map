@@ -4,6 +4,7 @@ import {
   carryWidgetLayers,
   hideLocalVectorLayer,
   localDrawnIds,
+  setLocalVectorLayerFilters,
   setLocalVectorLayerLineWidth,
   setLocalVectorLayerOpacity,
   showComponentHighlight,
@@ -193,6 +194,13 @@ const show = (
   harness.fire("styledata");
 };
 
+/** The line layer, not the hit target beside it. */
+const outline = (harness: ReturnType<typeof fakeMap>) => {
+  const drawn = harness.added.find((spec) => spec.type === "line");
+  if (!drawn) throw new Error("no line layer was added");
+  return drawn;
+};
+
 describe("showLocalVectorLayer", () => {
   it("waits for the style, like every other map mutation", () => {
     const harness = fakeMap();
@@ -206,7 +214,7 @@ describe("showLocalVectorLayer", () => {
     expect(harness.added).toHaveLength(0);
 
     harness.fire("styledata");
-    expect(harness.added).toHaveLength(1);
+    expect(harness.added.length).toBeGreaterThan(0);
   });
 
   it("adds a vector source and a line layer", () => {
@@ -214,7 +222,7 @@ describe("showLocalVectorLayer", () => {
     show(harness);
 
     expect(harness.sources[0].type).toBe("vector");
-    expect(harness.added[0].type).toBe("line");
+    expect(outline(harness).type).toBe("line");
   });
 
   it("prefixes both ids so a basemap switch carries them", () => {
@@ -242,8 +250,8 @@ describe("showLocalVectorLayer", () => {
     const harness = fakeMap();
     show(harness);
 
-    expect(harness.added[0].paint).toEqual(style.layers[0].paint);
-    expect(harness.added[0]["source-layer"]).toBe("pip_consultation_areas");
+    expect(outline(harness).paint).toEqual(style.layers[0].paint);
+    expect(outline(harness)["source-layer"]).toBe("pip_consultation_areas");
   });
 
   it("carries a class value with a trailing space into the paint", () => {
@@ -253,7 +261,7 @@ describe("showLocalVectorLayer", () => {
     const harness = fakeMap();
     show(harness);
 
-    const colours = (harness.added[0].paint?.["line-color"] ?? []) as unknown[];
+    const colours = (outline(harness).paint?.["line-color"] ?? []) as unknown[];
     expect(colours).toContain("Bridge River ");
   });
 
@@ -267,7 +275,7 @@ describe("showLocalVectorLayer", () => {
     expect(harness.sources[0].maxzoom).toBe(LOCAL_TILE_MAX_ZOOM);
     // The layer inherits the source's floor: the style document carries it once,
     // and gating both is what stops a tile being fetched AND drawn too far out.
-    expect(harness.added[0].minzoom).toBe(6);
+    expect(outline(harness).minzoom).toBe(6);
   });
 
   it("lets a layer start deeper than its source", () => {
@@ -280,7 +288,7 @@ describe("showLocalVectorLayer", () => {
     });
 
     expect(harness.sources[0].minzoom).toBe(6);
-    expect(harness.added[0].minzoom).toBe(11);
+    expect(outline(harness).minzoom).toBe(11);
   });
 
   it("sets no floor at all when neither the source nor the layer has one", () => {
@@ -293,13 +301,13 @@ describe("showLocalVectorLayer", () => {
   it("reveals an existing layer rather than adding it twice", () => {
     const harness = fakeMap();
     show(harness);
+    const drawn = harness.added.map((spec) => spec.id);
     show(harness);
 
-    expect(harness.added).toHaveLength(1);
-    expect(harness.visibility).toContainEqual({
-      id: harness.added[0].id,
-      value: "visible",
-    });
+    expect(harness.added.map((spec) => spec.id)).toEqual(drawn);
+    drawn.forEach((id) =>
+      expect(harness.visibility).toContainEqual({ id, value: "visible" }),
+    );
   });
 
   it("draws every layer the style asks for, in order", () => {
@@ -410,6 +418,110 @@ describe("showLocalVectorLayer", () => {
   });
 });
 
+describe("the hit target under an outline-only layer (MAP-84)", () => {
+  /** The invisible fill identify tests against. */
+  const hit = (harness: ReturnType<typeof fakeMap>) => {
+    const drawn = harness.added.find((spec) => spec.id.endsWith("-hit"));
+    if (!drawn) throw new Error("no hit target was added");
+    return drawn;
+  };
+
+  it("fills the interior of a layer the server styled as outlines", () => {
+    const harness = fakeMap();
+    show(harness);
+
+    expect(hit(harness).type).toBe("fill");
+    expect(hit(harness)["source-layer"]).toBe("pip_consultation_areas");
+  });
+
+  it("draws nothing, so the layer still looks like outlines", () => {
+    const harness = fakeMap();
+    show(harness);
+
+    expect(hit(harness).paint).toEqual({ "fill-opacity": 0 });
+  });
+
+  it("goes under the outline it follows", () => {
+    const harness = fakeMap();
+    show(harness);
+
+    expect(harness.added.map((spec) => spec.type)).toEqual(["fill", "line"]);
+  });
+
+  it("answers for the same features and zooms as that outline", () => {
+    const harness = fakeMap();
+    show(harness, {
+      source: { minZoom: 6, maxZoom: LOCAL_TILE_MAX_ZOOM },
+      layers: [
+        {
+          ...style.layers[0],
+          minZoom: 11,
+          filter: ["==", ["get", "cnsltn_area_name"], "Adams Lake Indian Band"],
+        },
+      ],
+    });
+
+    expect(hit(harness).minzoom).toBe(11);
+    expect(hit(harness).filter).toEqual([
+      "==",
+      ["get", "cnsltn_area_name"],
+      "Adams Lake Indian Band",
+    ]);
+  });
+
+  it("takes the client's filter for the spec it follows", () => {
+    // Otherwise a footprint answers for a project the filter bar hid.
+    const set: Record<string, unknown> = {};
+    const map = {
+      isStyleLoaded: () => true,
+      getLayer: (id: string) => ({ id }),
+      setFilter: (id: string, filter: unknown) => {
+        set[id] = filter;
+      },
+    };
+
+    setLocalVectorLayerFilters(map as never, LAYER_ID, style, {
+      line: ["==", ["get", "track_id"], 205],
+    });
+
+    expect(set["epic-local-pip-consultation-areas-line-hit"]).toEqual(
+      set["epic-local-pip-consultation-areas-line"],
+    );
+  });
+
+  it("is left out of a style that already fills its tile layer", () => {
+    // A fill is a hit target already; a second doubles the tile's work.
+    const harness = fakeMap();
+    show(harness, polygonStyle);
+
+    expect(harness.added.map((spec) => spec.id.endsWith("-hit"))).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it("is what a click is tested against", () => {
+    const harness = fakeMap();
+    show(harness);
+
+    expect(localDrawnIds(harness.map, LAYER_ID)).toEqual([
+      "epic-local-pip-consultation-areas-line-hit",
+      "epic-local-pip-consultation-areas-line",
+    ]);
+  });
+
+  it("stays invisible as the opacity slider moves", () => {
+    const harness = fakeMap();
+    show(harness);
+
+    setLocalVectorLayerOpacity(harness.map, LAYER_ID, style, 100);
+    harness.fire("styledata");
+
+    expect(harness.paint.map((one) => one.id)).not.toContain(hit(harness).id);
+  });
+});
+
 describe("hideLocalVectorLayer", () => {
   it("hides rather than removes, so the parsed tiles survive", () => {
     const harness = fakeMap();
@@ -419,10 +531,9 @@ describe("hideLocalVectorLayer", () => {
     harness.fire("styledata");
 
     expect(harness.sources).toHaveLength(1);
-    expect(harness.visibility.at(-1)).toEqual({
-      id: harness.added[0].id,
-      value: "none",
-    });
+    expect(
+      harness.visibility.filter((one) => one.value === "none").map((one) => one.id),
+    ).toEqual(harness.added.map((spec) => spec.id));
   });
 
   it("hides every layer of a set, not just the first", () => {

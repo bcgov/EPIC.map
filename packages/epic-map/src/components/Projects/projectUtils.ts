@@ -316,16 +316,58 @@ export const addMissingProjectImage = (
   if (data) map.addImage(event.id, data, { pixelRatio });
 };
 
-/** The project under a point, preferring the one drawn on top. */
+/** The dot under a point, in the order projectSortKey draws them. */
+const topProjectAt = (
+  map: MapLibreMap,
+  point: PointLike,
+  selectedId: number | null,
+) => {
+  if (!map.getLayer(PROJECTS_LAYER_ID)) return undefined;
+  const hits = map.queryRenderedFeatures(point, { layers: [PROJECTS_LAYER_ID] });
+  const selected =
+    selectedId === null ? undefined : hits.find((hit) => hit.id === selectedId);
+  return (
+    selected ??
+    hits.find((hit) => hit.properties?.hasWorksInProgress === true) ??
+    hits[0]
+  );
+};
+
+/** Whether a dot is under a point at all, when which one does not matter. */
+export const hasProjectAt = (map: MapLibreMap, point: PointLike): boolean =>
+  topProjectAt(map, point, null) !== undefined;
+
+/** The project under a point, the one drawn on top of the others. */
 export const projectIdAt = (
   map: MapLibreMap,
   point: PointLike,
+  selectedId: number | null,
 ): number | null => {
-  if (!map.getLayer(PROJECTS_LAYER_ID)) return null;
-  const hits = map.queryRenderedFeatures(point, { layers: [PROJECTS_LAYER_ID] });
-  const top =
-    hits.find((hit) => hit.properties?.hasWorksInProgress === true) ?? hits[0];
+  const top = topProjectAt(map, point, selectedId);
   return typeof top?.id === "number" ? top.id : null;
+};
+
+// --- Project dots: the name on hover ---
+
+/** What the hover tooltip draws, and where. */
+export interface HoveredProject {
+  id: number;
+  name: string;
+  lngLat: [number, number];
+}
+
+/** The project under the pointer, anchored at its dot rather than the cursor. */
+export const hoveredProjectAt = (
+  map: MapLibreMap,
+  point: PointLike,
+  selectedId: number | null,
+): HoveredProject | null => {
+  const top = topProjectAt(map, point, selectedId);
+  if (typeof top?.id !== "number" || top.geometry.type !== "Point") return null;
+  const name = top.properties?.name;
+  if (typeof name !== "string" || !name) return null;
+  const [longitude, latitude] = top.geometry.coordinates;
+  return { id: top.id, name, lngLat: [longitude, latitude] };
 };
 
 // --- Work state badges and meta line ---

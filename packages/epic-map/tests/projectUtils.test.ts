@@ -6,6 +6,7 @@ import {
   certificateTag,
   formatWorkDate,
   glyphForType,
+  hoveredProjectAt,
   keepProjectsOnTop,
   parseProjectImageId,
   projectIconImage,
@@ -143,12 +144,66 @@ describe("projectIdAt", () => {
         { id: 5, properties: { hasWorksInProgress: true } },
       ],
     );
-    expect(projectIdAt(map, [0, 0])).toBe(5);
+    expect(projectIdAt(map, [0, 0], null)).toBe(5);
+  });
+
+  // projectSortKey draws the selected dot over the green ones, so a click on
+  // the pair has to land on the one the user can see.
+  it("prefers the selected dot over a green one under it", () => {
+    const { map } = fakeMap(
+      [PROJECTS_LAYER_ID],
+      [
+        { id: 4, properties: { hasWorksInProgress: false } },
+        { id: 5, properties: { hasWorksInProgress: true } },
+      ],
+    );
+    expect(projectIdAt(map, [0, 0], 4)).toBe(4);
   });
 
   it("is null off a dot, or before the dots are drawn", () => {
-    expect(projectIdAt(fakeMap([PROJECTS_LAYER_ID]).map, [0, 0])).toBeNull();
-    expect(projectIdAt(fakeMap([]).map, [0, 0])).toBeNull();
+    expect(projectIdAt(fakeMap([PROJECTS_LAYER_ID]).map, [0, 0], null)).toBeNull();
+    expect(projectIdAt(fakeMap([]).map, [0, 0], null)).toBeNull();
+  });
+});
+
+describe("hoveredProjectAt", () => {
+  const dot = (id: number, name: string, hasWorksInProgress = false) => ({
+    id,
+    properties: { name, hasWorksInProgress },
+    geometry: { type: "Point", coordinates: [-123, 50] },
+  });
+
+  it("names the dot drawn on top, anchored at its own coordinates", () => {
+    const { map } = fakeMap(
+      [PROJECTS_LAYER_ID],
+      [dot(4, "Blue project"), dot(5, "Green project", true)],
+    );
+    expect(hoveredProjectAt(map, [0, 0], null)).toEqual({
+      id: 5,
+      name: "Green project",
+      lngLat: [-123, 50],
+    });
+  });
+
+  it("is null off a dot, or before the dots are drawn", () => {
+    expect(
+      hoveredProjectAt(fakeMap([PROJECTS_LAYER_ID]).map, [0, 0], null),
+    ).toBeNull();
+    expect(hoveredProjectAt(fakeMap([]).map, [0, 0], null)).toBeNull();
+  });
+
+  it("names the selected dot over a green one under it", () => {
+    const { map } = fakeMap(
+      [PROJECTS_LAYER_ID],
+      [dot(4, "Blue project"), dot(5, "Green project", true)],
+    );
+    expect(hoveredProjectAt(map, [0, 0], 4)?.name).toBe("Blue project");
+  });
+
+  // Nothing to label, so nothing is drawn rather than an empty card.
+  it("is null for a dot carrying no name", () => {
+    const { map } = fakeMap([PROJECTS_LAYER_ID], [dot(4, "")]);
+    expect(hoveredProjectAt(map, [0, 0], null)).toBeNull();
   });
 });
 

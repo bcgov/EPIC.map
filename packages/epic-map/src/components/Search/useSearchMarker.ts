@@ -50,8 +50,8 @@ export const useSearchMarker = (
   }, []);
 
   const flyTo = useCallback(
-    (coordinates: [number, number], zoom: number) => {
-      map?.flyTo({ center: coordinates, zoom, duration: FOCUS_FLY_MS });
+    (coordinates: [number, number], zoom: number, offset?: [number, number]) => {
+      map?.flyTo({ center: coordinates, zoom, offset, duration: FOCUS_FLY_MS });
     },
     [map],
   );
@@ -74,13 +74,18 @@ export const useSearchMarker = (
     [map, color, flyTo],
   );
 
-  /** Go to a project, which is already drawn, and take any pin down. */
+  /**
+   * Go to a project, which is already drawn, and take any pin down.
+   *
+   * `offset` moves where the target lands, in pixels from the container's
+   * centre, for a caller that is about to cover part of the map.
+   */
   const goTo = useCallback(
-    (coordinates: [number, number], zoom: number) => {
+    (coordinates: [number, number], zoom: number, offset?: [number, number]) => {
       if (!map) return;
 
       clear();
-      flyTo(coordinates, zoom);
+      flyTo(coordinates, zoom, offset);
     },
     [map, clear, flyTo],
   );

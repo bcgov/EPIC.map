@@ -24,7 +24,7 @@
  * control than the one in Figma.
  */
 
-/** surfaceColorBorderDefault - the resting border of every control in the bar. */
+/** surfaceColorBorderDefault - the resting border of every control and card. */
 export const BORDER_DEFAULT = "#D8D8D8";
 
 /** themeGray30 / surfaceColorTertiaryButtonHover - hover fill of an inactive control. */

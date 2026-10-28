@@ -27,8 +27,13 @@ import {
 
 export default function MapSurface({
   onMapReady,
+  selectedProjectId,
+  onProjectSelect,
 }: {
   onMapReady?: (map: MapLibreMap | null) => void;
+  /** The project whose panel is open, owned by the widget above. */
+  selectedProjectId: number | null;
+  onProjectSelect: (projectId: number | null) => void;
 }) {
   const { config, authorizeTileRequest } = useMapWidget();
   const { initialExtent, basemapStyles, onError } = config;
@@ -47,9 +52,6 @@ export default function MapSurface({
 
   const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP);
 
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(
-    null,
-  );
   // The card docks over the right edge, so the controls there move beside it.
   const cardInset = selectedProjectId === null ? 0 : PROJECT_CARD_WIDTH_PX;
   const activeStyle = resolveBasemap(basemap, basemapStyles).style;
@@ -171,7 +173,7 @@ export default function MapSurface({
             <ProjectsControl
               map={map}
               selectedId={selectedProjectId}
-              onSelect={setSelectedProjectId}
+              onSelect={onProjectSelect}
             />
           </RevealedComponentsProvider>
           <BasemapSwitch
