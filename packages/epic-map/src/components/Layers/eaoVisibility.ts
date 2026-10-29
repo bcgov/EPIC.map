@@ -36,7 +36,7 @@ export const eaoSpecFilters = (
   style: LocalLayerStyle,
   visibleTrackIds: readonly number[],
   revealedFeatureIds: readonly string[],
-  hiddenFeatureIds: readonly string[],
+  hiddenFootprintIds: readonly string[],
 ): Record<string, unknown> => {
   const filters: Record<string, unknown> = {};
 
@@ -48,11 +48,11 @@ export const eaoSpecFilters = (
     ["literal", [...visibleTrackIds]],
   ];
 
-  const footprint: unknown = hiddenFeatureIds.length
+  const footprint: unknown = hiddenFootprintIds.length
     ? [
         "all",
         onVisibleProject,
-        ["!", ["in", ["get", "feature_id"], ["literal", [...hiddenFeatureIds]]]],
+        ["!", ["in", ["get", "feature_id"], ["literal", [...hiddenFootprintIds]]]],
       ]
     : onVisibleProject;
   FOOTPRINT_SPEC_IDS.forEach((id) => {

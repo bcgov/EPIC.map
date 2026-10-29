@@ -66,9 +66,9 @@ const revealed: {
 } = { ids: [], hidden: [], selected: [] };
 
 const Probe = () => {
-  const { featureIds, hiddenFeatureIds, selectedFeatureIds } = useRevealedComponents();
+  const { featureIds, hiddenFootprintIds, selectedFeatureIds } = useRevealedComponents();
   revealed.ids = featureIds;
-  revealed.hidden = hiddenFeatureIds;
+  revealed.hidden = hiddenFootprintIds;
   revealed.selected = selectedFeatureIds;
   return null;
 };
@@ -251,11 +251,22 @@ describe("a component's eye", () => {
 
     fireEvent.click(eye("Access Route"));
     expect(revealed.ids).toEqual(["{V1}", "{V2}"]);
-    expect(revealed.hidden).toEqual(["{P1}"]);
     expect(eye("Access Route").getAttribute("aria-pressed")).toBe("false");
 
     fireEvent.click(eye("Access Route"));
     expect(revealed.ids).toEqual(["{P1}", "{V1}", "{V2}"]);
+  });
+
+  it("tells the map only of the footprints it hides", () => {
+    state.components = [
+      component({ featureId: "{FP}", label: "Project Footprint", footprint: true }),
+      component({ featureId: "{P1}", label: "Access Route" }),
+    ];
+    renderSection();
+
+    fireEvent.click(eye("Project Footprint"));
+    fireEvent.click(eye("Access Route"));
+    expect(revealed.hidden).toEqual(["{FP}"]);
   });
 
   it("starts sensitive features off the map", () => {

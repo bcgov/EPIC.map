@@ -5,6 +5,8 @@ import { useFilters } from "@/components/Filters/FiltersContext";
 import { useRevealedComponents } from "@/components/Projects/RevealedComponentsContext";
 import { EAO_OBJECT_NAME } from "@/utils/localLayers";
 
+const NO_FILTERS: Record<string, unknown> = {};
+
 /**
  * The extra filter a hosted layer's specs take, beyond the style's own.
  *
@@ -19,15 +21,15 @@ export const useHostedLayerFilters = (
 ): Record<string, unknown> => {
   // Called for every hosted layer, used by one: a hook cannot be conditional.
   const { visibleProjects } = useFilters();
-  const { featureIds, hiddenFeatureIds } = useRevealedComponents();
+  const { featureIds, hiddenFootprintIds } = useRevealedComponents();
 
   return useMemo(() => {
-    if (objectName !== EAO_OBJECT_NAME || !style) return {};
+    if (objectName !== EAO_OBJECT_NAME || !style) return NO_FILTERS;
     return eaoSpecFilters(
       style,
       visibleProjects.map((project) => project.id),
       featureIds,
-      hiddenFeatureIds,
+      hiddenFootprintIds,
     );
-  }, [objectName, style, visibleProjects, featureIds, hiddenFeatureIds]);
+  }, [objectName, style, visibleProjects, featureIds, hiddenFootprintIds]);
 };

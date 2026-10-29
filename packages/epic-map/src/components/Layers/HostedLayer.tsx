@@ -81,9 +81,6 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
     if (lineWidth != null) {
       setLocalVectorLayerLineWidth(map, layerId, style, lineWidth);
     }
-    // After showing: adding a layer takes the style's filter, so the client's
-    // reason has to be applied to the layer that now exists.
-    setLocalVectorLayerFilters(map, layerId, style, filters);
   }, [
     map,
     layerId,
@@ -93,15 +90,31 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
     apiBaseUrl,
     opacity,
     lineWidth,
-    filters,
   ]);
+
+  // After showing: adding a layer takes the style's filter
+  useEffect(() => {
+    if (!map || !visible || !style) return;
+    setLocalVectorLayerFilters(map, layerId, style, filters);
+  }, [map, layerId, visible, style, filters]);
 
   // After the layer's own effect, so its tiles are there to filter.
   useEffect(() => {
-    if (!map || !visible || !sourceLayer || !keyProperty || !highlighted.length) {
+    if (
+      !map ||
+      !visible ||
+      !sourceLayer ||
+      !keyProperty ||
+      !highlighted.length
+    ) {
       return undefined;
     }
-    showComponentHighlight(map, { layerId, sourceLayer, keyProperty, keys: highlighted });
+    showComponentHighlight(map, {
+      layerId,
+      sourceLayer,
+      keyProperty,
+      keys: highlighted,
+    });
     return () => hideComponentHighlight(map);
   }, [map, visible, layerId, sourceLayer, keyProperty, highlighted]);
 

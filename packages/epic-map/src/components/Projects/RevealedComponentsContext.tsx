@@ -9,8 +9,8 @@ import {
 interface RevealedComponents {
   featureIds: readonly string[];
   setFeatureIds: (ids: readonly string[]) => void;
-  hiddenFeatureIds: readonly string[];
-  setHiddenFeatureIds: (ids: readonly string[]) => void;
+  hiddenFootprintIds: readonly string[];
+  setHiddenFootprintIds: (ids: readonly string[]) => void;
   selectedFeatureIds: readonly string[];
   setSelectedFeatureIds: (ids: readonly string[]) => void;
 }
@@ -18,14 +18,12 @@ interface RevealedComponents {
 /**
  * Shared between the project panel, which switches components on and off and
  * selects one, and the EAO layer, which draws them
- *
- * The default reveals nothing, which is right wherever no panel is mounted.
  */
 const RevealedComponentsContext = createContext<RevealedComponents>({
   featureIds: [],
   setFeatureIds: () => {},
-  hiddenFeatureIds: [],
-  setHiddenFeatureIds: () => {},
+  hiddenFootprintIds: [],
+  setHiddenFootprintIds: () => {},
   selectedFeatureIds: [],
   setSelectedFeatureIds: () => {},
 });
@@ -36,9 +34,9 @@ export const RevealedComponentsProvider = ({
   children: ReactNode;
 }) => {
   const [featureIds, setFeatureIds] = useState<readonly string[]>([]);
-  const [hiddenFeatureIds, setHiddenFeatureIds] = useState<readonly string[]>(
-    [],
-  );
+  const [hiddenFootprintIds, setHiddenFootprintIds] = useState<
+    readonly string[]
+  >([]);
   const [selectedFeatureIds, setSelectedFeatureIds] = useState<
     readonly string[]
   >([]);
@@ -46,12 +44,12 @@ export const RevealedComponentsProvider = ({
     () => ({
       featureIds,
       setFeatureIds,
-      hiddenFeatureIds,
-      setHiddenFeatureIds,
+      hiddenFootprintIds,
+      setHiddenFootprintIds,
       selectedFeatureIds,
       setSelectedFeatureIds,
     }),
-    [featureIds, hiddenFeatureIds, selectedFeatureIds],
+    [featureIds, hiddenFootprintIds, selectedFeatureIds],
   );
 
   return (

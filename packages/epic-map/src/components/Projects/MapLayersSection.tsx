@@ -30,24 +30,25 @@ const useShowOnMap = (
   revealed: readonly string[],
   selected: readonly string[],
 ) => {
-  const { setFeatureIds, setHiddenFeatureIds, setSelectedFeatureIds } =
+  const { setFeatureIds, setHiddenFootprintIds, setSelectedFeatureIds } =
     useRevealedComponents();
 
-  const hidden = useMemo(() => {
+  // Footprints only: they are drawn unless hidden, components only if revealed.
+  const hiddenFootprints = useMemo(() => {
     const shown = new Set(revealed);
     return components
-      .map(({ featureId }) => featureId)
-      .filter((id) => !shown.has(id));
+      .filter(({ footprint, featureId }) => footprint && !shown.has(featureId))
+      .map(({ featureId }) => featureId);
   }, [components, revealed]);
 
   useEffect(() => {
     setFeatureIds(revealed);
-    setHiddenFeatureIds(hidden);
+    setHiddenFootprintIds(hiddenFootprints);
     return () => {
       setFeatureIds([]);
-      setHiddenFeatureIds([]);
+      setHiddenFootprintIds([]);
     };
-  }, [revealed, hidden, setFeatureIds, setHiddenFeatureIds]);
+  }, [revealed, hiddenFootprints, setFeatureIds, setHiddenFootprintIds]);
 
   useEffect(() => {
     setSelectedFeatureIds(selected);
@@ -163,7 +164,8 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
   // Only what is drawn: a hidden component has nothing on the map to highlight.
   const highlighted = useMemo(() => {
     const selected = findVariant(groups, selectedKey);
-    return (selected?.featureIds ?? []).filter((id) => revealed.includes(id));
+    const shown = new Set(revealed);
+    return (selected?.featureIds ?? []).filter((id) => shown.has(id));
   }, [groups, selectedKey, revealed]);
 
   useShowOnMap(components ?? NO_COMPONENTS, revealed, highlighted);

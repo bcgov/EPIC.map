@@ -105,14 +105,16 @@ vi.mock("@/components/Filters/FiltersContext", () => ({
 
 // Nothing here is switched on from the panel, which is the point: the EAO layer
 // has no row in it.
-vi.mock("@/components/Layers/LayersContext", () => ({
-  useLayers: () => ({
+// One map and one set of settings across renders, as the real context keeps them.
+vi.mock("@/components/Layers/LayersContext", () => {
+  const layers = {
     map: {},
     visibleIds: new Set<string>(),
     opacities: {},
     lineWidths: {},
-  }),
-}));
+  };
+  return { useLayers: () => layers };
+});
 
 const { default: HostedLayer } = await import(
   "@/components/Layers/HostedLayer"
@@ -142,10 +144,10 @@ const RevealFeatures = ({ ids }: { ids: string[] }) => {
   return null;
 };
 
-/** Stands in for the project panel switching features off. */
-const HideFeatures = ({ ids }: { ids: string[] }) => {
-  const { setHiddenFeatureIds } = useRevealedComponents();
-  useEffect(() => setHiddenFeatureIds(ids), [ids, setHiddenFeatureIds]);
+/** Stands in for the project panel switching footprints off. */
+const HideFootprints = ({ ids }: { ids: string[] }) => {
+  const { setHiddenFootprintIds } = useRevealedComponents();
+  useEffect(() => setHiddenFootprintIds(ids), [ids, setHiddenFootprintIds]);
   return null;
 };
 
@@ -241,10 +243,30 @@ describe("the filter bar reaching the footprints", () => {
     ]);
   });
 
+  it("re-filters on a panel toggle without redrawing the layer", () => {
+    const panel = (ids: string[]) => (
+      <RevealedComponentsProvider>
+        <RevealFeatures ids={ids} />
+        <HostedLayer objectName={EAO_OBJECT_NAME} />
+      </RevealedComponentsProvider>
+    );
+    const view = render(panel(["{A1}"]));
+    showLocalVectorLayer.mockClear();
+
+    view.rerender(panel(["{A1}", "{A2}"]));
+
+    expect(appliedTo("point")).toContainEqual([
+      "in",
+      ["get", "feature_id"],
+      ["literal", ["{A1}", "{A2}"]],
+    ]);
+    expect(showLocalVectorLayer).not.toHaveBeenCalled();
+  });
+
   it("takes off a footprint the project panel switched off", () => {
     render(
       <RevealedComponentsProvider>
-        <HideFeatures ids={["{F1}"]} />
+        <HideFootprints ids={["{F1}"]} />
         <HostedLayer objectName={EAO_OBJECT_NAME} />
       </RevealedComponentsProvider>,
     );
