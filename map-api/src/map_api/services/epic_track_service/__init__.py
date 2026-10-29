@@ -207,10 +207,10 @@ class TrackService:
         open_projects = []
         unlocated = 0
         for project in projects:
-            # is_project_closed is deliberately not a filter: a closed project
-            # is still a project with a footprint worth drawing. `is_active`,
-            # which the request above asks for, is what takes one off the map,
-            # and the In-progress works filter is what narrows to live ones.
+            # Checked as well as requested: Track parses the is_active param with bool().
+            # is_project_closed is deliberately not a filter.
+            if not project.get('is_active'):
+                continue
             location = _location(project)
             if location is None:
                 unlocated += 1

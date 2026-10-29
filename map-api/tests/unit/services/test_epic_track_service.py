@@ -54,6 +54,7 @@ def _project(project_id, **overrides):
         'description': 'A project',
         'latitude': '53.0',
         'longitude': '-122.5',
+        'is_active': True,
         'is_project_closed': False,
         'ea_certificate': 'M23-01',
         'type': {'id': 8, 'name': 'Water Management'},
@@ -137,6 +138,32 @@ def test_open_projects_are_returned_with_their_works_in_progress(app):
         'has_works_in_progress': True,
         'epic_url': 'https://projects.eao.gov.bc.ca/p/5cd9b4b56a15600025df0cc8/project-details',
     }
+
+
+def test_an_inactive_project_is_left_off_whatever_its_works(app):
+    """Project Status decides, not work status, even if Track ignores the is_active param."""
+    projects = [_project(1), _project(2, is_active=False), _project(3, is_active=None)]
+    works = [_work(2, 'IN_PROGRESS'), _work(3, 'IN_PROGRESS')]
+
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects, works)):
+        result = TrackService.open_projects()
+
+    assert [p['id'] for p in result] == [1]
+
+
+def test_a_status_change_shows_on_the_next_sync(app):
+    """Active is re-read from Track on every refresh, not frozen at first load."""
+    before = [_project(1), _project(2, is_active=False)]
+    after = [_project(1, is_active=False), _project(2)]
+
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(before, [])):
+        first = TrackService.open_projects()
+    cache.delete(PROJECTS_KEY)
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(after, [])):
+        second = TrackService.open_projects()
+
+    assert [p['id'] for p in first] == [1]
+    assert [p['id'] for p in second] == [2]
 
 
 @pytest.mark.parametrize(
