@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import {
   carryWidgetLayers,
+  hideComponentHighlight,
   hideLocalVectorLayer,
   localDrawnIds,
   setLocalVectorLayerFilters,
@@ -788,6 +789,28 @@ describe("showComponentHighlight", () => {
     expect(harness.removed).toEqual([]);
     expect(harness.added.map((spec) => spec.id)).toContain("epic-highlight-local-fill");
     expect(harness.added.slice(drawn).map((spec) => spec.id)).toEqual([
+      "epic-component-highlight-fill",
+      "epic-component-highlight-line",
+      "epic-component-highlight-point",
+    ]);
+  });
+});
+
+describe("hideComponentHighlight", () => {
+  it("does not wait on tiles a filter change is reloading", () => {
+    // The fake's isStyleLoaded() is false: its style is up, its tiles are not.
+    const harness = fakeMap();
+    show(harness);
+    showComponentHighlight(harness.map, {
+      layerId: LAYER_ID,
+      sourceLayer: "pip_consultation_areas",
+      keyProperty: "cnsltn_area_guid",
+      keys: ["a"],
+    });
+
+    hideComponentHighlight(harness.map);
+
+    expect(harness.removed).toEqual([
       "epic-component-highlight-fill",
       "epic-component-highlight-line",
       "epic-component-highlight-point",

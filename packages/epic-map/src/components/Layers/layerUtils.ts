@@ -53,6 +53,19 @@ export const whenStyleReady = (map: MapLibreMap, work: () => void) => {
   map.on("idle", run);
 };
 
+/**
+ * Like `whenStyleReady`, but without waiting on tiles: a filter change reloads
+ * them, which would hold the work back until the map is idle.
+ */
+const whenStyleParsed = (map: MapLibreMap, work: () => void) => {
+  // getStyle() is undefined until the style has loaded.
+  if (map.getStyle()) {
+    work();
+    return;
+  }
+  whenStyleReady(map, work);
+};
+
 // The layer itself
 
 /** Ids carry the widget's prefix so `carryWidgetLayers` keeps them. */
@@ -450,14 +463,14 @@ export const showComponentHighlight = (
   map: MapLibreMap,
   highlight: LocalFeatureHighlight,
 ) => {
-  whenStyleReady(map, () => {
+  whenStyleParsed(map, () => {
     removeComponentHighlight(map);
     drawLocalHighlight(map, COMPONENT_HIGHLIGHT_LAYERS, highlight);
   });
 };
 
 export const hideComponentHighlight = (map: MapLibreMap) => {
-  whenStyleReady(map, () => removeComponentHighlight(map));
+  whenStyleParsed(map, () => removeComponentHighlight(map));
 };
 
 /**

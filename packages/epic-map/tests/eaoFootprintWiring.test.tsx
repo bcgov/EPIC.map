@@ -51,13 +51,14 @@ const style = {
 const setLocalVectorLayerFilters = vi.fn();
 const showLocalVectorLayer = vi.fn();
 const showComponentHighlight = vi.fn();
+const hideComponentHighlight = vi.fn();
 
 vi.mock("@/components/Layers/layerUtils", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   showLocalVectorLayer,
   setLocalVectorLayerFilters,
   showComponentHighlight,
-  hideComponentHighlight: vi.fn(),
+  hideComponentHighlight,
   setLocalVectorLayerOpacity: vi.fn(),
   hideLocalVectorLayer: vi.fn(),
 }));
@@ -168,6 +169,7 @@ beforeEach(() => {
   setLocalVectorLayerFilters.mockClear();
   showLocalVectorLayer.mockClear();
   showComponentHighlight.mockClear();
+  hideComponentHighlight.mockClear();
   state.visible = [project(205), project(368)];
   state.hit = null;
 });
@@ -291,6 +293,22 @@ describe("the filter bar reaching the footprints", () => {
       keyProperty: "feature_id",
       keys: ["{A1}", "{A2}"],
     });
+  });
+
+  it("takes the highlight off once the panel clears its selection", () => {
+    const panel = (ids: string[]) => (
+      <RevealedComponentsProvider>
+        <SelectFeatures ids={ids} />
+        <HostedLayer objectName={EAO_OBJECT_NAME} />
+      </RevealedComponentsProvider>
+    );
+    const view = render(panel(["{A1}"]));
+    showComponentHighlight.mockClear();
+
+    view.rerender(panel([]));
+
+    expect(hideComponentHighlight).toHaveBeenCalled();
+    expect(showComponentHighlight).not.toHaveBeenCalled();
   });
 
   it("highlights nothing while no component is selected", () => {
