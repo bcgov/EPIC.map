@@ -15,6 +15,9 @@
 
 Open projects for the map, and the code tables its filter menus list. Track is
 read live and cached briefly rather than copied: see claude-docs/06.
+
+The service account holds Track's limited_view role, not view, so it reads the
+project and work summaries Track keeps for it rather than the full records.
 """
 
 import re
@@ -116,40 +119,12 @@ class TrackService:
         if works is not None:
             return works
 
-        # The listing is the one Track endpoint that filters by project. Names are unique in
-        # Track; the id check guards against a rename between refreshes.
-        listing = cls._post(
-            'works/listing',
-            {'filters': [{'id': 'project.name', 'value': [project['name']]}]},
-        )
         works = _sorted_works([
             _to_work(work, project.get('description'))
-            for work in (listing or {}).get('items', [])
-            if work.get('project_id') == project_id
+            for work in cls._get(f'projects/{project_id}/works/summary', {}) or []
         ])
-        for work in works:
-            work['decision'] = cls._decision(work)
         cache.set(key, works, timeout=EPIC_TRACK_PROJECTS_CACHE_TTL_SECONDS)
         return works
-
-    @classmethod
-    def _decision(cls, work: dict) -> Optional[str]:
-        """Return the outcome of a decided work's latest decision milestone, e.g. Amendment Granted.
-
-        Track keeps it on the milestone, not the work, so it costs one call per
-        decided work. One that fails leaves its card the date without the outcome.
-        """
-        if not work['decision_date']:
-            return None
-        try:
-            phases = cls._get(f"works/{work['id']}/phases", {})
-        except ServiceUnavailableError:
-            return None
-        decided = [phase for phase in phases or [] if phase.get('decision')]
-        if not decided:
-            return None
-        latest = max(decided, key=lambda phase: _when(phase.get('decision_milestone_date')))
-        return latest['decision']
 
     @classmethod
     def filter_options(cls) -> dict:
@@ -188,34 +163,20 @@ class TrackService:
 
     @classmethod
     def _fetch_open_projects(cls) -> list:
-        projects = cls._get('projects', {'is_active': 'true'})
-        # Every work, not just the active ones: a project is in progress when
-        # it has a work in progress, and the work's own is_active says whether
-        # Track still lists it rather than whether the work is under way. 19 of
-        # the 50 IN_PROGRESS works are is_active=false, covering 18 projects.
-        #
-        # context=insights is kept because it is what EPIC.Track's own insights
-        # pages ask for; it makes no difference to what comes back.
-        works = cls._get('works', {'context': 'insights'})
-
-        in_progress = {
-            work.get('project_id')
-            for work in works
-            if work.get('work_state') == WORK_IN_PROGRESS
-        }
+        # Track summarises active projects only, and marks one in progress when it
+        # has a work in progress - counting every work, since a work's own
+        # is_active says whether Track still lists it rather than whether it is
+        # under way. is_project_closed is deliberately not a filter.
+        projects = cls._get('projects/summary', {})
 
         open_projects = []
         unlocated = 0
         for project in projects:
-            # Checked as well as requested: Track parses the is_active param with bool().
-            # is_project_closed is deliberately not a filter.
-            if not project.get('is_active'):
-                continue
             location = _location(project)
             if location is None:
                 unlocated += 1
                 continue
-            open_projects.append(_to_project(project, location, project['id'] in in_progress))
+            open_projects.append(_to_project(project, location))
 
         if unlocated:
             current_app.logger.warning(
@@ -227,10 +188,6 @@ class TrackService:
     @classmethod
     def _get(cls, path: str, params: dict):
         return cls._call(requests.get, path, params=params)
-
-    @classmethod
-    def _post(cls, path: str, body: dict):
-        return cls._call(requests.post, path, json=body)
 
     @classmethod
     def _call(cls, send, path: str, **kwargs):
@@ -365,7 +322,7 @@ def _certificate(value) -> Tuple[Optional[str], Optional[str]]:
     return None, text
 
 
-def _to_project(project: dict, location: tuple, has_works_in_progress: bool) -> dict:
+def _to_project(project: dict, location: tuple) -> dict:
     longitude, latitude = location
     certificate, certificate_status = _certificate(project.get('ea_certificate'))
     return {
@@ -382,7 +339,7 @@ def _to_project(project: dict, location: tuple, has_works_in_progress: bool) -> 
         'ea_certificate': certificate,
         'certificate_status': certificate_status,
         'certificate_issued': certificate is not None,
-        'has_works_in_progress': has_works_in_progress,
+        'has_works_in_progress': bool(project.get('has_works_in_progress')),
         'epic_url': _epic_url(project.get('epic_guid')),
     }
 
@@ -413,19 +370,23 @@ def _work_description(work: dict, project_description: Optional[str]) -> Optiona
 
 
 def _to_work(work: dict, project_description: Optional[str]) -> dict:
-    phase = work.get('current_work_phase') or {}
     title = ' - '.join(
         part for part in (_name_of(work.get('work_type')), (work.get('simple_title') or '').strip()) if part
     )
+    decision_date = work.get('work_decision_date') or work.get('decision_date')
     return {
         'id': work.get('id'),
         'title': title or work.get('title'),
         # Track's own work_state, which is what Track's work pages show.
         'state': work.get('work_state'),
-        'phase_name': phase.get('name') or _name_of(phase.get('phase')),
+        'phase_name': _name_of(work.get('current_work_phase')),
         'start_date': work.get('start_date'),
-        'decision_date': work.get('work_decision_date') or work.get('decision_date'),
+        'decision_date': decision_date,
         'description': _work_description(work, project_description),
+        # The outcome of the work's latest decision milestone, e.g. Amendment Granted.
+        # A work still under way can carry one from an earlier phase; only a decided
+        # work's card shows it.
+        'decision': work.get('decision') if decision_date else None,
     }
 
 
