@@ -340,7 +340,7 @@ export default function MetaDataControl() {
         layerId: selectedLayerId,
         sourceLayer: localSourceLayer,
         keyProperty: localKeyProperty,
-        key: selectedFeature.key,
+        keys: [selectedFeature.key],
       });
       return () => hideHighlight(map);
     }

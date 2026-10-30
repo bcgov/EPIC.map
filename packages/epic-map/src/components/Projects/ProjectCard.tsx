@@ -222,7 +222,7 @@ export default function ProjectCard({
         </Box>
         {project && !error && (
           <>
-            <MapLayersSection />
+            <MapLayersSection projectId={projectId} />
             <WorksSection projectId={projectId} />
           </>
         )}

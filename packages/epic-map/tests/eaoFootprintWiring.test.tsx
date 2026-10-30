@@ -7,12 +7,17 @@
 // three separate breaks left the whole suite green: the hook forced to return
 // nothing, the apply call dropped from HostedLayer, and the footprint click
 // fallback removed from ProjectsControl. Any of the first two draws every EAO
-// feature - filtered-out projects and the component layers this iteration hides.
+// feature - filtered-out projects and the components no panel has revealed.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useEffect } from "react";
 import { cleanup, render } from "@testing-library/react";
 import type { MapProject } from "@/components/Filters/filterUtils";
 import type { ProjectFeatures } from "@/api/useProjects";
+import {
+  RevealedComponentsProvider,
+  useRevealedComponents,
+} from "@/components/Projects/RevealedComponentsContext";
 import { EAO_OBJECT_NAME, localLayerId, PIP_OBJECT_NAME } from "@/utils/localLayers";
 
 const project = (id: number): MapProject => ({
@@ -45,11 +50,15 @@ const style = {
 
 const setLocalVectorLayerFilters = vi.fn();
 const showLocalVectorLayer = vi.fn();
+const showComponentHighlight = vi.fn();
+const hideComponentHighlight = vi.fn();
 
 vi.mock("@/components/Layers/layerUtils", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   showLocalVectorLayer,
   setLocalVectorLayerFilters,
+  showComponentHighlight,
+  hideComponentHighlight,
   setLocalVectorLayerOpacity: vi.fn(),
   hideLocalVectorLayer: vi.fn(),
 }));
@@ -97,14 +106,16 @@ vi.mock("@/components/Filters/FiltersContext", () => ({
 
 // Nothing here is switched on from the panel, which is the point: the EAO layer
 // has no row in it.
-vi.mock("@/components/Layers/LayersContext", () => ({
-  useLayers: () => ({
+// One map and one set of settings across renders, as the real context keeps them.
+vi.mock("@/components/Layers/LayersContext", () => {
+  const layers = {
     map: {},
     visibleIds: new Set<string>(),
     opacities: {},
     lineWidths: {},
-  }),
-}));
+  };
+  return { useLayers: () => layers };
+});
 
 const { default: HostedLayer } = await import(
   "@/components/Layers/HostedLayer"
@@ -127,6 +138,27 @@ const fakeMap = () => ({
   panBy: vi.fn(),
 });
 
+/** Stands in for the project panel, which reveals its components this way. */
+const RevealFeatures = ({ ids }: { ids: string[] }) => {
+  const { setFeatureIds } = useRevealedComponents();
+  useEffect(() => setFeatureIds(ids), [ids, setFeatureIds]);
+  return null;
+};
+
+/** Stands in for the project panel switching footprints off. */
+const HideFootprints = ({ ids }: { ids: string[] }) => {
+  const { setHiddenFootprintIds } = useRevealedComponents();
+  useEffect(() => setHiddenFootprintIds(ids), [ids, setHiddenFootprintIds]);
+  return null;
+};
+
+/** Stands in for the project panel selecting a component. */
+const SelectFeatures = ({ ids }: { ids: string[] }) => {
+  const { setSelectedFeatureIds } = useRevealedComponents();
+  useEffect(() => setSelectedFeatureIds(ids), [ids, setSelectedFeatureIds]);
+  return null;
+};
+
 /** The filter the footprint specs were given on the last apply. */
 const appliedTo = (specId: string) => {
   const last = setLocalVectorLayerFilters.mock.calls.at(-1);
@@ -136,6 +168,8 @@ const appliedTo = (specId: string) => {
 beforeEach(() => {
   setLocalVectorLayerFilters.mockClear();
   showLocalVectorLayer.mockClear();
+  showComponentHighlight.mockClear();
+  hideComponentHighlight.mockClear();
   state.visible = [project(205), project(368)];
   state.hit = null;
 });
@@ -191,9 +225,96 @@ describe("the filter bar reaching the footprints", () => {
       expect(appliedTo(specId)).toEqual([
         "all",
         ["in", ["get", "track_id"], ["literal", [205, 368]]],
-        ["==", ["literal", 1], ["literal", 0]],
+        ["in", ["get", "feature_id"], ["literal", []]],
       ]);
     }
+  });
+
+  it("draws the components the project panel reveals", () => {
+    render(
+      <RevealedComponentsProvider>
+        <RevealFeatures ids={["{A1}"]} />
+        <HostedLayer objectName={EAO_OBJECT_NAME} />
+      </RevealedComponentsProvider>,
+    );
+
+    expect(appliedTo("point")).toContainEqual([
+      "in",
+      ["get", "feature_id"],
+      ["literal", ["{A1}"]],
+    ]);
+  });
+
+  it("re-filters on a panel toggle without redrawing the layer", () => {
+    const panel = (ids: string[]) => (
+      <RevealedComponentsProvider>
+        <RevealFeatures ids={ids} />
+        <HostedLayer objectName={EAO_OBJECT_NAME} />
+      </RevealedComponentsProvider>
+    );
+    const view = render(panel(["{A1}"]));
+    showLocalVectorLayer.mockClear();
+
+    view.rerender(panel(["{A1}", "{A2}"]));
+
+    expect(appliedTo("point")).toContainEqual([
+      "in",
+      ["get", "feature_id"],
+      ["literal", ["{A1}", "{A2}"]],
+    ]);
+    expect(showLocalVectorLayer).not.toHaveBeenCalled();
+  });
+
+  it("takes off a footprint the project panel switched off", () => {
+    render(
+      <RevealedComponentsProvider>
+        <HideFootprints ids={["{F1}"]} />
+        <HostedLayer objectName={EAO_OBJECT_NAME} />
+      </RevealedComponentsProvider>,
+    );
+
+    expect(appliedTo("footprint-fill")).toContainEqual([
+      "!",
+      ["in", ["get", "feature_id"], ["literal", ["{F1}"]]],
+    ]);
+  });
+
+  it("highlights the component the project panel selects", () => {
+    render(
+      <RevealedComponentsProvider>
+        <SelectFeatures ids={["{A1}", "{A2}"]} />
+        <HostedLayer objectName={EAO_OBJECT_NAME} />
+      </RevealedComponentsProvider>,
+    );
+
+    expect(showComponentHighlight).toHaveBeenLastCalledWith(expect.anything(), {
+      layerId: localLayerId(EAO_OBJECT_NAME),
+      sourceLayer: "eao",
+      keyProperty: "feature_id",
+      keys: ["{A1}", "{A2}"],
+    });
+  });
+
+  it("takes the highlight off once the panel clears its selection", () => {
+    const panel = (ids: string[]) => (
+      <RevealedComponentsProvider>
+        <SelectFeatures ids={ids} />
+        <HostedLayer objectName={EAO_OBJECT_NAME} />
+      </RevealedComponentsProvider>
+    );
+    const view = render(panel(["{A1}"]));
+    showComponentHighlight.mockClear();
+
+    view.rerender(panel([]));
+
+    expect(hideComponentHighlight).toHaveBeenCalled();
+    expect(showComponentHighlight).not.toHaveBeenCalled();
+  });
+
+  it("highlights nothing while no component is selected", () => {
+    render(<HostedLayer objectName={EAO_OBJECT_NAME} />);
+
+    expect(showComponentHighlight).not.toHaveBeenCalled();
   });
 
   it("is drawn without being switched on in the panel", () => {

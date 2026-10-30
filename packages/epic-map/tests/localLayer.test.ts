@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import {
   carryWidgetLayers,
+  hideComponentHighlight,
   hideLocalVectorLayer,
   localDrawnIds,
   setLocalVectorLayerFilters,
   setLocalVectorLayerLineWidth,
   setLocalVectorLayerOpacity,
+  showComponentHighlight,
   showLocalHighlight,
   showLocalVectorLayer,
   type LocalLayerStyle,
@@ -669,7 +671,7 @@ describe("showLocalHighlight", () => {
     layerId: LAYER_ID,
     sourceLayer: "pip_consultation_areas",
     keyProperty: "cnsltn_area_guid",
-    key: "0123456789abcdef0123456789abcdef",
+    keys: ["0123456789abcdef0123456789abcdef"],
   };
 
   /** Draw the layer, then highlight one of its features. */
@@ -689,17 +691,41 @@ describe("showLocalHighlight", () => {
     expect(harness.added.map((spec) => spec.id)).toEqual([
       "epic-highlight-local-fill",
       "epic-highlight-local-line",
+      "epic-highlight-local-point",
     ]);
+    const byKey = [
+      "in",
+      ["get", "cnsltn_area_guid"],
+      ["literal", ["0123456789abcdef0123456789abcdef"]],
+    ];
     for (const spec of harness.added) {
       // The filter is the whole of "which feature": wrong highlights
       // nothing, absent highlights the lot.
-      expect(spec.filter).toEqual([
-        "==",
-        ["get", "cnsltn_area_guid"],
-        "0123456789abcdef0123456789abcdef",
-      ]);
+      expect(JSON.stringify(spec.filter)).toContain(JSON.stringify(byKey));
       expect(spec["source-layer"]).toBe("pip_consultation_areas");
     }
+  });
+
+  it("rings a point, and only a point, in a circle", () => {
+    const harness = pick();
+
+    const point = harness.added.find((spec) => spec.id === "epic-highlight-local-point");
+    expect(point?.type).toBe("circle");
+    expect(point?.filter).toContainEqual(["==", ["geometry-type"], "Point"]);
+  });
+
+  it("outlines every feature it is given", () => {
+    const harness = fakeMap();
+    show(harness);
+    harness.added.length = 0;
+    showLocalHighlight(harness.map, { ...highlight, keys: ["a", "b"] });
+    harness.fire("styledata");
+
+    expect(harness.added[0].filter).toEqual([
+      "in",
+      ["get", "cnsltn_area_guid"],
+      ["literal", ["a", "b"]],
+    ]);
   });
 
   it("replaces the previous highlight rather than stacking on it", () => {
@@ -708,22 +734,24 @@ describe("showLocalHighlight", () => {
     // the first highlight and pass for the wrong reason.
     harness.removed.length = 0;
 
-    showLocalHighlight(harness.map, { ...highlight, key: "f".repeat(32) });
+    showLocalHighlight(harness.map, { ...highlight, keys: ["f".repeat(32)] });
     harness.fire("styledata");
 
     expect(harness.removed).toEqual([
       "epic-highlight-local-fill",
       "epic-highlight-local-line",
+      "epic-highlight-local-point",
     ]);
-    // The two it removed, replaced by two carrying the new key.
+    // The ones it removed, replaced by ones carrying the new key.
     expect(harness.added.map((spec) => spec.id)).toEqual([
       "epic-highlight-local-fill",
       "epic-highlight-local-line",
+      "epic-highlight-local-point",
     ]);
     expect(harness.added[0].filter).toEqual([
-      "==",
+      "in",
       ["get", "cnsltn_area_guid"],
-      "f".repeat(32),
+      ["literal", ["f".repeat(32)]],
     ]);
   });
 
@@ -734,6 +762,59 @@ describe("showLocalHighlight", () => {
     harness.fire("styledata");
 
     expect(harness.added).toEqual([]);
+  });
+});
+
+describe("showComponentHighlight", () => {
+  const highlight = {
+    layerId: LAYER_ID,
+    sourceLayer: "pip_consultation_areas",
+    keyProperty: "cnsltn_area_guid",
+    keys: ["a"],
+  };
+
+  it("draws in layers of its own, leaving a metadata highlight in place", () => {
+    const harness = fakeMap();
+    show(harness);
+    showLocalHighlight(harness.map, highlight);
+    harness.fire("styledata");
+    // `added` is what getLayer answers from, so it is kept: the metadata
+    // highlight has to be there for leaving it alone to mean anything.
+    const drawn = harness.added.length;
+    harness.removed.length = 0;
+
+    showComponentHighlight(harness.map, { ...highlight, keys: ["b"] });
+    harness.fire("styledata");
+
+    expect(harness.removed).toEqual([]);
+    expect(harness.added.map((spec) => spec.id)).toContain("epic-highlight-local-fill");
+    expect(harness.added.slice(drawn).map((spec) => spec.id)).toEqual([
+      "epic-component-highlight-fill",
+      "epic-component-highlight-line",
+      "epic-component-highlight-point",
+    ]);
+  });
+});
+
+describe("hideComponentHighlight", () => {
+  it("does not wait on tiles a filter change is reloading", () => {
+    // The fake's isStyleLoaded() is false: its style is up, its tiles are not.
+    const harness = fakeMap();
+    show(harness);
+    showComponentHighlight(harness.map, {
+      layerId: LAYER_ID,
+      sourceLayer: "pip_consultation_areas",
+      keyProperty: "cnsltn_area_guid",
+      keys: ["a"],
+    });
+
+    hideComponentHighlight(harness.map);
+
+    expect(harness.removed).toEqual([
+      "epic-component-highlight-fill",
+      "epic-component-highlight-line",
+      "epic-component-highlight-point",
+    ]);
   });
 });
 

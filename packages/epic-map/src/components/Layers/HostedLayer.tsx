@@ -1,13 +1,16 @@
 import { useEffect } from "react";
 import { useLocalLayerStyle } from "@/api/useLocalLayerStyle";
 import {
+  hideComponentHighlight,
   hideLocalVectorLayer,
   setLocalVectorLayerFilters,
   setLocalVectorLayerLineWidth,
   setLocalVectorLayerOpacity,
+  showComponentHighlight,
   showLocalVectorLayer,
 } from "@/components/Layers/layerUtils";
 import { useHostedLayerFilters } from "@/components/Layers/useHostedLayerFilters";
+import { useHostedLayerHighlight } from "@/components/Layers/useHostedLayerHighlight";
 import { useLayers } from "@/components/Layers/LayersContext";
 import {
   DEFAULT_LAYER_LINE_WIDTH,
@@ -16,6 +19,7 @@ import {
 } from "@/utils/config";
 import {
   hasWidthSlider,
+  hostedLayer,
   isAlwaysDrawn,
   localLayerId,
 } from "@/utils/localLayers";
@@ -50,6 +54,9 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
   const { data: style } = useLocalLayerStyle(visible ? objectName : null);
   // Narrows what is drawn, where the layer has a reason beyond its symbology.
   const filters = useHostedLayerFilters(objectName, style);
+  const highlighted = useHostedLayerHighlight(objectName);
+  const sourceLayer = style?.layers[0]?.sourceLayer;
+  const keyProperty = hostedLayer(objectName)?.keyProperty;
 
   useEffect(() => {
     if (!map) return;
@@ -74,9 +81,6 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
     if (lineWidth != null) {
       setLocalVectorLayerLineWidth(map, layerId, style, lineWidth);
     }
-    // After showing: adding a layer takes the style's filter, so the client's
-    // reason has to be applied to the layer that now exists.
-    setLocalVectorLayerFilters(map, layerId, style, filters);
   }, [
     map,
     layerId,
@@ -86,8 +90,33 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
     apiBaseUrl,
     opacity,
     lineWidth,
-    filters,
   ]);
+
+  // After showing: adding a layer takes the style's filter
+  useEffect(() => {
+    if (!map || !visible || !style) return;
+    setLocalVectorLayerFilters(map, layerId, style, filters);
+  }, [map, layerId, visible, style, filters]);
+
+  // After the layer's own effect, so its tiles are there to filter.
+  useEffect(() => {
+    if (
+      !map ||
+      !visible ||
+      !sourceLayer ||
+      !keyProperty ||
+      !highlighted.length
+    ) {
+      return undefined;
+    }
+    showComponentHighlight(map, {
+      layerId,
+      sourceLayer,
+      keyProperty,
+      keys: highlighted,
+    });
+    return () => hideComponentHighlight(map);
+  }, [map, visible, layerId, sourceLayer, keyProperty, highlighted]);
 
   return null;
 }
