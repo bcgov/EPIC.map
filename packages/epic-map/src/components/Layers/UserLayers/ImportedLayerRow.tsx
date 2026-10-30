@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Box,
-  Button,
   Collapse,
   IconButton,
   Slider,
@@ -10,7 +9,6 @@ import {
 } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import WarningIcon from "@mui/icons-material/Warning";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import { useTheme } from "@mui/material/styles";
@@ -18,6 +16,7 @@ import {
   formatUploadedDate,
   type ImportedLayer,
 } from "@/api/useImportedLayers";
+import ErrorNotice from "@/components/Layers/ErrorNotice";
 import { sliderSx } from "@/components/Layers/LayerInfo";
 import {
   focusRing,
@@ -251,47 +250,15 @@ export default function ImportedLayerRow({ layer }: { layer: ImportedLayer }) {
       </Box>
 
       {failed && (
-        <Box
-          role="alert"
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.25rem",
-            // In line with the name, past the toggle.
-            padding: "0 1rem 0.25rem 4rem",
-          }}
-        >
-          <WarningAmberIcon
-            aria-hidden
-            sx={{ fontSize: "1rem", color: theme.palette.error.main }}
-          />
-          <Typography
-            sx={{
-              flexGrow: 1,
-              fontSize: theme.typography.caption.fontSize,
-              lineHeight: 1.4,
-              color: theme.palette.error.main,
-            }}
-          >
-            Couldn’t load this layer
-          </Typography>
-          <Button
-            size="small"
-            onClick={() => retryFeatures(layer.id)}
-            aria-label={`Try loading ${layer.name} again`}
-            sx={{
-              flexShrink: 0,
-              minWidth: 0,
-              padding: "0 0.25rem",
-              fontSize: theme.typography.caption.fontSize,
-              fontWeight: theme.typography.fontWeightBold,
-              textTransform: "none",
-              ...focusRing(theme),
-            }}
-          >
-            Try again
-          </Button>
-        </Box>
+        <ErrorNotice
+          message="Couldn’t load this layer"
+          action="Try again"
+          onAction={() => retryFeatures(layer.id)}
+          actionName={`Try loading ${layer.name} again`}
+          alert
+          // In line with the name, past the toggle.
+          padding="0 1rem 0.25rem 4rem"
+        />
       )}
 
       {editing && (

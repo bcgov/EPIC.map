@@ -31,6 +31,8 @@ export interface FavouriteFolder {
 /** What an unnamed folder is called, matching the fallback map-api applies. */
 export const DEFAULT_FOLDER_NAME = "Untitled folder";
 
+export const CREATE_FOLDER_ERROR = "Couldn’t create your folder. Try again.";
+
 const NO_FOLDERS: readonly FavouriteFolder[] = [];
 
 export const toFavouriteFolder = (
@@ -110,7 +112,7 @@ export const useFavouriteFolders = () => {
     },
     onError: (_error, _name, context) => {
       if (context) writeCache(context.previous);
-      setSaveError("Couldn’t create your folder.");
+      setSaveError(CREATE_FOLDER_ERROR);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: FOLDERS_KEY });

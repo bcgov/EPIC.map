@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Button, Typography } from "@mui/material";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { alpha, useTheme } from "@mui/material/styles";
+import ErrorNotice from "@/components/Layers/ErrorNotice";
 import { focusRing } from "@/components/Layers/LayerRow";
 
 /**
@@ -123,16 +124,14 @@ export default function DeleteLayerConfirm({
         </Button>
       </Box>
       {failed && (
-        <Typography
-          role="alert"
-          sx={{
-            padding: "0 0.5rem 0.375rem",
-            fontSize: theme.typography.caption.fontSize,
-            color: theme.palette.error.main,
-          }}
-        >
-          Couldn’t delete this layer. Try again.
-        </Typography>
+        <ErrorNotice
+          message="Couldn’t delete this layer"
+          action="Try again"
+          onAction={() => void confirm()}
+          actionName={`Try deleting ${layerName} again`}
+          alert
+          padding="0 0.5rem 0.375rem"
+        />
       )}
     </Box>
   );
