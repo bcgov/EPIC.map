@@ -18,11 +18,14 @@ import CircularProgress from "@mui/material/CircularProgress";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import StarIcon from "@mui/icons-material/Star";
 import StarBorderIcon from "@mui/icons-material/StarBorder";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import { useTheme, type Theme } from "@mui/material/styles";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
+import { UNREACHABLE_MESSAGE } from "@/api/useLayerFocus";
+import { LINK } from "@/components/Filters/filterTokens";
 import HighlightedName from "@/components/Layers/HighlightedName";
 import { setLiftedDragImage } from "@/components/Layers/Favourites/dragImage";
 import { startFavouriteDrag } from "@/components/Layers/Favourites/favouriteDrag";
@@ -325,17 +328,20 @@ export default function LayerRow({
       ? ""
       : `This layer draws at zoom ${floor} and closer in`);
 
+  // Pressing again can fix this one, so the label says so, not just the tooltip.
+  const unreachable = focusError === UNREACHABLE_MESSAGE;
+  const zoomLabel = unreachable ? "Refresh" : "Zoom in to view";
+  const zoomName = unreachable
+    ? `Refresh zoom to ${layer.name}`
+    : `Zoom in to view ${layer.name}`;
+
   const zoomInButton = (
     <Box
       component="button"
       type="button"
       onClick={() => focusLayer(layer)}
       disabled={focusing}
-      aria-label={
-        zoomNote
-          ? `Zoom in to view ${layer.name}. ${zoomNote}`
-          : `Zoom in to view ${layer.name}`
-      }
+      aria-label={zoomNote ? `${zoomName}. ${zoomNote}` : zoomName}
       sx={{
         ...hintSx,
         padding: 0,
@@ -343,14 +349,23 @@ export default function LayerRow({
         background: "none",
         font: "inherit",
         fontSize: theme.typography.caption.fontSize,
-        color: focusError ? theme.palette.error.main : ZOOM_HINT_COLOR,
+        color: unreachable
+          ? LINK
+          : focusError
+            ? theme.palette.error.main
+            : ZOOM_HINT_COLOR,
         cursor: focusing ? "default" : "pointer",
-        "&:hover": { textDecoration: focusing ? "none" : "underline" },
+        "&:hover": {
+          textDecoration: focusing ? "none" : "underline",
+          ...(unreachable && { color: theme.palette.primary.main }),
+        },
         ...focusRing(theme),
       }}
     >
       {focusing ? (
         <CircularProgress size="0.875rem" sx={hintIconSx} aria-hidden />
+      ) : unreachable ? (
+        <RefreshIcon aria-hidden sx={hintIconSx} />
       ) : (
         <ZoomInIcon aria-hidden sx={hintIconSx} />
       )}
@@ -359,7 +374,7 @@ export default function LayerRow({
         component="span"
         sx={{ minWidth: 0, color: "inherit" }}
       >
-        Zoom in to view
+        {zoomLabel}
       </Typography>
     </Box>
   );

@@ -1,6 +1,6 @@
-import { Box, Button, Divider, Link, Typography } from "@mui/material";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import { Box, Divider, Link, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import ErrorNotice from "@/components/Layers/ErrorNotice";
 import LayerRow from "@/components/Layers/LayerRow";
 import { useLayers } from "@/components/Layers/LayersContext";
 
@@ -83,40 +83,15 @@ export default function EnabledLayers() {
       </Box>
 
       {Boolean(appliedError) && (
-        <Box
-          sx={{
-            padding: "0 1rem 0.5rem",
-            textAlign: hasLayers ? "left" : "center",
-          }}
-        >
-          <Typography
-            sx={{
-              fontSize: theme.typography.caption.fontSize,
-              color: theme.palette.text.primary,
-            }}
-          >
-            <WarningAmberIcon
-              aria-hidden
-              sx={{
-                verticalAlign: "text-bottom",
-                marginRight: "0.25rem",
-                fontSize: "1rem",
-                color: theme.palette.text.secondary,
-              }}
-            />
-            {hasLayers
+        <ErrorNotice
+          message={
+            hasLayers
               ? "Couldn’t refresh your enabled layers"
-              : "Couldn’t load your enabled layers"}
-          </Typography>
-          <Button
-            variant="text"
-            color="secondary"
-            onClick={retryApplied}
-            sx={{ fontSize: theme.typography.caption.fontSize }}
-          >
-            Try again
-          </Button>
-        </Box>
+              : "Couldn’t load your enabled layers"
+          }
+          action="Try again"
+          onAction={retryApplied}
+        />
       )}
 
       {hasLayers && (
