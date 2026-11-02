@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import { Box } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import type { FeatureCollection } from "geojson";
 import { Map as MapLibreMap } from "maplibre-gl";
-import { alpha, useTheme } from "@mui/material/styles";
 import type { MapExtent } from "@/types";
+import { IMPORTED_PAINT } from "@/components/Layers/layerUtils";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 import {
   DEFAULT_BASEMAP,
@@ -43,8 +44,6 @@ export default function ImportPreviewMap({
   contents.current = { geojson, bounds };
 
   const style = resolveBasemap(DEFAULT_BASEMAP, config.basemapStyles).style;
-  const line = theme.palette.primary.main;
-  const fill = alpha(theme.palette.primary.main, 0.35);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -73,26 +72,21 @@ export default function ImportPreviewMap({
         type: "fill",
         source: SOURCE_ID,
         filter: ["==", ["geometry-type"], "Polygon"],
-        paint: { "fill-color": fill },
+        paint: IMPORTED_PAINT.fill,
       });
       map.addLayer({
         id: `${SOURCE_ID}-line`,
         type: "line",
         source: SOURCE_ID,
         filter: ["!=", ["geometry-type"], "Point"],
-        paint: { "line-color": line, "line-width": 2 },
+        paint: IMPORTED_PAINT.line,
       });
       map.addLayer({
         id: `${SOURCE_ID}-point`,
         type: "circle",
         source: SOURCE_ID,
         filter: ["==", ["geometry-type"], "Point"],
-        paint: {
-          "circle-radius": 5,
-          "circle-color": fill,
-          "circle-stroke-color": line,
-          "circle-stroke-width": 2,
-        },
+        paint: IMPORTED_PAINT.point,
       });
 
       if (extent)
@@ -112,7 +106,7 @@ export default function ImportPreviewMap({
       observer.disconnect();
       map.remove();
     };
-  }, [style, fill, line]);
+  }, [style]);
 
   return (
     <Box

@@ -1,9 +1,13 @@
 import type {
+  CircleLayerSpecification,
+  FillLayerSpecification,
+  LineLayerSpecification,
   Map as MapLibreMap,
   TransformStyleFunction,
 } from "maplibre-gl";
 import type { FeatureCollection, Geometry } from "geojson";
 import type { CatalogueLayer } from "@/api/useCatalogueSearch";
+import { EAO_SELECTED_PAINT } from "@/components/Layers/eaoColors";
 import {
   HIGHLIGHT_CASING_COLOR,
   HIGHLIGHT_CASING_WIDTH_PX,
@@ -389,6 +393,7 @@ export const showLocalHighlight = (
       map,
       [HIGHLIGHT_LOCAL_FILL, HIGHLIGHT_LOCAL_LINE, HIGHLIGHT_LOCAL_POINT],
       highlight,
+      METADATA_HIGHLIGHT_PAINT,
     );
   });
 };
@@ -396,10 +401,36 @@ export const showLocalHighlight = (
 /** The fill, line and point layers one local highlight is drawn with. */
 type LocalHighlightIds = readonly [string, string, string];
 
+/** The paint for each of those layers. */
+export interface LocalHighlightPaint {
+  fill: Record<string, unknown>;
+  line: Record<string, unknown>;
+  point: Record<string, unknown>;
+}
+
+const METADATA_HIGHLIGHT_PAINT: LocalHighlightPaint = {
+  fill: {
+    "fill-color": HIGHLIGHT_COLOR,
+    "fill-opacity": HIGHLIGHT_FILL_OPACITY,
+  },
+  line: {
+    "line-color": HIGHLIGHT_COLOR,
+    "line-width": HIGHLIGHT_WIDTH_PX,
+  },
+  point: {
+    "circle-radius": HIGHLIGHT_POINT_SIZE_PX / 2,
+    "circle-color": HIGHLIGHT_COLOR,
+    "circle-opacity": HIGHLIGHT_FILL_OPACITY,
+    "circle-stroke-color": HIGHLIGHT_COLOR,
+    "circle-stroke-width": HIGHLIGHT_WIDTH_PX,
+  },
+};
+
 const drawLocalHighlight = (
   map: MapLibreMap,
   [fillId, lineId, pointId]: LocalHighlightIds,
   { layerId, sourceLayer, keyProperty, keys }: LocalFeatureHighlight,
+  paint: LocalHighlightPaint,
 ) => {
   const source = localSourceId(layerId);
   if (!map.getSource(source)) return;
@@ -411,19 +442,13 @@ const drawLocalHighlight = (
     ...shared,
     id: fillId,
     type: "fill",
-    paint: {
-      "fill-color": HIGHLIGHT_COLOR,
-      "fill-opacity": HIGHLIGHT_FILL_OPACITY,
-    },
+    paint: paint.fill,
   } as Parameters<MapLibreMap["addLayer"]>[0]);
   map.addLayer({
     ...shared,
     id: lineId,
     type: "line",
-    paint: {
-      "line-color": HIGHLIGHT_COLOR,
-      "line-width": HIGHLIGHT_WIDTH_PX,
-    },
+    paint: paint.line,
   } as Parameters<MapLibreMap["addLayer"]>[0]);
   // Points only: a circle layer would otherwise dot every vertex of a shape.
   map.addLayer({
@@ -431,13 +456,7 @@ const drawLocalHighlight = (
     id: pointId,
     type: "circle",
     filter: ["all", filter, ["==", ["geometry-type"], "Point"]],
-    paint: {
-      "circle-radius": HIGHLIGHT_POINT_SIZE_PX / 2,
-      "circle-color": HIGHLIGHT_COLOR,
-      "circle-opacity": HIGHLIGHT_FILL_OPACITY,
-      "circle-stroke-color": HIGHLIGHT_COLOR,
-      "circle-stroke-width": HIGHLIGHT_WIDTH_PX,
-    },
+    paint: paint.point,
   } as Parameters<MapLibreMap["addLayer"]>[0]);
 };
 
@@ -465,7 +484,12 @@ export const showComponentHighlight = (
 ) => {
   whenStyleParsed(map, () => {
     removeComponentHighlight(map);
-    drawLocalHighlight(map, COMPONENT_HIGHLIGHT_LAYERS, highlight);
+    drawLocalHighlight(
+      map,
+      COMPONENT_HIGHLIGHT_LAYERS,
+      highlight,
+      EAO_SELECTED_PAINT,
+    );
   });
 };
 
@@ -734,10 +758,15 @@ export const setLocalVectorLayerOpacity = (
         MapLibreMap["setPaintProperty"]
       >[1];
       const base = spec.paint[property];
+      const scale = percent / 100;
+      let scaled: unknown = scale;
+      if (typeof base === "number") scaled = base * scale;
+      // A per-class opacity is an expression, scaled by MapLibre per feature.
+      else if (Array.isArray(base)) scaled = ["*", base, scale];
       map.setPaintProperty(
         drawn,
         property,
-        (typeof base === "number" ? base : 1) * (percent / 100),
+        scaled as Parameters<MapLibreMap["setPaintProperty"]>[2],
       );
     });
   });
@@ -916,6 +945,35 @@ export const layersBelowFloor = (
  * file and no warehouse serves them. Styled as the import preview drew them.
  */
 
+const IMPORTED_GREY = "#6E6E6E";
+
+/** Uploaded layers' default symbology, from the colourblind-safe table. */
+export const IMPORTED_PAINT: {
+  fill: FillLayerSpecification["paint"];
+  line: LineLayerSpecification["paint"];
+  point: CircleLayerSpecification["paint"];
+} = {
+  // #6E6E6E at 30%, in the colour so the slider's fill-opacity scales it.
+  fill: { "fill-color": "rgba(110, 110, 110, 0.3)" },
+  // Only a polygon's outline is darker; a line takes the fill's grey.
+  line: {
+    "line-color": [
+      "match",
+      ["geometry-type"],
+      "LineString",
+      IMPORTED_GREY,
+      "#4A4A4A",
+    ],
+    "line-width": ["match", ["geometry-type"], "LineString", 2.2, 2],
+  },
+  point: {
+    "circle-radius": 5,
+    "circle-color": IMPORTED_GREY,
+    "circle-stroke-color": "#FFFFFF",
+    "circle-stroke-width": 1.5,
+  },
+};
+
 const IMPORTED_PREFIX = `${WIDGET_ID_PREFIX}imported-`;
 const importedSourceId = (layerId: string) =>
   `${IMPORTED_PREFIX}src-${layerId}`;
@@ -937,11 +995,6 @@ export const importedLayerIdOf = (styleLayerId: string): string | null => {
   }
   return null;
 };
-
-export interface ImportedLayerColors {
-  line: string;
-  fill: string;
-}
 
 /** Every paint property opacity scales, by the part it belongs to. */
 const IMPORTED_OPACITY_PROPERTIES = [
@@ -966,7 +1019,6 @@ export const showImportedLayer = (
   map: MapLibreMap,
   layerId: string,
   features: FeatureCollection,
-  colors: ImportedLayerColors,
   opacity: number,
 ) => {
   whenStyleReady(map, () => {
@@ -984,7 +1036,7 @@ export const showImportedLayer = (
         type: "fill",
         source,
         filter: ["==", ["geometry-type"], "Polygon"],
-        paint: { "fill-color": colors.fill, ...paint.fill },
+        paint: { ...IMPORTED_PAINT.fill, ...paint.fill },
       },
       beneath,
     );
@@ -994,7 +1046,7 @@ export const showImportedLayer = (
         type: "line",
         source,
         filter: ["!=", ["geometry-type"], "Point"],
-        paint: { "line-color": colors.line, "line-width": 2, ...paint.line },
+        paint: { ...IMPORTED_PAINT.line, ...paint.line },
       },
       beneath,
     );
@@ -1004,13 +1056,7 @@ export const showImportedLayer = (
         type: "circle",
         source,
         filter: ["==", ["geometry-type"], "Point"],
-        paint: {
-          "circle-radius": 5,
-          "circle-color": colors.fill,
-          "circle-stroke-color": colors.line,
-          "circle-stroke-width": 2,
-          ...paint.point,
-        },
+        paint: { ...IMPORTED_PAINT.point, ...paint.point },
       },
       beneath,
     );
