@@ -5,10 +5,11 @@ import { focusRing, HOVER_FILL, LINK } from "@/components/Filters/filterTokens";
 type TertiaryLinkProps = {
   onClick: () => void;
   children: string;
+  "aria-label"?: string;
 };
 
 /**
- * A tertiary text button: "Clear filters" in two places, "Try again" in one.
+ * A tertiary text button: "Clear filters", "Try again" and "Dismiss".
  *
  * Three of these exist at once by design - one in the filter bar and two on the
  * over-map message, whose shortcuts are additions rather than replacements - so
@@ -18,7 +19,11 @@ type TertiaryLinkProps = {
  * nowhere, so there is no href to give it, and a link without one is not
  * reachable by keyboard.
  */
-export default function TertiaryLink({ onClick, children }: TertiaryLinkProps) {
+export default function TertiaryLink({
+  onClick,
+  children,
+  "aria-label": ariaLabel,
+}: TertiaryLinkProps) {
   const theme = useTheme();
 
   return (
@@ -28,6 +33,7 @@ export default function TertiaryLink({ onClick, children }: TertiaryLinkProps) {
       // navy. A tertiary link has to state that it has no fill of its own.
       variant="text"
       onClick={onClick}
+      aria-label={ariaLabel}
       disableRipple
       sx={{
         height: "2.25rem",

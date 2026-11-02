@@ -21,6 +21,10 @@ const PIP_FLOOR = 6;
 
 const focusLayerAt = vi.fn();
 
+const UNREACHABLE = "Could not reach the data catalogue - try again";
+
+let focusErrors: Record<string, string> = {};
+
 // Mocked to their empty states: each would otherwise want a server.
 vi.mock("@/api/useAppliedLayers", () => ({
   useAppliedLayers: () => ({
@@ -35,10 +39,11 @@ vi.mock("@/api/useAppliedLayers", () => ({
   }),
 }));
 vi.mock("@/api/useLayerFocus", () => ({
+  UNREACHABLE_MESSAGE: UNREACHABLE,
   useLayerFocus: () => ({
     focusLayer: focusLayerAt,
     focusPendingIds: new Set(),
-    focusErrors: {},
+    focusErrors,
   }),
 }));
 vi.mock("@/api/useLayerMinZooms", () => ({
@@ -233,6 +238,7 @@ const renderRow = (map: FakeMap) => {
 
 beforeEach(() => {
   focusLayerAt.mockClear();
+  focusErrors = {};
   apiGet.mockReset();
   apiGet.mockImplementation((path: string) => {
     const data = styleFor[path];
@@ -311,5 +317,37 @@ describe("the PIP row's zoom prompt", () => {
     });
     expect(focusLayerAt).not.toHaveBeenCalled();
     expect(prompt()).toBe(null);
+  });
+});
+
+// The row reads a failed press by layer id, whatever kind of layer it is.
+describe("the prompt after a failed press", () => {
+  it("offers a refresh, with the reason in its name, when the warehouse was unreachable", async () => {
+    focusErrors = { [localLayerId(PIP_OBJECT_NAME)]: UNREACHABLE };
+    renderRow(fakeMap(4));
+    await userEvent.click(toggle());
+
+    const refresh = await screen.findByRole("button", { name: /^Refresh/ });
+    expect(refresh.getAttribute("aria-label")).toBe(
+      `Refresh zoom to ${PIP_NAME}. ${UNREACHABLE}`,
+    );
+    // The aria-label hides the visible text from a role query.
+    expect(refresh.textContent).toBe("Refresh");
+    expect(refresh.querySelector('[data-testid="RefreshIcon"]')).not.toBe(null);
+    expect(prompt()).toBe(null);
+  });
+
+  it("keeps the zoom prompt when pressing again cannot help", async () => {
+    const noFeatures = "This layer publishes nothing to zoom to";
+    focusErrors = { [localLayerId(PIP_OBJECT_NAME)]: noFeatures };
+    renderRow(fakeMap(4));
+    await userEvent.click(toggle());
+
+    const zoom = await findPrompt();
+    expect(zoom.getAttribute("aria-label")).toBe(
+      `Zoom in to view ${PIP_NAME}. ${noFeatures}`,
+    );
+    expect(zoom.textContent).toBe("Zoom in to view");
+    expect(zoom.querySelector('[data-testid="ZoomInIcon"]')).not.toBe(null);
   });
 });

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { Box, Button, CircularProgress, Typography } from "@mui/material";
+import { Box, CircularProgress, Typography } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import SearchOffIcon from "@mui/icons-material/SearchOff";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useCatalogueSearch } from "@/api/useCatalogueSearch";
 import CatalogueSearchField from "@/components/Layers/Catalogue/CatalogueSearchField";
 import EnabledLayers from "@/components/Layers/Catalogue/EnabledLayers";
+import ErrorNotice from "@/components/Layers/ErrorNotice";
 import LayerRow from "@/components/Layers/LayerRow";
 import LayersSection from "@/components/Layers/LayersSection";
 import { useLayers } from "@/components/Layers/LayersContext";
@@ -112,28 +112,11 @@ export default function CatalogueSection() {
       )}
 
       {searching && settled && !isLoading && error && (
-        <Box sx={{ padding: "0.75rem 1rem", textAlign: "center" }}>
-          <WarningAmberIcon
-            aria-hidden
-            sx={{ fontSize: "1.25rem", color: theme.palette.text.secondary }}
-          />
-          <Typography
-            sx={{
-              fontSize: theme.typography.body2.fontSize,
-              color: theme.palette.text.primary,
-            }}
-          >
-            Couldn't reach BC public layers
-          </Typography>
-          <Button
-            variant="text"
-            color="secondary"
-            onClick={() => retry()}
-            sx={{ fontSize: theme.typography.caption.fontSize }}
-          >
-            Try again
-          </Button>
-        </Box>
+        <ErrorNotice
+          message="Couldn’t reach BC public layers"
+          action="Try again"
+          onAction={() => retry()}
+        />
       )}
 
       {searching && settled && !isLoading && !error && layers.length === 0 && (

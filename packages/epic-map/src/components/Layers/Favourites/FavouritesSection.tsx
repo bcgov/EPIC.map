@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Box,
-  Button,
   CircularProgress,
   IconButton,
-  Link,
   Tooltip,
   Typography,
 } from "@mui/material";
 import CreateNewFolderOutlinedIcon from "@mui/icons-material/CreateNewFolderOutlined";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { useTheme } from "@mui/material/styles";
 import { isPendingId } from "@/api/pendingIds";
-import { DEFAULT_FOLDER_NAME } from "@/api/useFavouriteFolders";
+import {
+  CREATE_FOLDER_ERROR,
+  DEFAULT_FOLDER_NAME,
+} from "@/api/useFavouriteFolders";
 import type { FavouriteLayer } from "@/api/useFavouriteLayers";
 import DashedEmptyState from "@/components/Layers/DashedEmptyState";
+import ErrorNotice from "@/components/Layers/ErrorNotice";
 import DropIndicator from "@/components/Layers/Favourites/DropIndicator";
 import FolderRow from "@/components/Layers/Favourites/FolderRow";
 import {
@@ -151,11 +152,11 @@ export default function FavouritesSection() {
           setFiling({ layerId: layer.id, folderId });
           return;
         }
-        // It has just left the folder it was shown in, which needs saying.
+        // It has just left the folder it was shown in.
         setFiling(null);
         if (folderId === null) {
-          // The folder's own failure is reported by folderSaveError as well.
-          announce(`Couldn’t create ${groupName}. ${layer.name} did not move.`);
+          // Says what the notice shows, which has no live region of its own.
+          announce(CREATE_FOLDER_ERROR);
         } else {
           reportProblem(`Couldn’t move ${layer.name} into ${groupName} folder.`);
         }
@@ -299,47 +300,6 @@ export default function FavouritesSection() {
     </Box>
   );
 
-  // A warning with its action as a link at the end of the sentence.
-  const warningLine = (message: string, action: string, onAction: () => void) => (
-    <Box sx={{ padding: "0 1rem 0.5rem" }}>
-      <Typography
-        sx={{
-          fontSize: theme.typography.caption.fontSize,
-          // Set with the size: the default is body1's, for larger text.
-          lineHeight: 1.4,
-          color: theme.palette.text.primary,
-        }}
-      >
-        <WarningAmberIcon
-          aria-hidden
-          sx={{
-            verticalAlign: "text-bottom",
-            marginRight: "0.25rem",
-            fontSize: "1rem",
-            color: theme.palette.text.secondary,
-          }}
-        />
-        {message}{" "}
-        <Link
-          component="button"
-          type="button"
-          onClick={onAction}
-          sx={{
-            // A native button takes the UA font, not the paragraph's.
-            font: "inherit",
-            // MUI centres a button-as-link; a word in a sentence needs baseline.
-            verticalAlign: "baseline",
-            color: theme.palette.primary.dark,
-            textDecorationColor: "currentcolor",
-          }}
-        >
-          {action}
-        </Link>
-        .
-      </Typography>
-    </Box>
-  );
-
   /**
    * The folders call failed.
    *
@@ -347,14 +307,17 @@ export default function FavouritesSection() {
    * stale. With nothing cached it is gone and the layers have fallen back to
    * the top level, which is worth saying: otherwise it reads as a deletion.
    */
-  const foldersNotice = () =>
-    warningLine(
-      folders.length > 0
-        ? "Couldn’t refresh your folders."
-        : "Couldn’t load your folders. Your layers are shown ungrouped.",
-      "Try again",
-      retryFolders,
-    );
+  const foldersNotice = () => (
+    <ErrorNotice
+      message={
+        folders.length > 0
+          ? "Couldn’t refresh your folders."
+          : "Couldn’t load your folders. Your layers are shown ungrouped."
+      }
+      action="Try again"
+      onAction={retryFolders}
+    />
+  );
 
   const content = () => {
     if (favouritesPending) {
@@ -385,40 +348,15 @@ export default function FavouritesSection() {
     if (favouritesError) {
       return (
         <>
-          <Box
-            sx={{
-              padding: "0 1rem 0.5rem",
-              textAlign: stale ? "left" : "center",
-            }}
-          >
-            <Typography
-              sx={{
-                fontSize: theme.typography.caption.fontSize,
-                color: theme.palette.text.primary,
-              }}
-            >
-              <WarningAmberIcon
-                aria-hidden
-                sx={{
-                  verticalAlign: "text-bottom",
-                  marginRight: "0.25rem",
-                  fontSize: "1rem",
-                  color: theme.palette.text.secondary,
-                }}
-              />
-              {stale
+          <ErrorNotice
+            message={
+              stale
                 ? "Couldn’t refresh your favourites"
-                : "Couldn’t load your favourites"}
-            </Typography>
-            <Button
-              variant="text"
-              color="secondary"
-              onClick={retryFavourites}
-              sx={{ fontSize: theme.typography.caption.fontSize }}
-            >
-              Try again
-            </Button>
-          </Box>
+                : "Couldn’t load your favourites"
+            }
+            action="Try again"
+            onAction={retryFavourites}
+          />
           {stale && favouriteList()}
         </>
       );
@@ -445,12 +383,20 @@ export default function FavouritesSection() {
         <span key={announcement.count}>{announcement.text}</span>
       </Box>
       {foldersError ? foldersNotice() : null}
-      {folderSaveError
-        ? warningLine(folderSaveError, "Dismiss", clearFolderSaveError)
-        : null}
-      {moveError
-        ? warningLine(moveError, "Dismiss", () => setMoveError(null))
-        : null}
+      {folderSaveError ? (
+        <ErrorNotice
+          message={folderSaveError}
+          action="Dismiss"
+          onAction={clearFolderSaveError}
+        />
+      ) : null}
+      {moveError ? (
+        <ErrorNotice
+          message={moveError}
+          action="Dismiss"
+          onAction={() => setMoveError(null)}
+        />
+      ) : null}
       {content()}
     </>
   );

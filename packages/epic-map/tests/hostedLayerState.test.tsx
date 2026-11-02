@@ -33,6 +33,7 @@ vi.mock("@/api/useAppliedLayers", () => ({
   }),
 }));
 vi.mock("@/api/useLayerFocus", () => ({
+  UNREACHABLE_MESSAGE: "unreachable",
   useLayerFocus: () => ({
     focusLayer: vi.fn(),
     focusPendingIds: new Set(),
