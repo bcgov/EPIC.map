@@ -57,9 +57,8 @@ describe("going to a project", () => {
 
     current.goTo([-122, 53], 11);
 
-    // Read off the call rather than matched on the key: an absent `offset` and
-    // an `offset` of undefined are the same instruction to MapLibre.
-    expect(map.flyTo.mock.calls[0][0].offset).toBeUndefined();
+    // The key itself, not its value: MapLibre throws on an offset of undefined.
+    expect(map.flyTo.mock.calls[0][0]).not.toHaveProperty("offset");
   });
 });
 
@@ -76,6 +75,6 @@ describe("going to a place", () => {
     expect(map.flyTo).toHaveBeenCalledWith(
       expect.objectContaining({ center: [-124.7, 48.7], zoom: 14 }),
     );
-    expect(map.flyTo.mock.calls[0][0].offset).toBeUndefined();
+    expect(map.flyTo.mock.calls[0][0]).not.toHaveProperty("offset");
   });
 });

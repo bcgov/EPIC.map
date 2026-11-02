@@ -6,6 +6,10 @@ import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import WarningIcon from "@mui/icons-material/Warning";
 import { ACTIVE_FILL } from "@/components/Filters/filterTokens";
+import {
+  EAO_CATEGORY_COLORS,
+  EAO_DEFAULT_CATEGORY,
+} from "@/components/Layers/eaoColors";
 import { rowIconButtonSx, toggleSx } from "@/components/Layers/LayerRow";
 import {
   type ComponentFlag as Flag,
@@ -31,14 +35,6 @@ const FLAGS = {
   adjusted: { text: "Adjusted by GIS", color: "#8a6a00", Icon: EditNoteIcon },
 } as const;
 
-/** The map's colour for each style category, as eao_categories.py sets it. */
-const BULLET_COLORS: Record<string, string> = {
-  footprint: "#0072B2",
-  amendment: "#CC79A7",
-  value_component: "#009E73",
-  project_component: "#E69F00",
-};
-
 const LABEL_TEXT = { fontSize: "0.75rem", lineHeight: "1.125rem" } as const;
 
 export const listSx = { margin: 0, padding: 0, listStyle: "none" } as const;
@@ -50,8 +46,10 @@ const Bullet = ({ category }: { category: string }) => (
       flexShrink: 0,
       width: "4px",
       height: "4px",
-      backgroundColor:
-        BULLET_COLORS[category] ?? BULLET_COLORS.project_component,
+      backgroundColor: (
+        EAO_CATEGORY_COLORS[category] ??
+        EAO_CATEGORY_COLORS[EAO_DEFAULT_CATEGORY]
+      ).hue,
     }}
   />
 );
