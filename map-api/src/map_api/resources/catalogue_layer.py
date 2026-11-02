@@ -13,6 +13,7 @@
 # limitations under the License.
 """API endpoints for reading catalogue layers out of the warehouse."""
 
+import re
 from http import HTTPStatus
 
 from flask import request
@@ -24,8 +25,10 @@ from map_api.exceptions import BadRequestError, ResourceNotFoundError
 from map_api.schemas.catalogue_layer import (
     LayerMinZoomSchema, MetaDataBatchResultSchema, MetaDataBatchSchema, NearestFeatureQuerySchema, NearestFeatureSchema,
     ObjectNameSchema)
+from map_api.schemas.whats_here import FeatureBoundsSchema
 from map_api.services.bcgw_service import BcgwService
 from map_api.utils.click_epoch import is_superseded, note_click
+from map_api.utils.constant import BCGW_FEATURE_ID_PATTERN
 from map_api.utils.util import cors_preflight
 
 from .apihelper import Api as ApiHelper
@@ -49,6 +52,10 @@ metadata_batch_model = ApiHelper.convert_ma_schema_to_restx_model(
 
 layer_min_zoom_model = ApiHelper.convert_ma_schema_to_restx_model(
     API, LayerMinZoomSchema(), 'LayerMinZoom'
+)
+
+feature_bounds_model = ApiHelper.convert_ma_schema_to_restx_model(
+    API, FeatureBoundsSchema(), 'FeatureBounds'
 )
 
 
@@ -128,6 +135,34 @@ class LayerMinZoom(Resource):
             LayerMinZoomSchema().dump({'min_zoom': min_zoom}),
             HTTPStatus.OK,
         )
+
+
+@cors_preflight('GET, OPTIONS')
+@API.route('/<string:object_name>/features/<string:feature_id>/bounds', methods=['GET', 'OPTIONS'])
+class FeatureBounds(Resource):
+    """Bounds of one warehouse feature."""
+
+    @staticmethod
+    @auth.require
+    @ApiHelper.swagger_decorators(
+        API,
+        endpoint_description='Bounds of one warehouse feature, for the client to frame',
+    )
+    @API.response(code=200, model=feature_bounds_model, description='Success')
+    @API.response(400, 'Bad Request')
+    @API.response(503, 'The warehouse did not answer')
+    def get(object_name: str, feature_id: str):
+        """Return the feature's bounds; null when too heavy to measure."""
+        try:
+            ObjectNameSchema().load({'object_name': object_name})
+        except ValidationError as exc:
+            raise BadRequestError(str(exc.messages)) from exc
+        # Sent to the warehouse, so it must be this layer's.
+        if not re.match(BCGW_FEATURE_ID_PATTERN, feature_id) or not feature_id.startswith(f'{object_name}.'):
+            raise BadRequestError(f'{feature_id} is not a feature of {object_name}.')
+
+        bounds = BcgwService.feature_bounds(object_name, feature_id)
+        return FeatureBoundsSchema().dump({'bounds': bounds}), HTTPStatus.OK
 
 
 @cors_preflight('POST, OPTIONS')

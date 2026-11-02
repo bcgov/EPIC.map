@@ -408,6 +408,16 @@ describe("sharing the navy highlight with Select area", () => {
     expect(revealed.selected).toEqual([]);
   });
 
+  it("lets go of its row when a What's here result is clicked", () => {
+    renderShared();
+    fireEvent.click(row("Access Route Amendment 1"));
+
+    act(() => area.current?.focusResult("catalogue:WHSE_TEST.LAYER", "WHSE_TEST.LAYER.1"));
+
+    expect(row("Access Route Amendment 1").getAttribute("aria-pressed")).toBe("false");
+    expect(revealed.selected).toEqual([]);
+  });
+
   it("takes the highlight back from Select area when its own row is clicked", () => {
     renderShared();
     act(() => {

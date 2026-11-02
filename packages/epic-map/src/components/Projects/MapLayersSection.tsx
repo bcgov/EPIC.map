@@ -142,10 +142,10 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   // One navy highlight between this list and Select area's: last click wins.
-  const { focusedId, unfocus } = useSelectArea();
+  const { focused, unfocus } = useSelectArea();
   useEffect(() => {
-    if (focusedId !== null) setSelectedKey(null);
-  }, [focusedId]);
+    if (focused !== null) setSelectedKey(null);
+  }, [focused]);
 
   const startHidden = useMemo(
     () =>

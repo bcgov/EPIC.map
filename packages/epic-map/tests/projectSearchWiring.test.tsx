@@ -156,6 +156,9 @@ vi.mock("@/components/Layers/LayersControl", () => ({ default: () => null }));
 vi.mock("@/components/MetaData/MetaDataControl", () => ({
   default: () => null,
 }));
+vi.mock("@/components/MapTools/MapToolsControl", () => ({
+  default: () => null,
+}));
 
 const { MapWidget } = await import("@/widget/MapWidget");
 

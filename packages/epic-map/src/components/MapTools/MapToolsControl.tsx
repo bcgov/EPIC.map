@@ -7,7 +7,9 @@ import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import { BORDER_DEFAULT } from "@/components/Filters/filterTokens";
 import { eaoFeatureAt } from "@/components/Layers/eaoVisibility";
 import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
-import SelectAreaPanel from "@/components/MapTools/SelectAreaPanel";
+import ResultInfoPopup from "@/components/MapTools/ResultInfoPopup";
+import SelectAreaPanel, { SELECT_AREA_HINT } from "@/components/MapTools/SelectAreaPanel";
+import { useResultHighlight } from "@/components/MapTools/useResultHighlight";
 import { hasProjectAt } from "@/components/Projects/projectUtils";
 import { MAP_TOOLS_WIDTH, METADATA_TOLERANCE_PX } from "@/utils/config";
 
@@ -61,6 +63,18 @@ function ToolButton({ label, icon, active, onClick }: ToolButtonProps) {
   );
 }
 
+const visuallyHidden = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  margin: -1,
+  padding: 0,
+  overflow: "hidden",
+  clip: "rect(0 0 0 0)",
+  whiteSpace: "nowrap",
+  border: 0,
+} as const;
+
 type MapToolsControlProps = {
   map: MapLibreMap | null;
   /** Pixels covered on the map's right edge. */
@@ -72,8 +86,17 @@ export default function MapToolsControl({
   map,
   insetRight = 0,
 }: MapToolsControlProps) {
-  const { tool: active, toggleTool: toggle, add } = useSelectArea();
+  const {
+    tool: active,
+    toggleTool: toggle,
+    add,
+    selected,
+    results,
+    queryId,
+  } = useSelectArea();
   const selecting = active === "select";
+
+  useResultHighlight(map);
 
   // A dot still opens its project card.
   useEffect(() => {
@@ -91,45 +114,62 @@ export default function MapToolsControl({
     };
   }, [map, selecting, add]);
 
+  // A summary, not the list.
+  const announcement = !selecting
+    ? ""
+    : queryId !== null
+      ? "Searching the layers on the map."
+      : results
+        ? `${results.reduce((sum, { features }) => sum + features.length, 0)} features found.`
+        : selected.length === 0
+          ? SELECT_AREA_HINT
+          : "";
+
   return (
-    <Box
-      sx={{
-        position: "absolute",
-        top: "1rem",
-        right: `calc(1rem + ${insetRight}px)`,
-        zIndex: 2,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-end",
-        maxHeight: "calc(100% - 2rem)",
-      }}
-    >
+    <>
+      <Box role="status" sx={visuallyHidden}>
+        {announcement}
+      </Box>
+      <ResultInfoPopup map={map} />
       <Box
         sx={{
+          position: "absolute",
+          top: "1rem",
+          right: `calc(1rem + ${insetRight}px)`,
+          zIndex: 2,
           display: "flex",
-          flexShrink: 0,
-          gap: "0.5rem",
-          width: MAP_TOOLS_WIDTH,
+          flexDirection: "column",
+          alignItems: "flex-end",
+          maxHeight: "calc(100% - 2rem)",
         }}
       >
-        <ToolButton
-          label="Select area"
-          icon={<HighlightAltOutlinedIcon />}
-          active={selecting}
-          onClick={() => toggle("select")}
-        />
-        {/* Measuring itself is a later ticket; the button only toggles. */}
-        <ToolButton
-          label="Measure"
-          icon={<StraightenOutlinedIcon />}
-          active={active === "measure"}
-          onClick={() => toggle("measure")}
-        />
-      </Box>
+        <Box
+          sx={{
+            display: "flex",
+            flexShrink: 0,
+            gap: "0.5rem",
+            width: MAP_TOOLS_WIDTH,
+          }}
+        >
+          <ToolButton
+            label="Select area"
+            icon={<HighlightAltOutlinedIcon />}
+            active={selecting}
+            onClick={() => toggle("select")}
+          />
+          {/* Measuring itself is a later ticket; the button only toggles. */}
+          <ToolButton
+            label="Measure"
+            icon={<StraightenOutlinedIcon />}
+            active={active === "measure"}
+            onClick={() => toggle("measure")}
+          />
+        </Box>
 
-      <Box role="status" sx={{ display: "flex", minHeight: 0 }}>
-        {selecting && <SelectAreaPanel />}
+        <Box sx={{ display: "flex", minHeight: 0 }}>
+          {selecting && <SelectAreaPanel map={map} />}
+        </Box>
       </Box>
-    </Box>
+    </>
   );
 }

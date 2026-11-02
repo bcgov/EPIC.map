@@ -289,7 +289,11 @@ const removeHighlight = (map: MapLibreMap) => {
  * From its geometry where map-api sent it, otherwise by id through the
  * warehouse's tiles. With neither, left undrawn rather than guessed at.
  */
-export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => {
+export const showHighlight = (
+  map: MapLibreMap,
+  highlight: FeatureHighlight,
+  color: string = HIGHLIGHT_COLOR,
+) => {
   whenStyleReady(map, () => {
     removeHighlight(map);
     const { geometry, featureId, objectName } = highlight;
@@ -304,25 +308,28 @@ export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => 
         type: "fill",
         source: HIGHLIGHT_SOURCE,
         paint: {
-          "fill-color": HIGHLIGHT_COLOR,
+          "fill-color": color,
           "fill-opacity": HIGHLIGHT_FILL_OPACITY,
         },
       });
-      map.addLayer({
-        id: HIGHLIGHT_CASING,
-        type: "line",
-        source: HIGHLIGHT_SOURCE,
-        paint: {
-          "line-color": HIGHLIGHT_CASING_COLOR,
-          "line-width": HIGHLIGHT_CASING_WIDTH_PX,
-        },
-      });
+      // Only gold needs the casing to carry over a pale basemap.
+      if (color === HIGHLIGHT_COLOR) {
+        map.addLayer({
+          id: HIGHLIGHT_CASING,
+          type: "line",
+          source: HIGHLIGHT_SOURCE,
+          paint: {
+            "line-color": HIGHLIGHT_CASING_COLOR,
+            "line-width": HIGHLIGHT_CASING_WIDTH_PX,
+          },
+        });
+      }
       map.addLayer({
         id: HIGHLIGHT_LINE,
         type: "line",
         source: HIGHLIGHT_SOURCE,
         paint: {
-          "line-color": HIGHLIGHT_COLOR,
+          "line-color": color,
           "line-width": HIGHLIGHT_WIDTH_PX,
         },
       });
@@ -334,9 +341,9 @@ export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => 
         filter: ["match", ["geometry-type"], ["Point", "MultiPoint"], true, false],
         paint: {
           "circle-radius": HIGHLIGHT_POINT_SIZE_PX / 2,
-          "circle-color": HIGHLIGHT_COLOR,
+          "circle-color": color,
           "circle-opacity": HIGHLIGHT_FILL_OPACITY,
-          "circle-stroke-color": HIGHLIGHT_COLOR,
+          "circle-stroke-color": color,
           "circle-stroke-width": HIGHLIGHT_WIDTH_PX,
         },
       });
@@ -346,7 +353,7 @@ export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => 
     if (objectName && featureId) {
       map.addSource(HIGHLIGHT_SOURCE, {
         type: "raster",
-        tiles: [highlightTileUrl(objectName, featureId)],
+        tiles: [highlightTileUrl(objectName, featureId, color)],
         tileSize: WMS_TILE_SIZE_PX,
       });
       map.addLayer({
@@ -385,6 +392,7 @@ export interface LocalFeatureHighlight {
 export const showLocalHighlight = (
   map: MapLibreMap,
   highlight: LocalFeatureHighlight,
+  color: string = HIGHLIGHT_COLOR,
 ) => {
   whenStyleReady(map, () => {
     removeHighlight(map);
@@ -392,6 +400,7 @@ export const showLocalHighlight = (
       map,
       [HIGHLIGHT_LOCAL_FILL, HIGHLIGHT_LOCAL_LINE, HIGHLIGHT_LOCAL_POINT],
       highlight,
+      color,
     );
   });
 };

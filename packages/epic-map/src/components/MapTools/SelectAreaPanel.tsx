@@ -1,8 +1,11 @@
-import { Box, Button, ButtonBase, IconButton, Typography } from "@mui/material";
+import { Box, Button, ButtonBase, CircularProgress, IconButton, Typography } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import SaveAltIcon from "@mui/icons-material/SaveAlt";
 import SearchIcon from "@mui/icons-material/Search";
 import { useTheme } from "@mui/material/styles";
+import type { Map as MapLibreMap } from "maplibre-gl";
+import { useWhatsHereApi } from "@/api/useWhatsHere";
 import {
   ACTIVE_FILL,
   BORDER_DARK,
@@ -14,14 +17,28 @@ import {
   LINK,
   MENU_SEPARATOR,
 } from "@/components/Filters/filterTokens";
-import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
+import { useLayers } from "@/components/Layers/LayersContext";
+import { useImportedLayersContext } from "@/components/Layers/UserLayers/ImportedLayersContext";
+import {
+  useSelectArea,
+  type ResultFeature,
+  type ResultGroup,
+} from "@/components/MapTools/SelectAreaContext";
+import WhatsHereResults from "@/components/MapTools/WhatsHereResults";
+import { searchedLayers, toGroups, whatsHereRequest } from "@/components/MapTools/whatsHere";
 
 const PANEL_WIDTH = "17.375rem";
 
 const SMALL_TEXT = { fontSize: "0.75rem", lineHeight: 1.5 } as const;
 
+export const SELECT_AREA_HINT = "Click projects or components on the map to add them.";
+
+const NO_LAYERS_MESSAGE = "Switch on a layer in the Layers panel to see what is here.";
+const FAILED_MESSAGE = "The layers could not be searched. Please try again.";
+
 const footerButtonSx = {
-  flex: 1,
+  // Half the row each, so a lone button keeps its size.
+  flex: "0 0 calc(50% - 0.5rem)",
   height: "1.625rem",
   minWidth: 0,
   padding: "0 0.5rem",
@@ -57,7 +74,7 @@ const EmptyState = () => {
           }}
         />
         <Typography sx={{ ...SMALL_TEXT, color: theme.palette.text.primary }}>
-          Click projects or components on the map to add them.
+          {SELECT_AREA_HINT}
         </Typography>
       </Box>
     </Box>
@@ -139,11 +156,53 @@ const SelectedList = () => {
   );
 };
 
+/** Runs What's here over the switched-on layers. */
+const useRunWhatsHere = () => {
+  const { selected, startQuery, finishQuery, failQuery } = useSelectArea();
+  const { appliedLayers, favourites, visibleIds } = useLayers();
+  const { layers: importedLayers, shownIds: importedShownIds } = useImportedLayersContext();
+  const { search } = useWhatsHereApi();
+
+  return () => {
+    const layers = searchedLayers({
+      appliedLayers,
+      favourites,
+      visibleIds,
+      importedLayers,
+      importedShownIds,
+    });
+    const queryId = startQuery();
+    if (layers.length === 0) {
+      failQuery(queryId, NO_LAYERS_MESSAGE);
+      return;
+    }
+    search(whatsHereRequest(selected.map(({ featureId }) => featureId), layers))
+      .then((results) => finishQuery(queryId, toGroups(results, layers)))
+      .catch(() => failQuery(queryId, FAILED_MESSAGE));
+  };
+};
+
 /** The Select area panel under the tool bar. */
-export default function SelectAreaPanel() {
+export default function SelectAreaPanel({ map }: { map: MapLibreMap | null }) {
   const theme = useTheme();
-  const { selected, clear } = useSelectArea();
+  const { selected, results, queryId, clear, showInfo } = useSelectArea();
+  const runWhatsHere = useRunWhatsHere();
   const navy = theme.palette.primary.main;
+  const querying = queryId !== null;
+  const hasFeatures = results?.some(({ features }) => features.length > 0) ?? false;
+
+  // Left of the panel, level with the row.
+  const openInfo = (group: ResultGroup, feature: ResultFeature, row: HTMLElement) => {
+    if (!map) return;
+    const container = map.getContainer().getBoundingClientRect();
+    const { left, top } = row.getBoundingClientRect();
+    showInfo({
+      groupKey: group.key,
+      featureKey: feature.key,
+      right: left - container.left,
+      top: top - container.top,
+    });
+  };
 
   return (
     <Box
@@ -164,6 +223,7 @@ export default function SelectAreaPanel() {
         <>
           <Box sx={{ minHeight: 0, overflowY: "auto" }}>
             <SelectedList />
+            <WhatsHereResults onInfo={openInfo} />
           </Box>
 
           <Box
@@ -187,19 +247,41 @@ export default function SelectAreaPanel() {
             >
               Clear all
             </Button>
-            {/* The query and its results are a later ticket. */}
-            <Button
-              startIcon={<SearchIcon />}
-              sx={{
-                ...footerButtonSx,
-                border: `1px solid ${navy}`,
-                color: theme.palette.primary.contrastText,
-                backgroundColor: navy,
-                "&:hover": { backgroundColor: theme.palette.primary.dark },
-              }}
-            >
-              What&rsquo;s here
-            </Button>
+            {results === null ? (
+              <Button
+                onClick={runWhatsHere}
+                disabled={querying}
+                startIcon={
+                  querying ? <CircularProgress size="1rem" color="inherit" /> : <SearchIcon />
+                }
+                sx={{
+                  ...footerButtonSx,
+                  border: `1px solid ${navy}`,
+                  color: theme.palette.primary.contrastText,
+                  backgroundColor: navy,
+                  "&:hover": { backgroundColor: theme.palette.primary.dark },
+                  "&.Mui-disabled": { color: theme.palette.primary.contrastText, opacity: 0.7 },
+                }}
+              >
+                What&rsquo;s here
+              </Button>
+            ) : (
+              hasFeatures && (
+                // Export is a later ticket.
+                <Button
+                  startIcon={<SaveAltIcon />}
+                  sx={{
+                    ...footerButtonSx,
+                    border: `1px solid ${navy}`,
+                    color: theme.palette.primary.contrastText,
+                    backgroundColor: navy,
+                    "&:hover": { backgroundColor: theme.palette.primary.dark },
+                  }}
+                >
+                  Export
+                </Button>
+              )
+            )}
           </Box>
         </>
       )}

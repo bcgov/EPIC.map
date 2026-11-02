@@ -5,6 +5,8 @@ import { focusRing, HOVER_FILL, LINK } from "@/components/Filters/filterTokens";
 type TertiaryLinkProps = {
   onClick: () => void;
   children: string;
+  /** For when the label alone is ambiguous. */
+  "aria-label"?: string;
 };
 
 /**
@@ -18,7 +20,11 @@ type TertiaryLinkProps = {
  * nowhere, so there is no href to give it, and a link without one is not
  * reachable by keyboard.
  */
-export default function TertiaryLink({ onClick, children }: TertiaryLinkProps) {
+export default function TertiaryLink({
+  onClick,
+  children,
+  "aria-label": ariaLabel,
+}: TertiaryLinkProps) {
   const theme = useTheme();
 
   return (
@@ -28,6 +34,7 @@ export default function TertiaryLink({ onClick, children }: TertiaryLinkProps) {
       // navy. A tertiary link has to state that it has no fill of its own.
       variant="text"
       onClick={onClick}
+      aria-label={ariaLabel}
       disableRipple
       sx={{
         height: "2.25rem",

@@ -172,6 +172,7 @@ export default function MapSurface({
               <LayersProvider map={map}>
                 <LayersControl />
                 <MetaDataControl />
+                <MapToolsControl map={map} insetRight={cardInset} />
               </LayersProvider>
               <ProjectsControl
                 map={map}
@@ -179,7 +180,6 @@ export default function MapSurface({
                 onSelect={onProjectSelect}
               />
             </RevealedComponentsProvider>
-            <MapToolsControl map={map} insetRight={cardInset} />
           </SelectAreaProvider>
           <BasemapSwitch
             current={basemap}

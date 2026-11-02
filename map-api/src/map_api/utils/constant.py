@@ -334,3 +334,24 @@ EPIC_TRACK_TOKEN_EXPIRY_MARGIN_SECONDS = 30
 # at its own end, so the filter menus are worth holding far longer than the
 # projects counted inside them.
 EPIC_TRACK_CODE_TABLE_CACHE_TTL_SECONDS = 24 * 60 * 60
+
+# What's here: features listed per layer. The match count can be higher.
+WHATS_HERE_MAX_FEATURES = 100
+
+# Selected features one query may carry.
+WHATS_HERE_MAX_SELECTION = 200
+
+# Longest selection outline sent to the warehouse before simplifying further.
+WHATS_HERE_MAX_OUTLINE_CHARS = 50_000
+
+# Simplification tolerances in metres (EPSG:3857), tried in order until the outline fits.
+WHATS_HERE_SIMPLIFY_METRES = (0, 10, 50, 250, 1000)
+
+# Bytes of one layer's What's here answer, attributes only.
+BCGW_WHATS_HERE_BYTE_LIMIT = 1024 * 1024
+
+# Bytes read to measure one feature's bounds.
+BCGW_BOUNDS_BYTE_LIMIT = 2 * 1024 * 1024
+
+# A WFS feature id: the object name, a dot, a number.
+BCGW_FEATURE_ID_PATTERN = r'^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*\.[0-9]+$'

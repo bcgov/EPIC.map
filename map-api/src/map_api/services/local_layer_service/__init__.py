@@ -48,6 +48,8 @@ class LocalLayer(NamedTuple):
     # layer's fields on purpose, and dumping another through it answers with
     # the bounds and nothing else.
     serves_feature_detail: bool = False
+    # Names a feature in What's here.
+    name_column: Optional[str] = None
 
 
 # A registry rather than a pattern: the table name reaches SQL, so it must be
@@ -61,6 +63,7 @@ LOCAL_LAYERS = {
         properties=('cnsltn_area_guid', 'cnsltn_area_name', 'contact_count'),
         key='cnsltn_area_guid',
         serves_feature_detail=True,
+        name_column='cnsltn_area_name',
         # Everything the ingest carried, which is no longer everything the
         # extract holds: the contacts blob is cut down to the fields the popup
         # draws, and LocalContactSchema whitelists them again before the
@@ -90,6 +93,7 @@ LOCAL_LAYERS = {
         # panel filters a project's features without a round trip.
         properties=('feature_id', 'label', 'style_category', 'track_id'),
         key='feature_id',
+        name_column='label',
         detail_columns=(
             'feature_id',
             'source_layer',
@@ -116,6 +120,8 @@ LOCAL_LAYERS = {
         ),
     ),
 }
+
+EAO_OBJECT_NAME = 'EAO.PROJECT_DATA'
 
 # Integer units per tile side. 4096 is what every renderer assumes.
 MVT_EXTENT = 4096
@@ -222,6 +228,45 @@ class LocalLayerService:
         ).mappings().first()
 
         return dict(row) if row else None
+
+    @classmethod
+    def intersecting(cls, layer: 'LocalLayer', selection: list, limit: int) -> tuple:
+        """Return (features, matched) touching the selected EAO features."""
+        # Interpolated from the registry; the ids are bound.
+        statement = text(f"""
+            SELECT a.{layer.key} AS id, a.{layer.name_column} AS name,
+                   count(*) OVER () AS matched
+            FROM {layer.table} a
+            WHERE EXISTS (
+                SELECT 1 FROM {LOCAL_LAYERS[EAO_OBJECT_NAME].table} e
+                WHERE e.feature_id = ANY(:selection) AND ST_Intersects(a.geom, e.geom)
+            )
+            ORDER BY a.{layer.name_column}, a.{layer.key}
+            LIMIT :limit
+        """)
+        rows = db.session.execute(
+            statement, {'selection': selection, 'limit': limit}
+        ).mappings().all()
+
+        features = [
+            {'id': str(row['id']), 'name': row['name'], 'properties': []}
+            for row in rows
+        ]
+        return features, rows[0]['matched'] if rows else 0
+
+    @staticmethod
+    def selection_outline(selection: list, tolerance: float) -> Optional[str]:
+        """Return the selected EAO features as WKT in degrees, simplified by `tolerance` metres."""
+        return db.session.execute(
+            text(f"""
+                SELECT ST_AsText(ST_Transform(
+                    ST_SimplifyPreserveTopology(ST_Collect(geom), :tolerance), 4326
+                ), 6)
+                FROM {LOCAL_LAYERS[EAO_OBJECT_NAME].table}
+                WHERE feature_id = ANY(:selection)
+            """),
+            {'selection': selection, 'tolerance': tolerance},
+        ).scalar()
 
     @classmethod
     def last_loaded(cls, layer: 'LocalLayer', object_name: str):
