@@ -3,14 +3,19 @@ import { useLocalLayerStyle } from "@/api/useLocalLayerStyle";
 import {
   hideComponentHighlight,
   hideLocalVectorLayer,
+  hideSelectionOutline,
   setLocalVectorLayerFilters,
   setLocalVectorLayerLineWidth,
   setLocalVectorLayerOpacity,
   showComponentHighlight,
   showLocalVectorLayer,
+  showSelectionOutline,
 } from "@/components/Layers/layerUtils";
 import { useHostedLayerFilters } from "@/components/Layers/useHostedLayerFilters";
-import { useHostedLayerHighlight } from "@/components/Layers/useHostedLayerHighlight";
+import {
+  useHostedLayerHighlight,
+  useHostedLayerSelection,
+} from "@/components/Layers/useHostedLayerHighlight";
 import { useLayers } from "@/components/Layers/LayersContext";
 import {
   DEFAULT_LAYER_LINE_WIDTH,
@@ -55,6 +60,7 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
   // Narrows what is drawn, where the layer has a reason beyond its symbology.
   const filters = useHostedLayerFilters(objectName, style);
   const highlighted = useHostedLayerHighlight(objectName);
+  const selected = useHostedLayerSelection(objectName);
   const sourceLayer = style?.layers[0]?.sourceLayer;
   const keyProperty = hostedLayer(objectName)?.keyProperty;
 
@@ -99,6 +105,19 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
   }, [map, layerId, visible, style, filters]);
 
   // After the layer's own effect, so its tiles are there to filter.
+  useEffect(() => {
+    if (!map || !visible || !sourceLayer || !keyProperty || !selected.length) {
+      return undefined;
+    }
+    showSelectionOutline(map, {
+      layerId,
+      sourceLayer,
+      keyProperty,
+      keys: selected,
+    });
+    return () => hideSelectionOutline(map);
+  }, [map, visible, layerId, sourceLayer, keyProperty, selected]);
+
   useEffect(() => {
     if (
       !map ||

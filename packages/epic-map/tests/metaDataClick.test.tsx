@@ -8,7 +8,12 @@
 // every other layer on the map.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useEffect } from "react";
 import { cleanup, render } from "@testing-library/react";
+import {
+  SelectAreaProvider,
+  useSelectArea,
+} from "@/components/MapTools/SelectAreaContext";
 
 /** What is under the pointer, and the map the control reads from its context. */
 const under: {
@@ -147,5 +152,33 @@ describe("what the identify popup answers", () => {
     clickAt(map);
 
     expect(map.unproject).not.toHaveBeenCalled();
+  });
+});
+
+describe("while Select area is on", () => {
+  /** Stands in for the user turning Select area on. */
+  const SelectAreaOn = () => {
+    const { tool, toggleTool } = useSelectArea();
+    useEffect(() => {
+      if (tool === null) toggleTool("select");
+    }, [tool, toggleTool]);
+    return null;
+  };
+
+  it("identifies nothing, footprint or not", () => {
+    under.footprint = 205;
+    const map = fakeMap();
+    under.map = map;
+
+    const view = render(
+      <SelectAreaProvider>
+        <SelectAreaOn />
+        <MetaDataControl />
+      </SelectAreaProvider>,
+    );
+    clickAt(map);
+
+    expect(map.unproject).not.toHaveBeenCalled();
+    expect(view.queryByTestId("identify-popup")).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   componentSpecIds,
+  eaoFeatureAt,
   eaoSpecFilters,
   FOOTPRINT_SPEC_IDS,
   footprintDrawnIds,
@@ -247,6 +248,61 @@ describe("clicking a footprint", () => {
     const map = fakeMap([{ properties: {} }, { properties: { track_id: 44 } }]);
 
     expect(footprintTrackIdAt(map as never, { x: 1, y: 1 } as never)).toBe(44);
+  });
+});
+
+describe("clicking a feature in Select area", () => {
+  const drawn = [drawnId("footprint-fill"), drawnId("point")];
+
+  const fakeMap = (hits: object[]) => ({
+    getStyle: () => ({
+      layers: [...drawn, "basemap-roads"].map((id) => ({ id })),
+    }),
+    getLayer: (id: string) => ({ id }),
+    queryRenderedFeatures: vi.fn<(box: unknown, options: unknown) => object[]>(
+      () => hits,
+    ),
+  });
+
+  it("asks the EAO layers only, in a box around the click", () => {
+    const map = fakeMap([]);
+
+    eaoFeatureAt(map as never, { x: 10, y: 20 } as never, 5);
+
+    expect(map.queryRenderedFeatures).toHaveBeenCalledWith(
+      [
+        [5, 15],
+        [15, 25],
+      ],
+      { layers: drawn },
+    );
+  });
+
+  it("answers with the topmost feature's id and label", () => {
+    const map = fakeMap([
+      { properties: { feature_id: "{A1}", label: " Proposed Pumphouse " } },
+      { properties: { feature_id: "{F1}", label: "Project Boundary" } },
+    ]);
+
+    expect(eaoFeatureAt(map as never, { x: 1, y: 1 } as never, 5)).toEqual({
+      featureId: "{A1}",
+      label: "Proposed Pumphouse",
+    });
+  });
+
+  it("names a feature with no label", () => {
+    const map = fakeMap([{ properties: { feature_id: "{A1}", label: null } }]);
+
+    expect(eaoFeatureAt(map as never, { x: 1, y: 1 } as never, 5)?.label).toBe(
+      "Unnamed feature",
+    );
+  });
+
+  it("skips a feature with no id, and answers null where nothing was hit", () => {
+    expect(
+      eaoFeatureAt(fakeMap([{ properties: {} }]) as never, { x: 1, y: 1 } as never, 5),
+    ).toBeNull();
+    expect(eaoFeatureAt(fakeMap([]) as never, { x: 1, y: 1 } as never, 5)).toBeNull();
   });
 });
 

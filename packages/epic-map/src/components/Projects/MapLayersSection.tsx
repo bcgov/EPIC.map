@@ -3,6 +3,7 @@ import { Box, ButtonBase, Collapse, Skeleton, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import { type ProjectComponent, useProjectComponents } from "@/api/useProjects";
+import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
 import {
   type ComponentTypeGroup,
   findVariant,
@@ -140,6 +141,12 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
   );
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
+  // One navy highlight between this list and Select area's: last click wins.
+  const { focusedId, unfocus } = useSelectArea();
+  useEffect(() => {
+    if (focusedId !== null) setSelectedKey(null);
+  }, [focusedId]);
+
   const startHidden = useMemo(
     () =>
       new Set(
@@ -179,8 +186,10 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
         return next;
       }),
     selectedKey,
-    select: (key) =>
-      setSelectedKey((current) => (current === key ? null : key)),
+    select: (key) => {
+      unfocus();
+      setSelectedKey((current) => (current === key ? null : key));
+    },
   };
 
   const toggle = (submissionKey: string) =>

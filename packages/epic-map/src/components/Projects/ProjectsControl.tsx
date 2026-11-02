@@ -9,6 +9,7 @@ import type {
 import { useProjectFeatures } from "@/api/useProjects";
 import { useFilters } from "@/components/Filters/FiltersContext";
 import { footprintTrackIdAt } from "@/components/Layers/eaoVisibility";
+import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
 import ProjectCard from "@/components/Projects/ProjectCard";
 import ProjectTooltip from "@/components/Projects/ProjectTooltip";
 import {
@@ -94,6 +95,8 @@ export default function ProjectsControl({
   selectedRef.current = selectedId;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const selectingRef = useRef(false);
+  selectingRef.current = useSelectArea().tool === "select";
 
   useEffect(() => {
     if (!map) return undefined;
@@ -108,10 +111,11 @@ export default function ProjectsControl({
     };
     const onClick = (event: MapMouseEvent) => {
       // The dot first, then the boundary under it: a dot sits on top of its
-      // own footprint, and hitting either should open the same project.
+      // own footprint, and hitting either should open the same project. In
+      // Select area, a boundary is selected instead.
       const projectId =
         projectIdAt(map, event.point, selectedRef.current) ??
-        footprintTrackIdAt(map, event.point);
+        (selectingRef.current ? null : footprintTrackIdAt(map, event.point));
       if (projectId === null) return;
       onSelectRef.current(projectId);
       revealBesideCard(map, event.lngLat);

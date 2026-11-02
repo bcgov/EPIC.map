@@ -11,7 +11,8 @@ import { EAO_OBJECT_NAME, localLayerId } from "@/utils/localLayers";
  * filter bar has hidden has no boundary drawn either, so the two always agree.
  *
  * Components - the orange, green and purple of the style - are drawn only
- * where the open project's panel reveals them, by feature id. They are filtered
+ * where the open project's panel reveals them, or the selection holds them, by
+ * feature id. They are filtered
  * by project as well, so revealing them cannot leave a component behind when
  * its project is filtered out. A footprint is drawn unless that panel has
  * switched it off.
@@ -94,6 +95,30 @@ export const footprintTrackIdAt = (
   for (const feature of map.queryRenderedFeatures(point, { layers })) {
     const trackId = Number(feature.properties?.track_id);
     if (Number.isFinite(trackId)) return trackId;
+  }
+  return null;
+};
+
+/** The topmost drawn footprint or component within `tolerance` pixels of a point, or null. */
+export const eaoFeatureAt = (
+  map: MapLibreMap,
+  { x, y }: MapLibrePoint,
+  tolerance: number,
+): { featureId: string; label: string } | null => {
+  const layers = localDrawnIds(map, localLayerId(EAO_OBJECT_NAME)).filter(
+    (id) => map.getLayer(id),
+  );
+  if (layers.length === 0) return null;
+
+  const box: [[number, number], [number, number]] = [
+    [x - tolerance, y - tolerance],
+    [x + tolerance, y + tolerance],
+  ];
+  for (const feature of map.queryRenderedFeatures(box, { layers })) {
+    const featureId = feature.properties?.feature_id;
+    if (typeof featureId !== "string") continue;
+    const label = String(feature.properties?.label ?? "").trim();
+    return { featureId, label: label || "Unnamed feature" };
   }
   return null;
 };

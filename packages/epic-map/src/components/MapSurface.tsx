@@ -11,6 +11,8 @@ import BasemapSwitch from "@/components/BasemapSwitch";
 import MapMessage from "@/components/Filters/MapMessage";
 import MetaDataControl from "@/components/MetaData/MetaDataControl";
 import LayersControl from "@/components/Layers/LayersControl";
+import MapToolsControl from "@/components/MapTools/MapToolsControl";
+import { SelectAreaProvider } from "@/components/MapTools/SelectAreaContext";
 import ProjectsControl from "@/components/Projects/ProjectsControl";
 import { LayersProvider } from "@/components/Layers/LayersContext";
 import { RevealedComponentsProvider } from "@/components/Projects/RevealedComponentsContext";
@@ -165,23 +167,26 @@ export default function MapSurface({
       ) : (
         <>
           <Box ref={containerRef} sx={{ width: "100%", height: "100%" }} />
-          <RevealedComponentsProvider>
-            <LayersProvider map={map}>
-              <LayersControl />
-              <MetaDataControl />
-            </LayersProvider>
-            <ProjectsControl
-              map={map}
-              selectedId={selectedProjectId}
-              onSelect={onProjectSelect}
-            />
-          </RevealedComponentsProvider>
+          <SelectAreaProvider>
+            <RevealedComponentsProvider>
+              <LayersProvider map={map}>
+                <LayersControl />
+                <MetaDataControl />
+              </LayersProvider>
+              <ProjectsControl
+                map={map}
+                selectedId={selectedProjectId}
+                onSelect={onProjectSelect}
+              />
+            </RevealedComponentsProvider>
+            <MapToolsControl map={map} insetRight={cardInset} />
+          </SelectAreaProvider>
           <BasemapSwitch
             current={basemap}
             onSelect={setBasemap}
             insetRight={cardInset}
           />
-          <MapMessage />
+          <MapMessage insetRight={cardInset} />
         </>
       )}
     </Box>

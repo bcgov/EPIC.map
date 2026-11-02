@@ -9,7 +9,11 @@ import {
   INFO_ICON,
   MENU_SHADOW,
 } from "@/components/Filters/filterTokens";
-import { LAYERS_BUTTON_WIDTH, MAP_MESSAGE_FADE_MS } from "@/utils/config";
+import {
+  LAYERS_BUTTON_WIDTH,
+  MAP_MESSAGE_FADE_MS,
+  MAP_TOOLS_WIDTH,
+} from "@/utils/config";
 
 /**
  * The message that explains an empty map, for either reason it can be empty.
@@ -26,8 +30,8 @@ import { LAYERS_BUTTON_WIDTH, MAP_MESSAGE_FADE_MS } from "@/utils/config";
  * but the precedence is stated here too - two cards in one live region would
  * announce twice and give contradictory reasons for the same empty map.
  *
- * Sits in the Layers button's row and is centred in what is left to the right of
- * it, so the two never collide. Above the map and its markers, and below an open
+ * Sits in the Layers button's row and is centred between it and the tool bar, so
+ * none of them collide. Above the map and its markers, and below an open
  * dropdown - which a portalled MUI menu is by default.
  *
  * The live region is the element that stays mounted while the card inside it
@@ -36,7 +40,12 @@ import { LAYERS_BUTTON_WIDTH, MAP_MESSAGE_FADE_MS } from "@/utils/config";
  * would fade in silently. `unmountOnExit` is what makes its arrival a change,
  * and it still leaves the fade out to run first.
  */
-export default function MapMessage() {
+export default function MapMessage({
+  insetRight = 0,
+}: {
+  /** Pixels covered on the map's right edge, e.g. by the project card. */
+  insetRight?: number;
+}) {
   const theme = useTheme();
   const { noMatches, loadFailed, clearFilters, retryProjects } = useFilters();
 
@@ -89,7 +98,8 @@ export default function MapMessage() {
         // what is left; on a map too narrow to centre in, the card fills the
         // row and so sits flush after Layers rather than over it.
         left: `calc(1rem + ${LAYERS_BUTTON_WIDTH} + 0.5rem)`,
-        right: "1rem",
+        // Ends 8px short of the tool bar, which moves left with the card.
+        right: `calc(1rem + ${insetRight}px + ${MAP_TOOLS_WIDTH} + 0.5rem)`,
         zIndex: 3,
         display: "flex",
         justifyContent: "center",

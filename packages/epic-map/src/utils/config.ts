@@ -431,6 +431,13 @@ export const HIGHLIGHT_CASING_WIDTH_PX = 6;
 export const HIGHLIGHT_FILL_OPACITY = 0.2;
 export const HIGHLIGHT_POINT_SIZE_PX = 12;
 
+/** The component clicked in the project panel or the Selected list. */
+export const COMPONENT_HIGHLIGHT_COLOR = "#013366";
+
+/** Outline of every feature in the Select area selection, under the navy. */
+export const SELECTION_COLOR = HIGHLIGHT_COLOR;
+export const SELECTION_WIDTH_PX = 2;
+
 /**
  * Casing first, so the navy stroke is drawn over it. Polygons get a rule of
  * their own because a PolygonSymbolizer closes and fills a line it is handed.
@@ -519,6 +526,9 @@ export const MAP_MESSAGE_FADE_MS = 150;
  * makes the offset exact rather than approximate.
  */
 export const LAYERS_BUTTON_WIDTH = "6.25rem";
+
+/** Width of the Select area / Measure bar, which the over-map message stops short of. */
+export const MAP_TOOLS_WIDTH = "16.625rem";
 
 /**
  * BC Address Geocoder — the province's public address and place lookup.
