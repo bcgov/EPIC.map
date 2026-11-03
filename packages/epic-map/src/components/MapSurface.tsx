@@ -18,6 +18,7 @@ import { carryWidgetLayers } from "@/components/Layers/layerUtils";
 import {
   DEFAULT_BASEMAP,
   DEFAULT_EXTENT,
+  MAX_BOUNDS,
   MAX_ZOOM,
   MIN_ZOOM,
   PROJECT_CARD_WIDTH_PX,
@@ -69,8 +70,10 @@ export default function MapSurface({
       container,
       style: appliedStyle.current,
       bounds: DEFAULT_EXTENT,
+      maxBounds: MAX_BOUNDS,
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
+      renderWorldCopies: false,
       dragRotate: false,
       touchZoomRotate: false,
       canvasContextAttributes: { preserveDrawingBuffer: true },
