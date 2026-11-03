@@ -13,6 +13,7 @@
 # limitations under the License.
 """Tests for What's here: real PostGIS rows, a stubbed warehouse."""
 
+import math
 import uuid
 from http import HTTPStatus
 from unittest.mock import patch
@@ -21,6 +22,8 @@ from sqlalchemy import text
 
 from map_api.models.db import db
 from map_api.services.bcgw_service import BcgwService
+from map_api.services.local_layer_service import LocalLayerService
+from map_api.services.whats_here_service import TOO_DETAILED_MESSAGE
 from tests.utilities.factory_utils import factory_auth_header, factory_user, factory_user_layer
 
 
@@ -31,6 +34,18 @@ CARIBOU = 'WHSE_WILDLIFE_INVENTORY.GCPB_CARIBOU_POPULATION_SP'
 FOOTPRINT = 'POLYGON((-123.1 48.9, -122.9 48.9, -122.9 49.1, -123.1 49.1, -123.1 48.9))'
 INSIDE = 'POLYGON((-123.05 48.95, -122.95 48.95, -122.95 49.05, -123.05 49.05, -123.05 48.95))'
 FAR_AWAY = 'POLYGON((-120.1 50.9, -119.9 50.9, -119.9 51.1, -120.1 51.1, -120.1 50.9))'
+
+MAX_OUTLINE = 'map_api.services.whats_here_service.WHATS_HERE_MAX_OUTLINE_CHARS'
+
+
+def circle(points=200):
+    """Return a footprint with enough vertices to need simplifying."""
+    ring = [
+        (-123 + 0.05 * math.cos(2 * math.pi * i / points), 49 + 0.05 * math.sin(2 * math.pi * i / points))
+        for i in range(points)
+    ]
+    ring.append(ring[0])
+    return 'POLYGON((' + ', '.join(f'{x:.6f} {y:.6f}' for x, y in ring) + '))'
 
 
 def insert_eao(feature_id, wkt=FOOTPRINT):
@@ -176,6 +191,22 @@ def test_another_user_s_imported_layer_is_not_searched(app, client, jwt, session
     assert result['features'] == []
 
 
+def test_only_the_asked_layer_s_features_are_listed(app, client, jwt, session):
+    """Another layer under the selection, here someone else's, is not read."""
+    insert_eao('{F1}')
+    user = factory_user()
+    layer = factory_user_layer(user.id)
+    inside = insert_imported(layer.id, INSIDE)
+    other = factory_user(auth_guid=str(uuid.uuid4()), username='someone_else')
+    insert_imported(factory_user_layer(other.id).id, INSIDE)
+    db.session.commit()
+
+    [result] = ask(client, jwt, imported=[str(layer.id)]).json['results']
+
+    assert [f['id'] for f in result['features']] == [str(inside)]
+    assert result['matched'] == 1
+
+
 def test_asks_the_warehouse_with_the_selection_s_outline(app, client, jwt, session):
     """In degrees."""
     insert_eao('{F1}')
@@ -204,6 +235,34 @@ def test_a_selection_that_no_longer_exists_asks_the_warehouse_nothing(app, clien
 
     intersecting.assert_not_called()
     assert result['status'] == 'empty'
+
+
+def test_a_detailed_outline_is_simplified_until_it_fits(app, client, jwt, session):
+    """Too long as stored, so a coarser tolerance is what reaches the warehouse."""
+    insert_eao('{F1}', circle())
+    limit = 1000
+    assert len(LocalLayerService.selection_outline(['{F1}'], 0)) > limit
+
+    with patch(MAX_OUTLINE, limit), patch.object(BcgwService, 'intersecting', return_value=([], 0)) as intersecting:
+        [result] = ask(client, jwt, catalogue=[CARIBOU]).json['results']
+
+    (_, outline), _ = intersecting.call_args
+    assert len(outline) <= limit
+    assert result['status'] == 'empty'
+
+
+def test_an_outline_too_detailed_at_every_tolerance_is_not_sent(app, client, jwt, session):
+    """Each warehouse layer says so instead."""
+    insert_eao('{F1}')
+
+    with patch(MAX_OUTLINE, 10), patch.object(BcgwService, 'intersecting') as intersecting:
+        results = ask(client, jwt, catalogue=[CARIBOU, 'WHSE_TEST.OTHER']).json['results']
+
+    intersecting.assert_not_called()
+    assert [(r['layer'], r['status'], r['error']) for r in results] == [
+        (CARIBOU, 'error', TOO_DETAILED_MESSAGE),
+        ('WHSE_TEST.OTHER', 'error', TOO_DETAILED_MESSAGE),
+    ]
 
 
 def test_one_warehouse_layer_failing_leaves_the_others(app, client, jwt, session):
