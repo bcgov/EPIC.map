@@ -33,16 +33,23 @@ export default function MeasureLayer({ map }: { map: MapLibreMap | null }) {
     // The dot hover resets the canvas's cursor, so set the container's.
     const container = map.getCanvasContainer();
     container.style.cursor = "crosshair";
+    const zoomsOnDoubleClick = map.doubleClickZoom.isEnabled();
+    map.doubleClickZoom.disable();
     const onMove = ({ point, lngLat }: MapMouseEvent) =>
       setPointer({ x: point.x, y: point.y, at: [lngLat.lng, lngLat.lat] });
     const onOut = () => setPointer(null);
-    const onClick = ({ lngLat }: MapMouseEvent) => add([lngLat.lng, lngLat.lat]);
+    // A double-click's second click would stack a point on the first.
+    const onClick = ({ lngLat, originalEvent }: MapMouseEvent) => {
+      if (originalEvent.detail > 1) return;
+      add([lngLat.lng, lngLat.lat]);
+    };
 
     map.on("mousemove", onMove);
     map.on("mouseout", onOut);
     map.on("click", onClick);
     return () => {
       container.style.cursor = "";
+      if (zoomsOnDoubleClick) map.doubleClickZoom.enable();
       setPointer(null);
       map.off("mousemove", onMove);
       map.off("mouseout", onOut);

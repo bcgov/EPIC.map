@@ -345,7 +345,8 @@ WHATS_HERE_MAX_SELECTION = 200
 WHATS_HERE_MAX_OUTLINE_CHARS = 50_000
 
 # Simplification tolerances in metres (EPSG:3857), tried in order until the outline fits.
-WHATS_HERE_SIMPLIFY_METRES = (0, 10, 50, 250, 1000)
+# Capped at 100 (50-65 m on the ground in BC) so warehouse results stay close to the exact PIP and imported ones.
+WHATS_HERE_SIMPLIFY_METRES = (0, 10, 50, 100)
 
 # Bytes of one layer's What's here answer, attributes only.
 BCGW_WHATS_HERE_BYTE_LIMIT = 1024 * 1024

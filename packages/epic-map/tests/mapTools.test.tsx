@@ -93,14 +93,26 @@ const MEASURE_INFO = "Click points on the map to measure or draw an area.";
 const BOUNDARY = { featureId: "{F1}", label: "Project Boundary" };
 const PUMPHOUSE = { featureId: "{A1}", label: "Proposed Pumphouse" };
 
-const fakeMap = () => ({
-  on: vi.fn(),
-  off: vi.fn(),
-  getCanvasContainer: vi.fn(() => canvasContainer),
-  getContainer: () => ({
-    getBoundingClientRect: () => ({ left: 0, top: 0 }),
-  }),
-});
+const fakeMap = () => {
+  let zooms = true;
+  return {
+    on: vi.fn(),
+    off: vi.fn(),
+    doubleClickZoom: {
+      isEnabled: () => zooms,
+      enable: () => {
+        zooms = true;
+      },
+      disable: () => {
+        zooms = false;
+      },
+    },
+    getCanvasContainer: vi.fn(() => canvasContainer),
+    getContainer: () => ({
+      getBoundingClientRect: () => ({ left: 0, top: 0 }),
+    }),
+  };
+};
 type FakeMap = ReturnType<typeof fakeMap>;
 
 let canvasContainer = document.createElement("div");
@@ -128,13 +140,15 @@ const fire = (
   type: string,
   point = { x: 1, y: 1 },
   lngLat = { lng: 0, lat: 0 },
+  clicks = 1,
 ) => {
   const listening = map.on.mock.calls.filter(
     ([event, handler]) =>
       event === type &&
       !map.off.mock.calls.some(([, removed]) => removed === handler),
   );
-  act(() => listening.forEach(([, handler]) => handler({ point, lngLat })));
+  const originalEvent = new MouseEvent(type, { detail: clicks });
+  act(() => listening.forEach(([, handler]) => handler({ point, lngLat, originalEvent })));
 };
 
 /** Clicks the map on whatever `hit` describes. */
@@ -327,6 +341,18 @@ describe("measuring", () => {
     expect(text("Click Done to measure the line")).not.toBeNull();
     expect(button("Done").hasAttribute("disabled")).toBe(false);
     expect(screen.getByRole("status").textContent).toBe("Line length about 2.2 km.");
+  });
+
+  it("adds one point for a double-click, and only zooms on one again after Done", async () => {
+    const map = await placing(P1);
+    expect(map.doubleClickZoom.isEnabled()).toBe(false);
+
+    fire(map, "click", undefined, P2);
+    fire(map, "click", undefined, P2, 2);
+    expect(segmentRows()).toEqual(["Point 1 \u2192 Point 2~1.1 km"]);
+
+    await userEvent.click(button("Done"));
+    expect(map.doubleClickZoom.isEnabled()).toBe(true);
   });
 
   it("undoes the last point, back to the empty state", async () => {

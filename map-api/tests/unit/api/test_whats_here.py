@@ -23,7 +23,7 @@ from sqlalchemy import text
 from map_api.models.db import db
 from map_api.services.bcgw_service import BcgwService
 from map_api.services.local_layer_service import LocalLayerService
-from map_api.services.whats_here_service import TOO_DETAILED_MESSAGE
+from map_api.services.whats_here_service import SEARCH_FAILED_MESSAGE, TOO_DETAILED_MESSAGE
 from tests.utilities.factory_utils import factory_auth_header, factory_user, factory_user_layer
 
 
@@ -281,6 +281,27 @@ def test_one_warehouse_layer_failing_leaves_the_others(app, client, jwt, session
         (CARIBOU, 'error'),
         ('WHSE_TEST.OTHER', 'empty'),
     ]
+
+
+def test_one_postgis_layer_failing_leaves_the_others(app, client, jwt, session):
+    """A failed query aborts only its own savepoint, so the next layer still runs."""
+    insert_eao('{F1}')
+    user = factory_user()
+    layer = factory_user_layer(user.id)
+    inside = insert_imported(layer.id, INSIDE)
+    db.session.commit()
+
+    def intersecting(*_):
+        db.session.execute(text('SELECT 1 / 0'))
+
+    with patch.object(LocalLayerService, 'intersecting', side_effect=intersecting):
+        results = ask(client, jwt, hosted=[PIP], imported=[str(layer.id)]).json['results']
+
+    assert [(r['layer'], r['status'], r['error']) for r in results] == [
+        (PIP, 'error', SEARCH_FAILED_MESSAGE),
+        (str(layer.id), 'found', None),
+    ]
+    assert [f['id'] for f in results[1]['features']] == [str(inside)]
 
 
 def test_feature_bounds_come_from_the_warehouse(app, client, jwt, session):

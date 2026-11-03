@@ -13,8 +13,12 @@
 # limitations under the License.
 """What's here: features of the map's layers under a Select area selection."""
 
-from typing import Optional
+from functools import partial
+from typing import Callable, Optional
 
+from flask import current_app
+
+from map_api.models.db import db
 from map_api.services.bcgw_service import BcgwService
 from map_api.services.local_layer_service import LOCAL_LAYERS, LocalLayerService
 from map_api.services.user_layer_service import UserLayerService
@@ -23,6 +27,7 @@ from map_api.utils.constant import WHATS_HERE_MAX_FEATURES, WHATS_HERE_MAX_OUTLI
 
 TOO_DETAILED_MESSAGE = 'The selection is too detailed to search this layer with. Try selecting fewer features.'
 NOT_FOUND_MESSAGE = 'This layer was not found.'
+SEARCH_FAILED_MESSAGE = 'This layer could not be searched. Please try again.'
 
 
 class WhatsHereService:
@@ -47,22 +52,42 @@ class WhatsHereService:
                     for answer in BcgwService.intersecting_batch(catalogue, outline)
                 ]
 
-        for object_name in hosted:
-            features, matched = LocalLayerService.intersecting(
-                LOCAL_LAYERS[object_name], selection, WHATS_HERE_MAX_FEATURES
-            )
-            results.append(cls._found('hosted', object_name, features, matched))
-
-        for layer_id in imported:
-            layer = UserLayerService.get_layer(layer_id, user_id)
-            if layer is None:
-                results.append(cls._failed('imported', str(layer_id), NOT_FOUND_MESSAGE))
-                continue
-            ids, matched = UserLayerService.intersecting(layer.id, selection, WHATS_HERE_MAX_FEATURES)
-            features = [{'id': feature_id, 'name': None, 'properties': []} for feature_id in ids]
-            results.append(cls._found('imported', str(layer_id), features, matched))
+        results += [
+            cls._guarded('hosted', name, partial(cls._hosted, name, selection))
+            for name in hosted
+        ]
+        results += [
+            cls._guarded('imported', str(layer_id), partial(cls._imported, layer_id, selection, user_id))
+            for layer_id in imported
+        ]
 
         return results
+
+    @classmethod
+    def _hosted(cls, object_name: str, selection: list) -> dict:
+        features, matched = LocalLayerService.intersecting(
+            LOCAL_LAYERS[object_name], selection, WHATS_HERE_MAX_FEATURES
+        )
+        return cls._found('hosted', object_name, features, matched)
+
+    @classmethod
+    def _imported(cls, layer_id, selection: list, user_id: int) -> dict:
+        layer = UserLayerService.get_layer(layer_id, user_id)
+        if layer is None:
+            return cls._failed('imported', str(layer_id), NOT_FOUND_MESSAGE)
+        ids, matched = UserLayerService.intersecting(layer.id, selection, WHATS_HERE_MAX_FEATURES)
+        features = [{'id': feature_id, 'name': None, 'properties': []} for feature_id in ids]
+        return cls._found('imported', str(layer_id), features, matched)
+
+    @classmethod
+    def _guarded(cls, kind: str, layer: str, search: Callable[[], dict]) -> dict:
+        """Run one PostGIS search in a savepoint, so a failure is that layer's error alone."""
+        try:
+            with db.session.begin_nested():
+                return search()
+        except Exception:  # noqa: B902 # pylint: disable=broad-except
+            current_app.logger.exception('Searching %s failed unexpectedly.', layer)
+            return cls._failed(kind, layer, SEARCH_FAILED_MESSAGE)
 
     @staticmethod
     def _outline(selection: list) -> Optional[str]:
