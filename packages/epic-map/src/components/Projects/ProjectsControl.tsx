@@ -9,6 +9,8 @@ import type {
 import { useProjectFeatures } from "@/api/useProjects";
 import { useFilters } from "@/components/Filters/FiltersContext";
 import { footprintTrackIdAt } from "@/components/Layers/eaoVisibility";
+import { useMeasure } from "@/components/MapTools/MeasureContext";
+import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
 import ProjectCard from "@/components/Projects/ProjectCard";
 import ProjectTooltip from "@/components/Projects/ProjectTooltip";
 import {
@@ -94,6 +96,10 @@ export default function ProjectsControl({
   selectedRef.current = selectedId;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const selectingRef = useRef(false);
+  selectingRef.current = useSelectArea().tool === "select";
+  const placingRef = useRef(false);
+  placingRef.current = useMeasure().placing;
 
   useEffect(() => {
     if (!map) return undefined;
@@ -107,11 +113,13 @@ export default function ProjectsControl({
       if (hovered.current) refreshHover();
     };
     const onClick = (event: MapMouseEvent) => {
+      if (placingRef.current) return;
       // The dot first, then the boundary under it: a dot sits on top of its
-      // own footprint, and hitting either should open the same project.
+      // own footprint, and hitting either should open the same project. In
+      // Select area, a boundary is selected instead.
       const projectId =
         projectIdAt(map, event.point, selectedRef.current) ??
-        footprintTrackIdAt(map, event.point);
+        (selectingRef.current ? null : footprintTrackIdAt(map, event.point));
       if (projectId === null) return;
       onSelectRef.current(projectId);
       revealBesideCard(map, event.lngLat);
@@ -137,7 +145,7 @@ export default function ProjectsControl({
       else clearHover();
     };
     const onEnter = () => {
-      map.getCanvas().style.cursor = "pointer";
+      if (!placingRef.current) map.getCanvas().style.cursor = "pointer";
     };
     // Dots overlap, so track the pointer rather than trust mouseenter.
     const onHover = (event: MapMouseEvent) => {

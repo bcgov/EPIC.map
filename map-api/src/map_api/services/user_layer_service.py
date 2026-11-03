@@ -37,6 +37,7 @@ from map_api.exceptions import BadRequestError, PayloadTooLargeError, ResourceEx
 from map_api.models import db
 from map_api.models.user_layer import UserLayer
 from map_api.models.user_layer_feature import UserLayerFeature
+from map_api.services.local_layer_service import EAO_OBJECT_NAME, LOCAL_LAYERS
 from map_api.utils.constant import (
     BC_EXTENT, MAX_USER_LAYER_FEATURE_BYTES, MAX_USER_LAYER_FEATURES, MAX_USER_LAYER_GEOJSON_BYTES,
     MAX_USER_LAYER_PROPERTIES_BYTES, USER_LAYER_INSERT_BATCH_BYTES, USER_LAYER_INSERT_BATCH_ROWS,
@@ -344,6 +345,27 @@ class UserLayerService:
         db.session.flush()
         # The extent was written as an expression; read back what it became.
         db.session.refresh(layer)
+
+    @staticmethod
+    def intersecting(layer_id, selection: list, limit: int) -> tuple:
+        """Return (feature ids, matched) touching the selected EAO features."""
+        # Interpolated from the registry; the rest is bound.
+        eao_table = LOCAL_LAYERS[EAO_OBJECT_NAME].table
+        rows = db.session.execute(
+            text(f"""
+                SELECT f.id, count(*) OVER () AS matched
+                FROM user_layer_features f
+                WHERE f.layer_id = :layer_id AND EXISTS (
+                    SELECT 1 FROM {eao_table} e
+                    WHERE e.feature_id = ANY(:selection)
+                      AND ST_Intersects(f.geom, ST_Transform(e.geom, {USER_LAYER_STORAGE_SRID}))
+                )
+                ORDER BY f.id
+                LIMIT :limit
+            """),
+            {'layer_id': layer_id, 'selection': selection, 'limit': limit},
+        ).mappings().all()
+        return [str(row['id']) for row in rows], rows[0]['matched'] if rows else 0
 
     @classmethod
     def feature_collection_chunks(cls, layer_id) -> Iterator[str]:

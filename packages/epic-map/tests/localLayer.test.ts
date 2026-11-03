@@ -11,12 +11,14 @@ import {
   showComponentHighlight,
   showLocalHighlight,
   showLocalVectorLayer,
+  showSelectionOutline,
   type LocalLayerStyle,
 } from "@/components/Layers/layerUtils";
 import {
   HIGHLIGHT_COLOR,
   localTileUrl,
   LOCAL_TILE_MAX_ZOOM,
+  RESULT_HIGHLIGHT_COLOR,
 } from "@/utils/config";
 
 const LAYER_ID = "pip-consultation-areas";
@@ -893,6 +895,40 @@ describe("hideComponentHighlight", () => {
       "epic-component-highlight-line",
       "epic-component-highlight-point",
     ]);
+  });
+});
+
+describe("the Select area colours", () => {
+  const highlight = {
+    layerId: LAYER_ID,
+    sourceLayer: "pip_consultation_areas",
+    keyProperty: "cnsltn_area_guid",
+    keys: ["a"],
+  };
+  const lineColor = (harness: ReturnType<typeof fakeMap>, id: string) =>
+    (harness.added.find((spec) => spec.id === id)?.paint as Record<string, unknown>)?.[
+      "line-color"
+    ];
+
+  it("outlines the selection in gold, under a clicked row's highlight", () => {
+    const harness = fakeMap();
+    show(harness);
+    showComponentHighlight(harness.map, highlight);
+    showSelectionOutline(harness.map, highlight);
+
+    expect(lineColor(harness, "epic-selection-line")).toBe(HIGHLIGHT_COLOR);
+    expect(harness.before.at(-1)).toBe("epic-component-highlight-fill");
+  });
+
+  it("draws a focused result in the colour it is given", () => {
+    const harness = fakeMap();
+    show(harness);
+    showLocalHighlight(harness.map, highlight, RESULT_HIGHLIGHT_COLOR);
+    harness.fire("styledata");
+
+    expect(lineColor(harness, "epic-highlight-local-line")).toBe(
+      RESULT_HIGHLIGHT_COLOR,
+    );
   });
 });
 

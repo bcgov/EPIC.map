@@ -61,6 +61,12 @@ export const CHECKBOX_BORDER = BORDER_DARK;
 /** iconsColorInfo - the info icon on the over-map message. */
 export const INFO_ICON = "#053662";
 
+/** supportSurfaceColorInfo - fill of an info callout. */
+export const INFO_FILL = "#F7F9FC";
+
+/** supportBorderColorInfo - border of an info callout. */
+export const INFO_BORDER = "#053662";
+
 /** The separator under a menu's "All ..." row. */
 export const MENU_SEPARATOR = "#ECEAE8";
 

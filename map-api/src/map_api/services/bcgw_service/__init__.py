@@ -39,11 +39,12 @@ from requests.adapters import HTTPAdapter
 from map_api.exceptions import ServiceUnavailableError
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
-    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_CONNECTION_POOL_SIZE, BCGW_GEOMETRY_BYTE_LIMIT, BCGW_METADATA_FANOUT,
-    BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES, BCGW_SCHEMA_BYTE_LIMIT, BCGW_SEARCH_BUDGET_SECONDS,
-    BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_STYLE_BYTE_LIMIT, BCGW_WFS_TIMEOUT_SECONDS, GEOMETRY_COLUMN_PATTERN,
-    LAYER_LABEL_CACHE_TTL_SECONDS, LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, LAYER_SCHEMA_CACHE_TTL_SECONDS,
-    METADATA_BUDGET_SECONDS, NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS, NEAREST_SEARCH_WINDOWS_DEGREES)
+    BC_EXTENT, BCGW_BOUNDS_BYTE_LIMIT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_CONNECTION_POOL_SIZE,
+    BCGW_GEOMETRY_BYTE_LIMIT, BCGW_METADATA_FANOUT, BCGW_OWS_URL, BCGW_READ_CHUNK_BYTES, BCGW_SCHEMA_BYTE_LIMIT,
+    BCGW_SEARCH_BUDGET_SECONDS, BCGW_SINGLE_FLIGHT_WAIT_SECONDS, BCGW_STYLE_BYTE_LIMIT, BCGW_WFS_TIMEOUT_SECONDS,
+    BCGW_WHATS_HERE_BYTE_LIMIT, GEOMETRY_COLUMN_PATTERN, LAYER_LABEL_CACHE_TTL_SECONDS,
+    LAYER_MIN_ZOOM_CACHE_TTL_SECONDS, LAYER_SCHEMA_CACHE_TTL_SECONDS, METADATA_BUDGET_SECONDS,
+    NEAREST_CACHE_PRECISION_DEGREES, NEAREST_CACHE_TTL_SECONDS, NEAREST_SEARCH_WINDOWS_DEGREES, WHATS_HERE_MAX_FEATURES)
 from map_api.utils.scale import zoom_for_scale_denominator
 
 
@@ -108,6 +109,7 @@ BUSY_MESSAGE = 'Still asking the BC Geographic Warehouse. Please try again.'
 # client that superseded the click stopped listening for its answer.
 TOOK_TOO_LONG_MESSAGE = 'This layer took too long to answer. Please try again.'
 ABANDONED_MESSAGE = 'Not asked: a newer click replaced this one.'
+TOO_MANY_MESSAGE = 'This layer has too much here to list. Try a smaller selection.'
 
 
 def _pooled_session() -> requests.Session:
@@ -278,42 +280,78 @@ class BcgwService:
         few already in flight finish - each is bounded by BCGW_WFS_TIMEOUT_SECONDS
         - and their answers are simply not sent.
         """
+        def identify(object_name: str) -> dict:
+            feature = cls.metadata(object_name, bbox)
+            return {
+                'object_name': object_name,
+                'status': 'found' if feature else 'empty',
+                'feature': feature,
+                'error': None,
+            }
+
+        return cls._fan_out(object_names, identify, cls._metadata_error, abandoned)
+
+    @classmethod
+    def intersecting_batch(cls, object_names: list, outline: str) -> list:
+        """Return each layer's features touching `outline`, WKT in degrees; one answer per layer."""
+        def search(object_name: str) -> dict:
+            features, matched = cls.intersecting(object_name, outline)
+            return {
+                'object_name': object_name,
+                'status': 'found' if features else 'empty',
+                'features': features,
+                'matched': matched,
+                'error': None,
+            }
+
+        def failed(object_name: str, message: str) -> dict:
+            return {
+                'object_name': object_name,
+                'status': 'error',
+                'features': [],
+                'matched': 0,
+                'error': message,
+            }
+
+        return cls._fan_out(object_names, search, failed)
+
+    @classmethod
+    def _fan_out(
+        cls,
+        object_names: list,
+        answer: Callable[[str], dict],
+        failed: Callable[[str, str], dict],
+        abandoned: Optional[Callable[[], bool]] = None,
+    ) -> list:
+        """Run `answer` per layer on the pool within one budget; failures go through `failed`."""
         app = current_app._get_current_object()  # pylint: disable=protected-access
         deadline = time.monotonic() + METADATA_BUDGET_SECONDS
 
-        def identify(object_name: str) -> dict:
+        def run(object_name: str) -> dict:
             # The pool's threads are not the request's, so anything reading
             # config, the cache or the logger needs the context pushed here.
             with app.app_context():
                 if abandoned and abandoned():
-                    return cls._metadata_error(object_name, ABANDONED_MESSAGE)
+                    return failed(object_name, ABANDONED_MESSAGE)
                 if time.monotonic() > deadline:
-                    return cls._metadata_error(object_name, TOOK_TOO_LONG_MESSAGE)
+                    return failed(object_name, TOOK_TOO_LONG_MESSAGE)
 
                 try:
-                    feature = cls.metadata(object_name, bbox)
+                    return answer(object_name)
                 except ServiceUnavailableError as exc:
-                    return cls._metadata_error(object_name, exc.description)
+                    return failed(object_name, exc.description)
                 except Exception:  # noqa: B902 # pylint: disable=broad-except
                     current_app.logger.exception(
-                        'Identifying %s failed unexpectedly.', object_name
+                        'Asking %s failed unexpectedly.', object_name
                     )
-                    return cls._metadata_error(object_name, UNAVAILABLE_MESSAGE)
-
-                return {
-                    'object_name': object_name,
-                    'status': 'found' if feature else 'empty',
-                    'feature': feature,
-                    'error': None,
-                }
+                    return failed(object_name, UNAVAILABLE_MESSAGE)
 
         futures = {
-            object_name: METADATA_POOL.submit(identify, object_name)
+            object_name: METADATA_POOL.submit(run, object_name)
             for object_name in object_names
         }
 
-        # The budget is the click's, not each layer's. A layer still queued when
-        # it runs out is cancelled outright
+        # Layers still queued when the budget ends are cancelled.
         wait(futures.values(), timeout=max(0.0, deadline - time.monotonic()))
 
         results = []
@@ -323,12 +361,10 @@ class BcgwService:
                 results.append(future.result())
             else:
                 current_app.logger.info(
-                    "Gave up on %s after the click's %ds budget.",
+                    'Gave up on %s after the %ds budget.',
                     object_name, METADATA_BUDGET_SECONDS
                 )
-                results.append(
-                    cls._metadata_error(object_name, TOOK_TOO_LONG_MESSAGE)
-                )
+                results.append(failed(object_name, TOOK_TOO_LONG_MESSAGE))
 
         return results
 
@@ -377,15 +413,9 @@ class BcgwService:
             return None
         feature = features[0]
 
-        # A view with no primary key gets a fresh fid per request, which no
-        # later tile request can find again.
-        feature_id = feature.get('id')
-        if not isinstance(feature_id, str) or GENERATED_FID in feature_id:
-            feature_id = None
-
         properties = feature.get('properties') or {}
         return {
-            'id': feature_id,
+            'id': cls._stable_id(feature),
             'name': cls._feature_name(object_name, properties),
             'properties': [
                 {'name': name, 'value': value}
@@ -395,6 +425,61 @@ class BcgwService:
             'geometry': feature.get('geometry') if measured else None,
             'bounds': cls._bounds_of(feature) if measured else None,
         }
+
+    @classmethod
+    def intersecting(cls, object_name: str, outline: str) -> tuple:
+        """Return (features, matched) touching `outline`, WKT in degrees. Attributes only."""
+        schema = cls._layer_schema(object_name)
+        if not schema:
+            return [], 0
+        geometry, attributes = schema
+
+        params = cls._feature_params(object_name, count=WHATS_HERE_MAX_FEATURES, bbox=None)
+        params['cql_filter'] = f'INTERSECTS({geometry}, SRID=4326;{outline})'
+        if attributes:
+            params['propertyName'] = ','.join(attributes)
+
+        # POSTed: an outline can be longer than openmaps accepts in a URL.
+        body = cls._read(object_name, params, BCGW_WHATS_HERE_BYTE_LIMIT, post=True)
+        if body is None:
+            raise ServiceUnavailableError(TOO_MANY_MESSAGE)
+        payload = cls._payload(object_name, body)
+
+        features = []
+        for feature in payload.get('features') or []:
+            properties = feature.get('properties') or {}
+            features.append({
+                'id': cls._stable_id(feature),
+                'name': cls._feature_name(object_name, properties),
+                'properties': [
+                    {'name': name, 'value': value}
+                    for name, value in properties.items()
+                    if name != geometry
+                ],
+            })
+
+        matched = payload.get('numberMatched')
+        return features, matched if isinstance(matched, int) else len(features)
+
+    @classmethod
+    def feature_bounds(cls, object_name: str, feature_id: str) -> Optional[Bounds]:
+        """Return one feature's bounds, or None when too heavy to measure."""
+        params = cls._feature_params(object_name, count=1, bbox=None)
+        params['featureID'] = feature_id
+
+        body = cls._read(object_name, params, BCGW_BOUNDS_BYTE_LIMIT)
+        if body is None:
+            return None
+        features = cls._payload(object_name, body).get('features') or []
+        return cls._bounds_of(features[0]) if features else None
+
+    @staticmethod
+    def _stable_id(feature: dict) -> Optional[str]:
+        """Return the feature's WFS id; None for a generated one, which no later request can find."""
+        feature_id = feature.get('id')
+        if not isinstance(feature_id, str) or GENERATED_FID in feature_id:
+            return None
+        return feature_id
 
     @staticmethod
     def _intersects(geometry: str, bbox: tuple) -> str:
@@ -751,13 +836,20 @@ class BcgwService:
         if body is None:
             return None
 
+        # Anything that is not a feature collection reads as empty.
+        features = cls._payload(object_name, body).get('features')
+        return features if isinstance(features, list) else []
+
+    @staticmethod
+    def _payload(object_name: str, body: str) -> dict:
+        """Return the GetFeature answer as a dict; empty where the layer publishes no WFS."""
         if OWS_EXCEPTION_REPORT.search(body):
             code = OWS_EXCEPTION_CODE.search(body)
             current_app.logger.info(
                 'BCGW publishes no WFS features for %s (%s).',
                 object_name, code.group(1) if code else 'no exception code'
             )
-            return []
+            return {}
 
         try:
             payload = json.loads(body)
@@ -767,10 +859,7 @@ class BcgwService:
             )
             raise ServiceUnavailableError(UNAVAILABLE_MESSAGE) from exc
 
-        # Anything else that is not a feature collection is read as an empty
-        # one: the shape is what to trust, not the status.
-        features = payload.get('features')
-        return features if isinstance(features, list) else []
+        return payload if isinstance(payload, dict) else {}
 
     @classmethod
     def _count_features(cls, object_name: str, bbox: tuple) -> int:
@@ -788,7 +877,9 @@ class BcgwService:
         return int(matched.group(1)) if matched else 0
 
     @staticmethod
-    def _read(object_name: str, params: dict, byte_limit: int) -> Optional[str]:
+    def _read(
+        object_name: str, params: dict, byte_limit: int, post: bool = False
+    ) -> Optional[str]:
         """GET from the warehouse, or None once the answer passes `byte_limit`.
 
         The cap is the caller's to choose, because what an over-long answer
@@ -802,9 +893,9 @@ class BcgwService:
         deadline = time.monotonic() + BCGW_WFS_TIMEOUT_SECONDS
 
         try:
-            response = SESSION.get(
+            response = (SESSION.post if post else SESSION.get)(
                 BCGW_OWS_URL.format(object_name=object_name),
-                params=params,
+                **({'data': params} if post else {'params': params}),
                 timeout=BCGW_WFS_TIMEOUT_SECONDS,
                 stream=True,
             )

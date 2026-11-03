@@ -5,11 +5,12 @@ import { focusRing, HOVER_FILL, LINK } from "@/components/Filters/filterTokens";
 type TertiaryLinkProps = {
   onClick: () => void;
   children: string;
+  /** For when the label alone is ambiguous. */
   "aria-label"?: string;
 };
 
 /**
- * A tertiary text button: "Clear filters", "Try again" and "Dismiss".
+ * A tertiary text button: "Clear filters" in two places, "Try again" in one.
  *
  * Three of these exist at once by design - one in the filter bar and two on the
  * over-map message, whose shortcuts are additions rather than replacements - so

@@ -4,8 +4,13 @@
 // reveal on the map. How they are grouped is componentGrouping's own test.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useEffect } from "react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ProjectComponent } from "@/api/useProjects";
+import {
+  SelectAreaProvider,
+  useSelectArea,
+} from "@/components/MapTools/SelectAreaContext";
 import {
   RevealedComponentsProvider,
   useRevealedComponents,
@@ -362,5 +367,67 @@ describe("selecting a component", () => {
 
     expect(screen.getByText("Component 7")).toBeDefined();
     expect(screen.queryByText("Component 6")).toBeNull();
+  });
+});
+
+describe("sharing the component highlight with Select area", () => {
+  const row = (name: string) => screen.getByRole("button", { name });
+  const area: { current: ReturnType<typeof useSelectArea> | null } = {
+    current: null,
+  };
+
+  const AreaProbe = () => {
+    const value = useSelectArea();
+    useEffect(() => {
+      area.current = value;
+    });
+    return null;
+  };
+
+  const renderShared = () =>
+    render(
+      <SelectAreaProvider>
+        <RevealedComponentsProvider>
+          <MapLayersSection projectId={7} />
+          <Probe />
+          <AreaProbe />
+        </RevealedComponentsProvider>
+      </SelectAreaProvider>,
+    );
+
+  it("lets go of its row when a Select area row is clicked", () => {
+    renderShared();
+    fireEvent.click(row("Access Route Amendment 1"));
+
+    act(() => {
+      area.current?.add({ featureId: "{V2}", label: "Wildlife Habitat Area" });
+      area.current?.focus("{V2}");
+    });
+
+    expect(row("Access Route Amendment 1").getAttribute("aria-pressed")).toBe("false");
+    expect(revealed.selected).toEqual([]);
+  });
+
+  it("lets go of its row when a What's here result is clicked", () => {
+    renderShared();
+    fireEvent.click(row("Access Route Amendment 1"));
+
+    act(() => area.current?.focusResult("catalogue:WHSE_TEST.LAYER", "WHSE_TEST.LAYER.1"));
+
+    expect(row("Access Route Amendment 1").getAttribute("aria-pressed")).toBe("false");
+    expect(revealed.selected).toEqual([]);
+  });
+
+  it("takes the highlight back from Select area when its own row is clicked", () => {
+    renderShared();
+    act(() => {
+      area.current?.add({ featureId: "{V2}", label: "Wildlife Habitat Area" });
+      area.current?.focus("{V2}");
+    });
+
+    fireEvent.click(row("Access Route Amendment 1"));
+
+    expect(area.current?.focusedId).toBeNull();
+    expect(revealed.selected).toEqual(["{P1}"]);
   });
 });

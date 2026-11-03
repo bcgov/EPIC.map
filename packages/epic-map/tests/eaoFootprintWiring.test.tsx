@@ -10,10 +10,15 @@
 // feature - filtered-out projects and the components no panel has revealed.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { cleanup, render } from "@testing-library/react";
 import type { MapProject } from "@/components/Filters/filterUtils";
 import type { ProjectFeatures } from "@/api/useProjects";
+import { MeasureProvider, useMeasure } from "@/components/MapTools/MeasureContext";
+import {
+  SelectAreaProvider,
+  useSelectArea,
+} from "@/components/MapTools/SelectAreaContext";
 import {
   RevealedComponentsProvider,
   useRevealedComponents,
@@ -52,6 +57,8 @@ const setLocalVectorLayerFilters = vi.fn();
 const showLocalVectorLayer = vi.fn();
 const showComponentHighlight = vi.fn();
 const hideComponentHighlight = vi.fn();
+const showSelectionOutline = vi.fn();
+const hideSelectionOutline = vi.fn();
 
 vi.mock("@/components/Layers/layerUtils", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -59,6 +66,8 @@ vi.mock("@/components/Layers/layerUtils", async (importOriginal) => ({
   setLocalVectorLayerFilters,
   showComponentHighlight,
   hideComponentHighlight,
+  showSelectionOutline,
+  hideSelectionOutline,
   setLocalVectorLayerOpacity: vi.fn(),
   hideLocalVectorLayer: vi.fn(),
 }));
@@ -159,6 +168,44 @@ const SelectFeatures = ({ ids }: { ids: string[] }) => {
   return null;
 };
 
+/** Turns on Select area, selects `ids` and focuses `focused`. */
+const Selecting = ({
+  ids,
+  focused = null,
+}: {
+  ids: string[];
+  focused?: string | null;
+}) => {
+  const area = useSelectArea();
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    area.toggleTool("select");
+    ids.forEach((featureId) => area.add({ featureId, label: featureId }));
+    if (focused) area.focus(focused);
+  }, [area, ids, focused]);
+  return null;
+};
+
+/** Turns on Measure; with `done`, finishes a two-point line. */
+const Measuring = ({ done = false }: { done?: boolean }) => {
+  const { toggleTool } = useSelectArea();
+  const { add, finish } = useMeasure();
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    toggleTool("measure");
+    if (done) {
+      add([0, 0]);
+      add([0, 1]);
+      finish();
+    }
+  }, [toggleTool, add, finish, done]);
+  return null;
+};
+
 /** The filter the footprint specs were given on the last apply. */
 const appliedTo = (specId: string) => {
   const last = setLocalVectorLayerFilters.mock.calls.at(-1);
@@ -170,6 +217,8 @@ beforeEach(() => {
   showLocalVectorLayer.mockClear();
   showComponentHighlight.mockClear();
   hideComponentHighlight.mockClear();
+  showSelectionOutline.mockClear();
+  hideSelectionOutline.mockClear();
   state.visible = [project(205), project(368)];
   state.hit = null;
 });
@@ -371,5 +420,135 @@ describe("clicking a footprint opens its project", () => {
     });
 
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe("the Select area selection on the map", () => {
+  const selecting = (ids: string[], focused: string | null = null) => (
+    <SelectAreaProvider>
+      <RevealedComponentsProvider>
+        <Selecting ids={ids} focused={focused} />
+        <HostedLayer objectName={EAO_OBJECT_NAME} />
+      </RevealedComponentsProvider>
+    </SelectAreaProvider>
+  );
+
+  it("outlines every selected feature", () => {
+    render(selecting(["{F1}", "{A1}"]));
+
+    expect(showSelectionOutline).toHaveBeenLastCalledWith(expect.anything(), {
+      layerId: localLayerId(EAO_OBJECT_NAME),
+      sourceLayer: "eao",
+      keyProperty: "feature_id",
+      keys: ["{F1}", "{A1}"],
+    });
+  });
+
+  it("keeps a selected component drawn with no panel revealing it", () => {
+    render(selecting(["{A1}"]));
+
+    expect(appliedTo("point")).toContainEqual([
+      "in",
+      ["get", "feature_id"],
+      ["literal", ["{A1}"]],
+    ]);
+  });
+
+  it("keeps a selected footprint drawn though the panel switched it off", () => {
+    render(
+      <SelectAreaProvider>
+        <RevealedComponentsProvider>
+          <HideFootprints ids={["{F1}"]} />
+          <Selecting ids={["{F1}"]} />
+          <HostedLayer objectName={EAO_OBJECT_NAME} />
+        </RevealedComponentsProvider>
+      </SelectAreaProvider>,
+    );
+
+    expect(appliedTo("footprint-fill")).toEqual([
+      "in",
+      ["get", "track_id"],
+      ["literal", [205, 368]],
+    ]);
+  });
+
+  it("gives the gold highlight to the row clicked, over the panel's component", () => {
+    render(
+      <SelectAreaProvider>
+        <RevealedComponentsProvider>
+          <SelectFeatures ids={["{A2}"]} />
+          <Selecting ids={["{A1}"]} focused="{A1}" />
+          <HostedLayer objectName={EAO_OBJECT_NAME} />
+        </RevealedComponentsProvider>
+      </SelectAreaProvider>,
+    );
+
+    expect(showComponentHighlight).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ keys: ["{A1}"] }),
+    );
+  });
+
+  it("takes the outline off when the selection empties", () => {
+    const view = render(selecting(["{F1}"]));
+    showSelectionOutline.mockClear();
+
+    view.rerender(<HostedLayer objectName={EAO_OBJECT_NAME} />);
+
+    expect(hideSelectionOutline).toHaveBeenCalled();
+    expect(showSelectionOutline).not.toHaveBeenCalled();
+  });
+
+  it("does not open a project from its footprint while Select area is on", () => {
+    state.hit = 205;
+    const onSelect = vi.fn();
+    const map = fakeMap();
+
+    render(
+      <SelectAreaProvider>
+        <Selecting ids={[]} />
+        <ProjectsControl map={map as never} selectedId={null} onSelect={onSelect} />
+      </SelectAreaProvider>,
+    );
+
+    const click = map.on.mock.calls.find((call) => call[0] === "click");
+    (click![1] as (event: unknown) => void)({
+      point: { x: 1, y: 1 },
+      lngLat: { lng: -123, lat: 50 },
+    });
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe("clicks while Measure is on", () => {
+  const clickWith = (done: boolean) => {
+    state.hit = 205;
+    const onSelect = vi.fn();
+    const map = fakeMap();
+
+    render(
+      <SelectAreaProvider>
+        <MeasureProvider>
+          <Measuring done={done} />
+          <ProjectsControl map={map as never} selectedId={null} onSelect={onSelect} />
+        </MeasureProvider>
+      </SelectAreaProvider>,
+    );
+
+    const click = map.on.mock.calls.find((call) => call[0] === "click");
+    (click![1] as (event: unknown) => void)({
+      point: { x: 1, y: 1 },
+      lngLat: { lng: -123, lat: 50 },
+    });
+    return onSelect;
+  };
+
+  it("opens no project while points are being placed", () => {
+    expect(clickWith(false)).not.toHaveBeenCalled();
+  });
+
+  it("opens projects again once the line is done", () => {
+    expect(clickWith(true)).toHaveBeenCalledWith(205);
   });
 });

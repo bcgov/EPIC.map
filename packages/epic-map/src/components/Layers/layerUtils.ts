@@ -18,6 +18,8 @@ import {
   highlightTileUrl,
   MIN_ZOOM,
   outlineTileUrl,
+  SELECTION_COLOR,
+  SELECTION_WIDTH_PX,
   WIDGET_ID_PREFIX,
   WMS_MAX_LAYER_ZOOM,
   WMS_MIN_ZOOM,
@@ -61,7 +63,7 @@ export const whenStyleReady = (map: MapLibreMap, work: () => void) => {
  * Like `whenStyleReady`, but without waiting on tiles: a filter change reloads
  * them, which would hold the work back until the map is idle.
  */
-const whenStyleParsed = (map: MapLibreMap, work: () => void) => {
+export const whenStyleParsed = (map: MapLibreMap, work: () => void) => {
   // getStyle() is undefined until the style has loaded.
   if (map.getStyle()) {
     work();
@@ -290,7 +292,11 @@ const removeHighlight = (map: MapLibreMap) => {
  * From its geometry where map-api sent it, otherwise by id through the
  * warehouse's tiles. With neither, left undrawn rather than guessed at.
  */
-export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => {
+export const showHighlight = (
+  map: MapLibreMap,
+  highlight: FeatureHighlight,
+  color: string = HIGHLIGHT_COLOR,
+) => {
   whenStyleReady(map, () => {
     removeHighlight(map);
     const { geometry, featureId, objectName } = highlight;
@@ -305,25 +311,28 @@ export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => 
         type: "fill",
         source: HIGHLIGHT_SOURCE,
         paint: {
-          "fill-color": HIGHLIGHT_COLOR,
+          "fill-color": color,
           "fill-opacity": HIGHLIGHT_FILL_OPACITY,
         },
       });
-      map.addLayer({
-        id: HIGHLIGHT_CASING,
-        type: "line",
-        source: HIGHLIGHT_SOURCE,
-        paint: {
-          "line-color": HIGHLIGHT_CASING_COLOR,
-          "line-width": HIGHLIGHT_CASING_WIDTH_PX,
-        },
-      });
+      // Only gold needs the casing to carry over a pale basemap.
+      if (color === HIGHLIGHT_COLOR) {
+        map.addLayer({
+          id: HIGHLIGHT_CASING,
+          type: "line",
+          source: HIGHLIGHT_SOURCE,
+          paint: {
+            "line-color": HIGHLIGHT_CASING_COLOR,
+            "line-width": HIGHLIGHT_CASING_WIDTH_PX,
+          },
+        });
+      }
       map.addLayer({
         id: HIGHLIGHT_LINE,
         type: "line",
         source: HIGHLIGHT_SOURCE,
         paint: {
-          "line-color": HIGHLIGHT_COLOR,
+          "line-color": color,
           "line-width": HIGHLIGHT_WIDTH_PX,
         },
       });
@@ -335,9 +344,9 @@ export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => 
         filter: ["match", ["geometry-type"], ["Point", "MultiPoint"], true, false],
         paint: {
           "circle-radius": HIGHLIGHT_POINT_SIZE_PX / 2,
-          "circle-color": HIGHLIGHT_COLOR,
+          "circle-color": color,
           "circle-opacity": HIGHLIGHT_FILL_OPACITY,
-          "circle-stroke-color": HIGHLIGHT_COLOR,
+          "circle-stroke-color": color,
           "circle-stroke-width": HIGHLIGHT_WIDTH_PX,
         },
       });
@@ -347,7 +356,7 @@ export const showHighlight = (map: MapLibreMap, highlight: FeatureHighlight) => 
     if (objectName && featureId) {
       map.addSource(HIGHLIGHT_SOURCE, {
         type: "raster",
-        tiles: [highlightTileUrl(objectName, featureId)],
+        tiles: [highlightTileUrl(objectName, featureId, color)],
         tileSize: WMS_TILE_SIZE_PX,
       });
       map.addLayer({
@@ -386,6 +395,7 @@ export interface LocalFeatureHighlight {
 export const showLocalHighlight = (
   map: MapLibreMap,
   highlight: LocalFeatureHighlight,
+  color: string = HIGHLIGHT_COLOR,
 ) => {
   whenStyleReady(map, () => {
     removeHighlight(map);
@@ -393,7 +403,7 @@ export const showLocalHighlight = (
       map,
       [HIGHLIGHT_LOCAL_FILL, HIGHLIGHT_LOCAL_LINE, HIGHLIGHT_LOCAL_POINT],
       highlight,
-      METADATA_HIGHLIGHT_PAINT,
+      localHighlightPaint(color),
     );
   });
 };
@@ -408,23 +418,24 @@ export interface LocalHighlightPaint {
   point: Record<string, unknown>;
 }
 
-const METADATA_HIGHLIGHT_PAINT: LocalHighlightPaint = {
+/** One flat colour throughout, as the metadata and result highlights draw. */
+const localHighlightPaint = (color: string): LocalHighlightPaint => ({
   fill: {
-    "fill-color": HIGHLIGHT_COLOR,
+    "fill-color": color,
     "fill-opacity": HIGHLIGHT_FILL_OPACITY,
   },
   line: {
-    "line-color": HIGHLIGHT_COLOR,
+    "line-color": color,
     "line-width": HIGHLIGHT_WIDTH_PX,
   },
   point: {
     "circle-radius": HIGHLIGHT_POINT_SIZE_PX / 2,
-    "circle-color": HIGHLIGHT_COLOR,
+    "circle-color": color,
     "circle-opacity": HIGHLIGHT_FILL_OPACITY,
-    "circle-stroke-color": HIGHLIGHT_COLOR,
+    "circle-stroke-color": color,
     "circle-stroke-width": HIGHLIGHT_WIDTH_PX,
   },
-};
+});
 
 const drawLocalHighlight = (
   map: MapLibreMap,
@@ -495,6 +506,68 @@ export const showComponentHighlight = (
 
 export const hideComponentHighlight = (map: MapLibreMap) => {
   whenStyleParsed(map, () => removeComponentHighlight(map));
+};
+
+// The features in the Select area selection
+
+const SELECTION_LINE = `${WIDGET_ID_PREFIX}selection-line`;
+const SELECTION_POINT = `${WIDGET_ID_PREFIX}selection-point`;
+
+const removeSelectionOutline = (map: MapLibreMap) => {
+  for (const id of [SELECTION_LINE, SELECTION_POINT]) {
+    if (map.getLayer(id)) map.removeLayer(id);
+  }
+};
+
+/** Outline features of a hosted layer in gold, beneath the component highlight. */
+export const showSelectionOutline = (
+  map: MapLibreMap,
+  { layerId, sourceLayer, keyProperty, keys }: LocalFeatureHighlight,
+) => {
+  whenStyleParsed(map, () => {
+    removeSelectionOutline(map);
+    const source = localSourceId(layerId);
+    if (!map.getSource(source)) return;
+
+    const filter: unknown = ["in", ["get", keyProperty], ["literal", [...keys]]];
+    const [clickedFill] = COMPONENT_HIGHLIGHT_LAYERS;
+    const beneath = map.getLayer(clickedFill) ? clickedFill : undefined;
+
+    map.addLayer(
+      {
+        id: SELECTION_LINE,
+        type: "line",
+        source,
+        "source-layer": sourceLayer,
+        filter,
+        paint: {
+          "line-color": SELECTION_COLOR,
+          "line-width": SELECTION_WIDTH_PX,
+        },
+      } as Parameters<MapLibreMap["addLayer"]>[0],
+      beneath,
+    );
+    map.addLayer(
+      {
+        id: SELECTION_POINT,
+        type: "circle",
+        source,
+        "source-layer": sourceLayer,
+        filter: ["all", filter, ["==", ["geometry-type"], "Point"]],
+        paint: {
+          "circle-radius": HIGHLIGHT_POINT_SIZE_PX / 2,
+          "circle-opacity": 0,
+          "circle-stroke-color": SELECTION_COLOR,
+          "circle-stroke-width": SELECTION_WIDTH_PX,
+        },
+      } as Parameters<MapLibreMap["addLayer"]>[0],
+      beneath,
+    );
+  });
+};
+
+export const hideSelectionOutline = (map: MapLibreMap) => {
+  whenStyleParsed(map, () => removeSelectionOutline(map));
 };
 
 /**

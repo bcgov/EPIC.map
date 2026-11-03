@@ -37,6 +37,7 @@ from .user_applied_layer import API as APPLIED_LAYER_API
 from .user_favourite_folder import API as FAVOURITE_FOLDER_API
 from .user_favourite_layer import API as FAVOURITE_API
 from .user_layer import API as IMPORTED_LAYER_API
+from .whats_here import API as WHATS_HERE_API
 
 
 __all__ = ('API_BLUEPRINT', 'DOC_PATHS', 'DOCS_ENABLED', 'OPS_BLUEPRINT', 'URL_PREFIX')
@@ -101,3 +102,4 @@ API.add_namespace(FAVOURITE_API, path='/users/me/favourites')
 API.add_namespace(FAVOURITE_FOLDER_API, path='/users/me/favourites/folders')
 API.add_namespace(IMPORTED_LAYER_API, path='/users/me/imported-layers')
 API.add_namespace(PROJECT_API, path='/projects')
+API.add_namespace(WHATS_HERE_API, path='/whats-here')

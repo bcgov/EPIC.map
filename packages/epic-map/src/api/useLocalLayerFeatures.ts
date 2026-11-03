@@ -1,4 +1,5 @@
 import { useQueries } from "@tanstack/react-query";
+import type { AxiosInstance } from "axios";
 import type { MapExtent } from "@/types";
 import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
@@ -41,6 +42,25 @@ export interface LocalFeatureRef {
 export const localFeatureRef = (objectName: string, key: string): string =>
   `${objectName}::${key}`;
 
+/** One hosted feature's record, shared by identify and What's here. */
+export const localFeatureQuery = (
+  api: AxiosInstance,
+  objectName: string,
+  key: string,
+) => ({
+  queryKey: epicMapQueryKey("local", "feature", objectName, key),
+  queryFn: async ({ signal }: { signal: AbortSignal }) => {
+    const response = await api.get<LocalFeatureDetail>(
+      `${LOCAL_LAYERS_PATH}/${objectName}/features/${key}`,
+      { signal },
+    );
+    return response.data;
+  },
+  // The extract changes every few months; the popup reopens constantly.
+  staleTime: 5 * 60 * 1000,
+  retry: 1,
+});
+
 /**
  * The records behind the hosted features under one click.
  *
@@ -55,20 +75,9 @@ export const useLocalLayerFeatures = (
   const { api } = useMapWidget();
 
   const results = useQueries({
-    queries: refs.map(({ objectName, key }) => ({
-      queryKey: epicMapQueryKey("local", "feature", objectName, key),
-      queryFn: async ({ signal }: { signal: AbortSignal }) => {
-        const response = await api.get<LocalFeatureDetail>(
-          `${LOCAL_LAYERS_PATH}/${objectName}/features/${key}`,
-          { signal },
-        );
-        return response.data;
-      },
-      // The rows change when someone reloads the extract, which is on the order
-      // of months, and the popup is reopened constantly.
-      staleTime: 5 * 60 * 1000,
-      retry: 1,
-    })),
+    queries: refs.map(({ objectName, key }) =>
+      localFeatureQuery(api, objectName, key),
+    ),
   });
 
   return Object.fromEntries(

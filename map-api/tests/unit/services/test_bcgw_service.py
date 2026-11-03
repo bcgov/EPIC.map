@@ -30,8 +30,8 @@ from map_api.exceptions import ServiceUnavailableError
 from map_api.services.bcgw_service import IN_FLIGHT, UNAVAILABLE_MESSAGE, BcgwService
 from map_api.utils.cache import cache
 from map_api.utils.constant import (
-    BC_EXTENT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_GEOMETRY_BYTE_LIMIT, BCGW_READ_CHUNK_BYTES, BCGW_STYLE_BYTE_LIMIT,
-    BCGW_WFS_TIMEOUT_SECONDS, NEAREST_SEARCH_WINDOWS_DEGREES)
+    BC_EXTENT, BCGW_BOUNDS_BYTE_LIMIT, BCGW_CAPABILITIES_BYTE_LIMIT, BCGW_GEOMETRY_BYTE_LIMIT, BCGW_READ_CHUNK_BYTES,
+    BCGW_STYLE_BYTE_LIMIT, BCGW_WFS_TIMEOUT_SECONDS, BCGW_WHATS_HERE_BYTE_LIMIT, NEAREST_SEARCH_WINDOWS_DEGREES)
 
 
 OBJECT_NAME = 'WHSE_ADMIN_BOUNDARIES.CLAB_INDIAN_RESERVES'
@@ -1103,3 +1103,100 @@ def test_metadata_batch_a_layer_failing_unexpectedly_is_still_one_row(app):
     assert [row['status'] for row in results] == ['found', 'error', 'found']
     assert results[1]['error'] == UNAVAILABLE_MESSAGE
     assert results[0]['feature'] == {'id': 'a'}
+
+
+def _posted(*bodies):
+    """Stub requests.post, one canned body per call, and record the forms sent."""
+    forms = []
+
+    def post(url, data=None, timeout=None, stream=None):  # pylint: disable=unused-argument
+        forms.append(data or {})
+        assert len(forms) <= len(bodies), f'unexpected call {len(forms)} to the warehouse'
+        body = bodies[len(forms) - 1]
+        return _Response(body if isinstance(body, str) else json.dumps(body))
+
+    return post, forms
+
+
+OUTLINE = 'POLYGON((-120.4 51.7, -119.8 51.7, -119.8 52.3, -120.4 51.7))'
+
+
+def test_intersecting_posts_the_outline_and_asks_for_attributes_only(app):
+    """Sends the outline as a POST and asks for attributes only."""
+    post, forms = _posted({
+        'numberMatched': 2,
+        'features': [
+            {'id': f'{OBJECT_NAME}.2694', 'properties': {'HERD_NAME': 'Wells Gray South'}},
+            {'id': f'{OBJECT_NAME}.fid-1a2b', 'properties': {'HERD_NAME': 'Wells Gray North'}},
+        ],
+    })
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.post', post), \
+            patch.object(BcgwService, '_layer_schema', return_value=('GEOMETRY', ['HERD_NAME'])), \
+            patch.object(BcgwService, '_label_columns', return_value=['HERD_NAME']):
+        features, matched = BcgwService.intersecting(OBJECT_NAME, OUTLINE)
+
+    [form] = forms
+    assert form['cql_filter'] == f'INTERSECTS(GEOMETRY, SRID=4326;{OUTLINE})'
+    assert form['propertyName'] == 'HERD_NAME'
+    assert matched == 2
+    assert features == [
+        {
+            'id': f'{OBJECT_NAME}.2694',
+            'name': 'Wells Gray South',
+            'properties': [{'name': 'HERD_NAME', 'value': 'Wells Gray South'}],
+        },
+        # A generated fid is not passed on.
+        {
+            'id': None,
+            'name': 'Wells Gray North',
+            'properties': [{'name': 'HERD_NAME', 'value': 'Wells Gray North'}],
+        },
+    ]
+
+
+def test_intersecting_an_answer_past_the_cap_is_too_much_to_list(app):
+    """An error, not a silently truncated list."""
+    post, _ = _posted('x' * (BCGW_WHATS_HERE_BYTE_LIMIT + 1))
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.post', post), \
+            patch.object(BcgwService, '_layer_schema', return_value=('GEOMETRY', ['HERD_NAME'])):
+        with pytest.raises(ServiceUnavailableError):
+            BcgwService.intersecting(OBJECT_NAME, OUTLINE)
+
+
+def test_intersecting_a_layer_with_no_schema_has_nothing(app):
+    """An unpublished layer is empty."""
+    with app.app_context(), patch.object(BcgwService, '_layer_schema', return_value=None):
+        assert BcgwService.intersecting(OBJECT_NAME, OUTLINE) == ([], 0)
+
+
+def test_intersecting_batch_keeps_each_layer_s_outcome(app):
+    """One layer failing leaves the others."""
+    def intersecting(object_name, _outline):
+        if object_name == 'WHSE_TEST.BROKEN':
+            raise ServiceUnavailableError(UNAVAILABLE_MESSAGE)
+        return [{'id': None, 'name': 'x', 'properties': []}], 1
+
+    with app.app_context(), patch.object(BcgwService, 'intersecting', side_effect=intersecting):
+        results = BcgwService.intersecting_batch(['WHSE_TEST.BROKEN', OBJECT_NAME], OUTLINE)
+
+    assert [(r['object_name'], r['status'], r['error']) for r in results] == [
+        ('WHSE_TEST.BROKEN', 'error', UNAVAILABLE_MESSAGE),
+        (OBJECT_NAME, 'found', None),
+    ]
+
+
+def test_feature_bounds_measure_the_one_feature(app):
+    """Asked for by id."""
+    get, calls = _answers({'features': [_polygon_feature([(-120, 51), (-119, 52), (-120, 52)])]})
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        bounds = BcgwService.feature_bounds(OBJECT_NAME, f'{OBJECT_NAME}.7')
+
+    assert calls[0]['featureID'] == f'{OBJECT_NAME}.7'
+    assert bounds == [-120, 51, -119, 52]
+
+
+def test_feature_bounds_of_a_feature_too_heavy_to_measure_are_unknown(app):
+    """None, so the client highlights without framing."""
+    get, _ = _answers('x' * (BCGW_BOUNDS_BYTE_LIMIT + 1))
+    with app.app_context(), patch('map_api.services.bcgw_service.SESSION.get', get):
+        assert BcgwService.feature_bounds(OBJECT_NAME, f'{OBJECT_NAME}.7') is None

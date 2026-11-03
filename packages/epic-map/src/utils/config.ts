@@ -431,21 +431,37 @@ export const HIGHLIGHT_CASING_WIDTH_PX = 6;
 export const HIGHLIGHT_FILL_OPACITY = 0.2;
 export const HIGHLIGHT_POINT_SIZE_PX = 12;
 
+/** The focused What's here result. */
+export const RESULT_HIGHLIGHT_COLOR = "#013366";
+
+/** The measured line and its points. */
+export const MEASURE_COLOR = "#013366";
+export const MEASURE_WIDTH_PX = 2;
+export const MEASURE_POINT_RADIUS_PX = 4;
+
+/** Outline of every feature in the Select area selection, under a clicked one. */
+export const SELECTION_COLOR = HIGHLIGHT_COLOR;
+export const SELECTION_WIDTH_PX = 2;
+
 /**
  * Casing first, so the navy stroke is drawn over it. Polygons get a rule of
  * their own because a PolygonSymbolizer closes and fills a line it is handed.
  */
-const highlightSld = (objectName: string): string => {
-  const casing = sldStroke(HIGHLIGHT_CASING_COLOR, HIGHLIGHT_CASING_WIDTH_PX);
-  const stroke = sldStroke(HIGHLIGHT_COLOR, HIGHLIGHT_WIDTH_PX);
-  const fill = sldFill(HIGHLIGHT_COLOR, HIGHLIGHT_FILL_OPACITY);
-  const line = `<LineSymbolizer>${casing}</LineSymbolizer>` +
+const highlightSld = (objectName: string, color: string): string => {
+  // Only gold needs the casing to carry over a pale basemap.
+  const casing =
+    color === HIGHLIGHT_COLOR
+      ? sldStroke(HIGHLIGHT_CASING_COLOR, HIGHLIGHT_CASING_WIDTH_PX)
+      : null;
+  const stroke = sldStroke(color, HIGHLIGHT_WIDTH_PX);
+  const fill = sldFill(color, HIGHLIGHT_FILL_OPACITY);
+  const line = (casing ? `<LineSymbolizer>${casing}</LineSymbolizer>` : "") +
     `<LineSymbolizer>${stroke}</LineSymbolizer>`;
   return shapesSld(
     objectName,
     geometryRule(
       "*Point*",
-      sldCircle(casing, HIGHLIGHT_POINT_SIZE_PX) +
+      (casing ? sldCircle(casing, HIGHLIGHT_POINT_SIZE_PX) : "") +
         sldCircle(fill + stroke, HIGHLIGHT_POINT_SIZE_PX),
     ) +
       geometryRule("*Polygon*", `<PolygonSymbolizer>${fill}</PolygonSymbolizer>${line}`) +
@@ -463,9 +479,10 @@ const highlightSld = (objectName: string): string => {
 export const highlightTileUrl = (
   objectName: string,
   featureId: string,
+  color: string = HIGHLIGHT_COLOR,
 ): string =>
   `${wmsTileUrl(objectName)}&FEATUREID=${encodeURIComponent(featureId)}` +
-  `&SLD_BODY=${encodeURIComponent(highlightSld(objectName))}`;
+  `&SLD_BODY=${encodeURIComponent(highlightSld(objectName, color))}`;
 
 /**
  * Largest file the panel will take in, in megabytes. The check is client-side
@@ -519,6 +536,9 @@ export const MAP_MESSAGE_FADE_MS = 150;
  * makes the offset exact rather than approximate.
  */
 export const LAYERS_BUTTON_WIDTH = "6.25rem";
+
+/** Width of the Select area / Measure bar, which the over-map message stops short of. */
+export const MAP_TOOLS_WIDTH = "16.625rem";
 
 /**
  * BC Address Geocoder — the province's public address and place lookup.
