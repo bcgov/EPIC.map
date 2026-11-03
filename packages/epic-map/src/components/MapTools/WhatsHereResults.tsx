@@ -18,8 +18,7 @@ import {
   type ResultFeature,
   type ResultGroup,
 } from "@/components/MapTools/SelectAreaContext";
-
-const SMALL_TEXT = { fontSize: "0.75rem", lineHeight: 1.5 } as const;
+import { SMALL_TEXT } from "@/components/MapTools/ToolPanel";
 
 /** Revealed on a row's hover or focus. */
 const ACTIONS_CLASS = "epic-map-result-actions";

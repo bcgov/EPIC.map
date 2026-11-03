@@ -548,17 +548,16 @@ describe("What's here", () => {
     expect(screen.getByRole("status").textContent).toBe("3 features found.");
   });
 
-  it("swaps What's here for Export once there are results", async () => {
+  it("leaves only Clear all once What's here has answered", async () => {
     await withResults();
 
     expect(screen.queryByRole("button", { name: "What’s here" })).toBeNull();
-    expect(button("Export")).toBeDefined();
+    expect(button("Clear all")).toBeDefined();
   });
 
-  it("offers no Export when nothing was found", async () => {
+  it("says when nothing was found", async () => {
     await withResults([RESULTS[2]]);
 
-    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
     expect(screen.getByText(/Nothing on the layers/)).toBeDefined();
   });
 

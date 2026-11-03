@@ -93,7 +93,6 @@ LOCAL_LAYERS = {
         # panel filters a project's features without a round trip.
         properties=('feature_id', 'label', 'style_category', 'track_id'),
         key='feature_id',
-        name_column='label',
         detail_columns=(
             'feature_id',
             'source_layer',

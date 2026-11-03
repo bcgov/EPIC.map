@@ -38,13 +38,9 @@ export const useWhatsHereApi = () => {
   const { api } = useMapWidget();
 
   const search = useCallback(
-    async (request: WhatsHereRequest, signal?: AbortSignal) =>
+    async (request: WhatsHereRequest) =>
       (
-        await api.post<{ results: WhatsHereLayerResult[] }>(
-          WHATS_HERE_PATH,
-          request,
-          { signal },
-        )
+        await api.post<{ results: WhatsHereLayerResult[] }>(WHATS_HERE_PATH, request)
       ).data.results,
     [api],
   );

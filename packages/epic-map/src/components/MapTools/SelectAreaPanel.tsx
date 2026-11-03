@@ -1,6 +1,5 @@
 import { Box, Button, ButtonBase, CircularProgress, IconButton, Typography } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import SaveAltIcon from "@mui/icons-material/SaveAlt";
 import SearchIcon from "@mui/icons-material/Search";
 import { useTheme } from "@mui/material/styles";
 import type { Map as MapLibreMap } from "maplibre-gl";
@@ -136,7 +135,6 @@ export default function SelectAreaPanel({ map }: { map: MapLibreMap | null }) {
   const { selected, results, queryId, clear, showInfo } = useSelectArea();
   const runWhatsHere = useRunWhatsHere();
   const querying = queryId !== null;
-  const hasFeatures = results?.some(({ features }) => features.length > 0) ?? false;
 
   // Left of the panel, level with the row.
   const openInfo = (group: ResultGroup, feature: ResultFeature, row: HTMLElement) => {
@@ -166,7 +164,7 @@ export default function SelectAreaPanel({ map }: { map: MapLibreMap | null }) {
             <Button onClick={clear} sx={secondaryButtonSx(theme)}>
               Clear all
             </Button>
-            {results === null ? (
+            {results === null && (
               <Button
                 onClick={runWhatsHere}
                 disabled={querying}
@@ -177,13 +175,6 @@ export default function SelectAreaPanel({ map }: { map: MapLibreMap | null }) {
               >
                 What&rsquo;s here
               </Button>
-            ) : (
-              hasFeatures && (
-                // Export is a later ticket.
-                <Button startIcon={<SaveAltIcon />} sx={primaryButtonSx(theme)}>
-                  Export
-                </Button>
-              )
             )}
           </ToolFooter>
         </>
