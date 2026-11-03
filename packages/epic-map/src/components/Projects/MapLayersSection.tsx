@@ -141,7 +141,7 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
   );
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
-  // One navy highlight between this list and Select area's: last click wins.
+  // One highlight between this list and Select area's: last click wins.
   const { focused, unfocus } = useSelectArea();
   useEffect(() => {
     if (focused !== null) setSelectedKey(null);

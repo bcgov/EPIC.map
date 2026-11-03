@@ -51,7 +51,14 @@ export const useSearchMarker = (
 
   const flyTo = useCallback(
     (coordinates: [number, number], zoom: number, offset?: [number, number]) => {
-      map?.flyTo({ center: coordinates, zoom, offset, duration: FOCUS_FLY_MS });
+      // Left out when absent: MapLibre copies an undefined offset over its
+      // default and then throws reading it.
+      map?.flyTo({
+        center: coordinates,
+        zoom,
+        duration: FOCUS_FLY_MS,
+        ...(offset && { offset }),
+      });
     },
     [map],
   );

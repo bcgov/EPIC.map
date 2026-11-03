@@ -16,7 +16,7 @@ import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
 import { boundsOutOfView } from "@/components/MetaData/metaDataUtils";
 import type { MapExtent } from "@/types";
 import {
-  COMPONENT_HIGHLIGHT_COLOR,
+  RESULT_HIGHLIGHT_COLOR,
   FOCUS_FLY_MS,
   FOCUS_MAX_ZOOM,
   FOCUS_PADDING_PX,
@@ -74,7 +74,7 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
       showHighlight(
         map,
         { objectName, featureId, geometry: null },
-        COMPONENT_HIGHLIGHT_COLOR,
+        RESULT_HIGHLIGHT_COLOR,
       );
       warehouseBounds(objectName, featureId).then(frame, () => {});
     } else if (kind === "hosted" && objectName) {
@@ -85,7 +85,7 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
         showLocalHighlight(
           map,
           { layerId, sourceLayer, keyProperty: spec.keyProperty, keys: [featureKey] },
-          COMPONENT_HIGHLIGHT_COLOR,
+          RESULT_HIGHLIGHT_COLOR,
         );
       }
       queryClient
@@ -99,7 +99,7 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
         showHighlight(
           map,
           { objectName: null, featureId: null, geometry: feature.geometry },
-          COMPONENT_HIGHLIGHT_COLOR,
+          RESULT_HIGHLIGHT_COLOR,
         );
         frame(geoBounds([feature]));
       }

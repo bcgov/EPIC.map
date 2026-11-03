@@ -345,7 +345,6 @@ describe("hideOutlineLayer", () => {
 
 describe("imported layers on the map", () => {
   const LAYER_ID = "0b8f6a57-3c0e-4c55-9d38-8e5a4c1c2f10";
-  const colors = { line: "#013366", fill: "rgba(1, 51, 102, 0.35)" };
   const features = { type: "FeatureCollection" as const, features: [] };
 
   /** A map whose style is ready, recording sources, layers and every change. */
@@ -384,8 +383,8 @@ describe("imported layers on the map", () => {
   it("draws fill, line and point once, at the opacity already chosen", () => {
     const { map, sources, layers } = readyMap();
 
-    showImportedLayer(map, LAYER_ID, features, colors, 65);
-    showImportedLayer(map, LAYER_ID, features, colors, 65);
+    showImportedLayer(map, LAYER_ID, features, 65);
+    showImportedLayer(map, LAYER_ID, features, 65);
 
     expect(sources.size).toBe(1);
     expect(layers.map((layer) => layer.id)).toEqual(importedStyleLayerIds(LAYER_ID));
@@ -393,9 +392,24 @@ describe("imported layers on the map", () => {
     expect(layers[2].paint["circle-stroke-opacity"]).toBe(0.65);
   });
 
+  it("draws grey at 30%, only a polygon's outline darker", () => {
+    const { map, layers } = readyMap();
+    showImportedLayer(map, LAYER_ID, features, 100);
+
+    expect(layers[0].paint["fill-color"]).toBe("rgba(110, 110, 110, 0.3)");
+    expect(layers[1].paint["line-color"]).toEqual([
+      "match",
+      ["geometry-type"],
+      "LineString",
+      "#6E6E6E",
+      "#4A4A4A",
+    ]);
+    expect(layers[2].paint["circle-stroke-color"]).toBe("#FFFFFF");
+  });
+
   it("hides every part of a layer switched off", () => {
     const { map, layout } = readyMap();
-    showImportedLayer(map, LAYER_ID, features, colors, 100);
+    showImportedLayer(map, LAYER_ID, features, 100);
 
     setImportedLayerVisibility(map, LAYER_ID, false);
 
@@ -405,7 +419,7 @@ describe("imported layers on the map", () => {
 
   it("repaints every opacity property, as a fraction", () => {
     const { map, paint } = readyMap();
-    showImportedLayer(map, LAYER_ID, features, colors, 100);
+    showImportedLayer(map, LAYER_ID, features, 100);
 
     setImportedLayerOpacity(map, LAYER_ID, 40);
 
@@ -421,8 +435,8 @@ describe("imported layers on the map", () => {
   it("takes every part of a deleted layer off the map, source and all", () => {
     const { map, sources, layers } = readyMap();
     const OTHER_ID = "6f1d2c3b-4a59-4e8f-9b7a-1c2d3e4f5a6b";
-    showImportedLayer(map, LAYER_ID, features, colors, 100);
-    showImportedLayer(map, OTHER_ID, features, colors, 100);
+    showImportedLayer(map, LAYER_ID, features, 100);
+    showImportedLayer(map, OTHER_ID, features, 100);
 
     removeImportedLayer(map, LAYER_ID);
 
@@ -432,7 +446,7 @@ describe("imported layers on the map", () => {
 
   it("removes nothing for a layer that was never drawn", () => {
     const { map, sources, layers } = readyMap();
-    showImportedLayer(map, LAYER_ID, features, colors, 100);
+    showImportedLayer(map, LAYER_ID, features, 100);
 
     removeImportedLayer(map, "6f1d2c3b-4a59-4e8f-9b7a-1c2d3e4f5a6b");
 

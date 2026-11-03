@@ -6,7 +6,6 @@ import {
   useQueryClient,
   type UseQueryResult,
 } from "@tanstack/react-query";
-import { alpha, useTheme } from "@mui/material/styles";
 import {
   importedFeaturesKey,
   importedFeaturesQuery,
@@ -45,7 +44,6 @@ export const useImportedLayersOnMap = (
   opacities: Readonly<Record<string, number>>,
 ) => {
   const { api } = useMapWidget();
-  const theme = useTheme();
   const queryClient = useQueryClient();
 
   const { data: features, failed } = useQueries({
@@ -55,14 +53,6 @@ export const useImportedLayersOnMap = (
     })),
     combine: featuresAndFailures,
   });
-
-  const colors = useMemo(
-    () => ({
-      line: theme.palette.primary.main,
-      fill: alpha(theme.palette.primary.main, 0.35),
-    }),
-    [theme],
-  );
 
   const drawn = useRef(new Set<string>());
 
@@ -97,12 +87,11 @@ export const useImportedLayersOnMap = (
         map,
         layer.id,
         data,
-        colors,
         opacitiesRef.current[layer.id] ?? DEFAULT_LAYER_OPACITY,
       );
       drawn.current.add(layer.id);
     });
-  }, [map, layers, features, colors, shownIds]);
+  }, [map, layers, features, shownIds]);
 
   useEffect(() => {
     if (!map) return;

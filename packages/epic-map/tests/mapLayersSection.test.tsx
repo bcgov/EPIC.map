@@ -370,7 +370,7 @@ describe("selecting a component", () => {
   });
 });
 
-describe("sharing the navy highlight with Select area", () => {
+describe("sharing the component highlight with Select area", () => {
   const row = (name: string) => screen.getByRole("button", { name });
   const area: { current: ReturnType<typeof useSelectArea> | null } = {
     current: null,

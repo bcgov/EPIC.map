@@ -15,10 +15,10 @@ import {
   type LocalLayerStyle,
 } from "@/components/Layers/layerUtils";
 import {
-  COMPONENT_HIGHLIGHT_COLOR,
   HIGHLIGHT_COLOR,
   localTileUrl,
   LOCAL_TILE_MAX_ZOOM,
+  RESULT_HIGHLIGHT_COLOR,
 } from "@/utils/config";
 
 const LAYER_ID = "pip-consultation-areas";
@@ -611,6 +611,29 @@ describe("setLocalVectorLayerOpacity", () => {
     expect(byId.get("fill-opacity")).toBeCloseTo(0.3);
   });
 
+  it("scales a per-class opacity rather than replacing it with the slider", () => {
+    // EAO's component fill: opaque at 100% was the bug. Below 100 so the
+    // slider's scale is pinned too.
+    const byClass = ["match", ["get", "style_category"], "amendment", 0.35, 0.35];
+    const harness = slide(40, {
+      ...polygonStyle,
+      layers: [
+        {
+          ...polygonStyle.layers[0],
+          paint: { "fill-color": "#E69F00", "fill-opacity": byClass },
+        },
+      ],
+    });
+
+    expect(harness.paint).toEqual([
+      {
+        id: "epic-local-pip-consultation-areas-fill",
+        key: "fill-opacity",
+        value: ["*", byClass, 0.4],
+      },
+    ]);
+  });
+
   it("names the opacity property for each layer's own type", () => {
     // MapLibre ignores a property that does not belong to the type, so this
     // wrong is a slider that silently does nothing.
@@ -712,6 +735,14 @@ describe("showLocalHighlight", () => {
     }
   });
 
+  it("draws in the shared gold, not an EAO category's colours", () => {
+    const [fill, line, point] = pick().added;
+
+    expect(fill.paint?.["fill-color"]).toBe(HIGHLIGHT_COLOR);
+    expect(line.paint?.["line-color"]).toBe(HIGHLIGHT_COLOR);
+    expect(point.paint?.["circle-stroke-color"]).toBe(HIGHLIGHT_COLOR);
+  });
+
   it("rings a point, and only a point, in a circle", () => {
     const harness = pick();
 
@@ -800,6 +831,49 @@ describe("showComponentHighlight", () => {
       "epic-component-highlight-point",
     ]);
   });
+
+  it("draws a selection in its category's hue, outlined darker", () => {
+    const harness = fakeMap();
+    show(harness);
+    showComponentHighlight(harness.map, highlight);
+    harness.fire("styledata");
+
+    const hue = [
+      "match",
+      ["get", "style_category"],
+      "footprint",
+      "#0072B2",
+      "amendment",
+      "#CC79A7",
+      "value_component",
+      "#009E73",
+      "#E69F00",
+    ];
+    const darker = [
+      "match",
+      ["get", "style_category"],
+      "footprint",
+      "#004E7A",
+      "amendment",
+      "#8E4A70",
+      "value_component",
+      "#006B4F",
+      "#8B3A00",
+    ];
+    const [fill, line, point] = harness.added.slice(-3);
+    expect(fill.paint).toEqual({ "fill-color": hue, "fill-opacity": 0.6 });
+    expect(line.paint).toEqual({
+      "line-color": darker,
+      "line-width": ["match", ["geometry-type"], "LineString", 4, 3],
+    });
+    expect(point.paint).toEqual({
+      "circle-radius": 7,
+      "circle-color": hue,
+      "circle-opacity": 0.6,
+      "circle-stroke-color": darker,
+      "circle-stroke-width": 3,
+    });
+  });
 });
 
 describe("hideComponentHighlight", () => {
@@ -836,26 +910,25 @@ describe("the Select area colours", () => {
       "line-color"
     ];
 
-  it("outlines the selection in gold, under the navy of a clicked row", () => {
+  it("outlines the selection in gold, under a clicked row's highlight", () => {
     const harness = fakeMap();
     show(harness);
     showComponentHighlight(harness.map, highlight);
     showSelectionOutline(harness.map, highlight);
 
     expect(lineColor(harness, "epic-selection-line")).toBe(HIGHLIGHT_COLOR);
-    expect(lineColor(harness, "epic-component-highlight-line")).toBe(
-      COMPONENT_HIGHLIGHT_COLOR,
-    );
     expect(harness.before.at(-1)).toBe("epic-component-highlight-fill");
   });
 
-  it("leaves the identify highlight gold", () => {
+  it("draws a focused result in the colour it is given", () => {
     const harness = fakeMap();
     show(harness);
-    showLocalHighlight(harness.map, highlight);
+    showLocalHighlight(harness.map, highlight, RESULT_HIGHLIGHT_COLOR);
     harness.fire("styledata");
 
-    expect(lineColor(harness, "epic-highlight-local-line")).toBe(HIGHLIGHT_COLOR);
+    expect(lineColor(harness, "epic-highlight-local-line")).toBe(
+      RESULT_HIGHLIGHT_COLOR,
+    );
   });
 });
 

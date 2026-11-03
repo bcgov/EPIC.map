@@ -54,34 +54,36 @@ def _project(project_id, **overrides):
         'description': 'A project',
         'latitude': '53.0',
         'longitude': '-122.5',
-        'is_active': True,
-        'is_project_closed': False,
         'ea_certificate': 'M23-01',
         'type': {'id': 8, 'name': 'Water Management'},
         'proponent': {'id': 1, 'name': 'EVR Operations Limited'},
         'region_env': {'id': 2, 'name': 'Cariboo'},
         'epic_guid': '5cd9b4b56a15600025df0cc8',
+        'has_works_in_progress': False,
     }
     project.update(overrides)
     return project
 
 
-def _work(project_id, work_state):
-    return {'id': project_id * 10, 'project_id': project_id, 'work_state': work_state}
+PROJECTS_URL = f'{TRACK_URL}/api/v1/projects/summary'
+WORKS_URL_PREFIX = f'{TRACK_URL}/api/v1/projects/'
+WORKS_URL_SUFFIX = '/works/summary'
 
 
-def _track(projects, works, phases=None):
-    """Answer Track's GET endpoints, in place of requests.get. phases is keyed by work id."""
+def _track(projects, works=None):
+    """Answer Track's GET endpoints, in place of requests.get. works is keyed by project id."""
     def get(url, params=None, headers=None, timeout=None):  # pylint: disable=unused-argument
-        if url == f'{TRACK_URL}/api/v1/projects':
+        if url == PROJECTS_URL:
             return _Response(projects)
-        if url == f'{TRACK_URL}/api/v1/works':
-            return _Response(works)
-        if url.startswith(f'{TRACK_URL}/api/v1/works/') and url.endswith('/phases'):
-            work_id = int(url.split('/')[-2])
-            return _Response((phases or {}).get(work_id, []))
+        if url.startswith(WORKS_URL_PREFIX) and url.endswith(WORKS_URL_SUFFIX):
+            project_id = int(url[len(WORKS_URL_PREFIX):-len(WORKS_URL_SUFFIX)])
+            return _Response((works or {}).get(project_id, []))
         raise AssertionError(f'unexpected url {url}')
     return get
+
+
+def _works_calls(get) -> list:
+    return [call.args[0] for call in get.call_args_list if call.args[0].endswith(WORKS_URL_SUFFIX)]
 
 
 @pytest.fixture(autouse=True)
@@ -96,26 +98,20 @@ def _configured(app, monkeypatch):
 
 
 def test_open_projects_are_returned_with_their_works_in_progress(app):
-    """A closed project still appears; only IN_PROGRESS works make one green.
+    """Track's summary says which projects have a work in progress; those are green.
 
-    is_active is what takes a project off the map. A closed one keeps its dot
-    and its footprint, and the In-progress works filter is what narrows to the
-    live ones.
+    Track summarises active projects only, closed ones included. A closed one
+    keeps its dot and its footprint, and the In-progress works filter is what
+    narrows to the live ones.
     """
     projects = [
-        _project(1),
+        _project(1, has_works_in_progress=True),
         _project(2),
-        _project(3, is_project_closed=True),
-        _project(4),
-    ]
-    works = [
-        _work(1, 'IN_PROGRESS'),
-        _work(2, 'COMPLETED'),
-        _work(3, 'IN_PROGRESS'),
-        _work(4, 'SUSPENDED'),
+        _project(3, has_works_in_progress=True),
+        _project(4, has_works_in_progress=None),
     ]
 
-    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects, works)):
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects)):
         result = TrackService.open_projects()
 
     assert [(p['id'], p['has_works_in_progress']) for p in result] == [
@@ -140,30 +136,19 @@ def test_open_projects_are_returned_with_their_works_in_progress(app):
     }
 
 
-def test_an_inactive_project_is_left_off_whatever_its_works(app):
-    """Project Status decides, not work status, even if Track ignores the is_active param."""
-    projects = [_project(1), _project(2, is_active=False), _project(3, is_active=None)]
-    works = [_work(2, 'IN_PROGRESS'), _work(3, 'IN_PROGRESS')]
-
-    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects, works)):
-        result = TrackService.open_projects()
-
-    assert [p['id'] for p in result] == [1]
-
-
 def test_a_status_change_shows_on_the_next_sync(app):
-    """Active is re-read from Track on every refresh, not frozen at first load."""
-    before = [_project(1), _project(2, is_active=False)]
-    after = [_project(1, is_active=False), _project(2)]
+    """Track's list of active projects is re-read on every refresh, not frozen at first load."""
+    before = [_project(1)]
+    after = [_project(2, has_works_in_progress=True)]
 
-    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(before, [])):
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(before)):
         first = TrackService.open_projects()
     cache.delete(PROJECTS_KEY)
-    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(after, [])):
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(after)):
         second = TrackService.open_projects()
 
     assert [p['id'] for p in first] == [1]
-    assert [p['id'] for p in second] == [2]
+    assert [(p['id'], p['has_works_in_progress']) for p in second] == [(2, True)]
 
 
 @pytest.mark.parametrize(
@@ -181,7 +166,7 @@ def test_projects_without_a_usable_location_are_left_off(app, latitude, longitud
     """Track stores coordinates as free text, so anything unreadable is skipped."""
     projects = [_project(1), _project(2, latitude=latitude, longitude=longitude)]
 
-    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects, [])):
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects)):
         result = TrackService.open_projects()
 
     assert [p['id'] for p in result] == [1]
@@ -190,7 +175,7 @@ def test_projects_without_a_usable_location_are_left_off(app, latitude, longitud
 def test_track_is_asked_with_a_service_account_token(app):
     """Client credentials from this API's own client, sent as a bearer token."""
     with patch(POST, return_value=_token('abc')) as post, \
-            patch(GET, side_effect=_track([], [])) as get:
+            patch(GET, side_effect=_track([])) as get:
         TrackService.open_projects()
 
     post.assert_called_once()
@@ -200,30 +185,28 @@ def test_track_is_asked_with_a_service_account_token(app):
         'client_id': 'epic-map-api',
         'client_secret': 'secret',
     }
-    calls = {call.args[0]: call.kwargs for call in get.call_args_list}
-    assert calls[f'{TRACK_URL}/api/v1/projects']['params'] == {'is_active': 'true'}
-    # No is_active on the works: a project is in progress when it has a work in
-    # progress, and 19 of the IN_PROGRESS works are flagged inactive.
-    assert calls[f'{TRACK_URL}/api/v1/works']['params'] == {'context': 'insights'}
-    assert all(kwargs['headers'] == {'Authorization': 'Bearer abc'} for kwargs in calls.values())
+    get.assert_called_once()
+    assert get.call_args.args[0] == PROJECTS_URL
+    assert get.call_args.kwargs['params'] == {}
+    assert get.call_args.kwargs['headers'] == {'Authorization': 'Bearer abc'}
 
 
 def test_the_list_is_cached(app):
     """Track is asked once per cache period, however many requests arrive."""
     with patch(POST, return_value=_token()) as post, \
-            patch(GET, side_effect=_track([_project(1)], [])) as get:
+            patch(GET, side_effect=_track([_project(1)])) as get:
         TrackService.open_projects()
         TrackService.open_projects()
         TrackService.open_project(1)
 
-    assert get.call_count == 2
+    assert get.call_count == 1
     assert post.call_count == 1
 
 
 def test_the_token_is_reused_until_it_expires(app):
     """A refresh after the list expires does not ask Keycloak again."""
     with patch(POST, return_value=_token()) as post, \
-            patch(GET, side_effect=_track([], [])):
+            patch(GET, side_effect=_track([])):
         TrackService.open_projects()
         cache.delete(PROJECTS_KEY)
         TrackService.open_projects()
@@ -233,7 +216,7 @@ def test_the_token_is_reused_until_it_expires(app):
 
 def test_a_refused_token_is_replaced_once(app):
     """Track rejecting the token gets a fresh one rather than an outage."""
-    answers = iter([_Response(status_code=401), _Response([_project(1)]), _Response([])])
+    answers = iter([_Response(status_code=401), _Response([_project(1)])])
 
     with patch(POST, side_effect=[_token('old'), _token('new')]) as post, \
             patch(GET, side_effect=lambda *a, **k: next(answers)) as get:
@@ -262,7 +245,7 @@ def test_track_failing_with_nothing_cached_is_unavailable(app, failure):
 def test_track_failing_serves_the_last_list(app):
     """An outage after a good fetch keeps the dots on the map."""
     with patch(POST, return_value=_token()), \
-            patch(GET, side_effect=_track([_project(1)], [])):
+            patch(GET, side_effect=_track([_project(1)])):
         TrackService.open_projects()
 
     cache.delete(PROJECTS_KEY)
@@ -295,26 +278,6 @@ def test_an_unconfigured_api_asks_nobody(app, monkeypatch, missing):
     get.assert_not_called()
 
 
-def test_an_inactive_work_still_makes_its_project_in_progress(app):
-    """A project is in progress when it has a work in progress.
-
-    The work's own is_active says whether Track still lists it, not whether the
-    work is under way, and the two disagree on 19 of the 50 IN_PROGRESS works.
-    """
-    projects = [_project(1), _project(2)]
-    works = [
-        dict(_work(1, 'IN_PROGRESS'), is_active=False),
-        dict(_work(2, 'COMPLETED'), is_active=True),
-    ]
-
-    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects, works)):
-        result = TrackService.open_projects()
-
-    assert [(p['id'], p['has_works_in_progress']) for p in result] == [
-        (1, True), (2, False),
-    ]
-
-
 def test_open_project_finds_one_or_none(app):
     """A project that is not on the map has no card.
 
@@ -323,53 +286,38 @@ def test_open_project_finds_one_or_none(app):
     """
     projects = [_project(1), _project(2, latitude=None, longitude=None)]
 
-    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects, [])):
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects)):
         assert TrackService.open_project(1)['id'] == 1
         assert TrackService.open_project(2) is None
         assert TrackService.open_project(99) is None
 
 
-def _listed_work(work_id, project_id=1, **overrides):
+def _summary_work(work_id, **overrides):
     work = {
         'id': work_id,
-        'project_id': project_id,
         'work_type': {'id': 5, 'name': 'Amendment'},
         'simple_title': 'Transmission line & work camp locations',
         'title': 'Project 1 - Amendment - Transmission line & work camp locations',
         'work_state': 'COMPLETED',
-        'current_work_phase': {'id': 9, 'name': 'Decision', 'phase': {'name': 'Decision'}},
+        'current_work_phase': {'id': 9, 'name': 'Decision'},
         'start_date': '2022-01-10T08:00:00+00:00',
         'decision_date': None,
         'work_decision_date': '2023-10-10T07:00:00+00:00',
         'epic_description': 'A project',
         'report_description': 'Proposes to raise the tailings facility.',
+        'decision': None,
     }
     work.update(overrides)
     return work
 
 
-def _track_with_listing(listing):
-    """Answer Track's GETs, and the works listing POST alongside the token POST."""
-    def post(url, data=None, json=None, headers=None, timeout=None):  # pylint: disable=unused-argument
-        if url == TOKEN_URL:
-            return _token()
-        if url == f'{TRACK_URL}/api/v1/works/listing':
-            return _Response({'items': listing, 'total': len(listing)})
-        raise AssertionError(f'unexpected url {url}')
-    return post
-
-
-def test_project_works_are_listed_by_project_name(app):
-    """One listing call filtered to the project, finished works included."""
-    post = _track_with_listing([_listed_work(1)])
-    with patch(POST, side_effect=post) as posted, \
-            patch(GET, side_effect=_track([_project(1)], [])):
+def test_project_works_are_read_from_the_project_summary(app):
+    """One call for the project's works, finished works included."""
+    with patch(POST, return_value=_token()), \
+            patch(GET, side_effect=_track([_project(1)], {1: [_summary_work(1)]})) as got:
         works = TrackService.project_works(1)
 
-    listing_call = [c for c in posted.call_args_list if c.args[0].endswith('/works/listing')][0]
-    assert listing_call.kwargs['json'] == {
-        'filters': [{'id': 'project.name', 'value': ['Project 1']}]
-    }
+    assert _works_calls(got) == [f'{WORKS_URL_PREFIX}1{WORKS_URL_SUFFIX}']
     assert works == [{
         'id': 1,
         'title': 'Amendment - Transmission line & work camp locations',
@@ -384,121 +332,87 @@ def test_project_works_are_listed_by_project_name(app):
 
 def test_project_works_are_in_card_order(app):
     """In progress first (newest start first), then by decision date, newest first, undated last."""
-    listing = [
-        _listed_work(1, work_decision_date='2020-01-01T00:00:00+00:00'),
-        _listed_work(2, work_state='IN_PROGRESS', work_decision_date=None,
-                     start_date='2024-01-01T00:00:00+00:00'),
-        _listed_work(3, work_decision_date=None),
-        _listed_work(4, work_state='TERMINATED', work_decision_date='2023-06-01T00:00:00-07:00'),
-        _listed_work(5, work_state='IN_PROGRESS', work_decision_date=None,
-                     start_date='2025-03-01T00:00:00+00:00'),
-        _listed_work(6, project_id=2),
+    works = [
+        _summary_work(1, work_decision_date='2020-01-01T00:00:00+00:00'),
+        _summary_work(2, work_state='IN_PROGRESS', work_decision_date=None,
+                      start_date='2024-01-01T00:00:00+00:00'),
+        _summary_work(3, work_decision_date=None),
+        _summary_work(4, work_state='TERMINATED', work_decision_date='2023-06-01T00:00:00-07:00'),
+        _summary_work(5, work_state='IN_PROGRESS', work_decision_date=None,
+                      start_date='2025-03-01T00:00:00+00:00'),
     ]
-    with patch(POST, side_effect=_track_with_listing(listing)), \
-            patch(GET, side_effect=_track([_project(1)], [])):
-        works = TrackService.project_works(1)
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track([_project(1)], {1: works})):
+        result = TrackService.project_works(1)
 
-    assert [work['id'] for work in works] == [5, 2, 4, 1, 3]
+    assert [work['id'] for work in result] == [5, 2, 4, 1, 3]
 
 
 def test_a_work_without_a_simple_title_or_report_description(app):
     """The title is the work type alone; the EPIC description stands in."""
-    listing = [_listed_work(1, simple_title='', report_description='  ',
-                            epic_description='Proposes to amend the project.',
-                            current_work_phase={'name': None, 'phase': {'name': 'Early Engagement'}})]
-    with patch(POST, side_effect=_track_with_listing(listing)), \
-            patch(GET, side_effect=_track([_project(1)], [])):
+    works = [_summary_work(1, simple_title='', report_description='  ',
+                           epic_description='Proposes to amend the project.',
+                           current_work_phase=None)]
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track([_project(1)], {1: works})):
         work = TrackService.project_works(1)[0]
 
     assert work['title'] == 'Amendment'
     assert work['description'] == 'Proposes to amend the project.'
-    assert work['phase_name'] == 'Early Engagement'
+    assert work['phase_name'] is None
 
 
 def test_a_work_is_not_described_by_its_project(app):
     """Track fills epic_description with the project's blurb on 57 of the 141 works in dev."""
-    listing = [_listed_work(1, report_description=None, epic_description='A project')]
-    with patch(POST, side_effect=_track_with_listing(listing)), \
-            patch(GET, side_effect=_track([_project(1, description='A project')], [])):
+    works = [_summary_work(1, report_description=None, epic_description='A project')]
+    with patch(POST, return_value=_token()), \
+            patch(GET, side_effect=_track([_project(1, description='A project')], {1: works})):
         work = TrackService.project_works(1)[0]
 
     assert work['description'] is None
 
 
-def _phase(decision, decided_on):
-    return {'decision_milestone': 'Amendment Decision', 'decision': decision,
-            'decision_milestone_date': decided_on}
-
-
 def test_a_decided_work_carries_its_latest_decision(app):
-    """The outcome of the most recent decision milestone across the work's phases."""
-    phases = {1: [
-        _phase('Referred', '2023-01-05T08:00:00+00:00'),
-        _phase('Amendment Granted', '2023-10-10T07:00:00+00:00'),
-        _phase(None, None),
-    ]}
-    with patch(POST, side_effect=_track_with_listing([_listed_work(1)])), \
-            patch(GET, side_effect=_track([_project(1)], [], phases)):
+    """Track picks the outcome of the most recent decision milestone across the work's phases."""
+    works = [_summary_work(1, decision='Amendment Granted')]
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track([_project(1)], {1: works})):
         work = TrackService.project_works(1)[0]
 
     assert work['decision'] == 'Amendment Granted'
 
 
-def test_only_decided_works_ask_for_their_phases(app):
-    """A work still under way has no decision to fetch."""
-    listing = [_listed_work(1), _listed_work(2, work_state='IN_PROGRESS', work_decision_date=None)]
-    with patch(POST, side_effect=_track_with_listing(listing)), \
-            patch(GET, side_effect=_track([_project(1)], [])) as got:
-        works = TrackService.project_works(1)
-
-    assert [c.args[0] for c in got.call_args_list if c.args[0].endswith('/phases')] == [
-        f'{TRACK_URL}/api/v1/works/1/phases'
-    ]
-    assert [work['decision'] for work in works] == [None, None]
-
-
-def test_a_failed_phases_call_leaves_the_work_without_a_decision(app):
-    """The card still lists the work, with its date."""
-    track = _track([_project(1)], [])
-
-    def get(url, **kwargs):
-        if url.endswith('/phases'):
-            raise requests.ConnectionError('down')
-        return track(url, **kwargs)
-
-    with patch(POST, side_effect=_track_with_listing([_listed_work(1)])), patch(GET, side_effect=get):
+def test_a_work_still_under_way_shows_no_decision(app):
+    """A decision from an earlier phase is not the work's outcome until the work is decided."""
+    works = [_summary_work(1, work_state='IN_PROGRESS', work_decision_date=None, decision='Referred')]
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track([_project(1)], {1: works})):
         work = TrackService.project_works(1)[0]
 
     assert work['decision'] is None
-    assert work['decision_date'] == '2023-10-10T07:00:00+00:00'
 
 
 def test_project_works_are_cached(app):
     """Opening the same card again does not ask Track again."""
-    with patch(POST, side_effect=_track_with_listing([_listed_work(1)])) as posted, \
-            patch(GET, side_effect=_track([_project(1)], [])):
+    with patch(POST, return_value=_token()), \
+            patch(GET, side_effect=_track([_project(1)], {1: [_summary_work(1)]})) as got:
         TrackService.project_works(1)
         TrackService.project_works(1)
 
-    assert len([c for c in posted.call_args_list if c.args[0].endswith('/works/listing')]) == 1
+    assert len(_works_calls(got)) == 1
 
 
 def test_works_of_an_absent_project_are_none(app):
-    """No card, no works, and no listing call."""
+    """No card, no works, and no works call."""
     projects = [_project(2, latitude=None, longitude=None)]
-    with patch(POST, side_effect=_track_with_listing([])) as posted, \
-            patch(GET, side_effect=_track(projects, [])):
+    with patch(POST, return_value=_token()), patch(GET, side_effect=_track(projects)) as got:
         assert TrackService.project_works(2) is None
         assert TrackService.project_works(99) is None
 
-    assert not [c for c in posted.call_args_list if c.args[0].endswith('/works/listing')]
+    assert not _works_calls(got)
 
 
 @pytest.mark.parametrize('epic_guid', [None, '', '   ', 'not-a-guid', '5cd9b4b56a15600025df0cc', '../admin', 42])
 def test_a_project_without_a_usable_epic_guid_has_no_epic_url(app, epic_guid):
     """No link at all rather than a broken one."""
     with patch(POST, return_value=_token()), \
-            patch(GET, side_effect=_track([_project(1, epic_guid=epic_guid)], [])):
+            patch(GET, side_effect=_track([_project(1, epic_guid=epic_guid)])):
         project = TrackService.open_project(1)
 
     assert project['epic_url'] is None
@@ -508,7 +422,7 @@ def test_the_epic_url_follows_the_configured_site(app, monkeypatch):
     """Each environment can point at its own EPIC public site."""
     monkeypatch.setitem(app.config, 'EPIC_PUBLIC_URL', 'https://epic.example')
     with patch(POST, return_value=_token()), \
-            patch(GET, side_effect=_track([_project(1, epic_guid=' 5cd9b4b56a15600025df0cc8 ')], [])):
+            patch(GET, side_effect=_track([_project(1, epic_guid=' 5cd9b4b56a15600025df0cc8 ')])):
         project = TrackService.open_project(1)
 
     assert project['epic_url'] == 'https://epic.example/p/5cd9b4b56a15600025df0cc8/project-details'
@@ -525,7 +439,7 @@ def test_the_epic_url_follows_the_configured_site(app, monkeypatch):
 def test_a_project_whose_certificate_field_holds_a_status_has_none_issued(app, ea_certificate):
     """Anything but a number is the card's grey status, and the Certified filter stays off."""
     with patch(POST, return_value=_token()), \
-            patch(GET, side_effect=_track([_project(1, ea_certificate=ea_certificate)], [])):
+            patch(GET, side_effect=_track([_project(1, ea_certificate=ea_certificate)])):
         project = TrackService.open_project(1)
 
     assert project['ea_certificate'] is None
@@ -536,7 +450,7 @@ def test_a_project_whose_certificate_field_holds_a_status_has_none_issued(app, e
 def test_a_certificate_status_is_trimmed(app):
     """Track allows stray whitespace around the value; the tag should not show it."""
     with patch(POST, return_value=_token()), \
-            patch(GET, side_effect=_track([_project(1, ea_certificate='  Withdrawn  ')], [])):
+            patch(GET, side_effect=_track([_project(1, ea_certificate='  Withdrawn  ')])):
         project = TrackService.open_project(1)
 
     assert project['certificate_status'] == 'Withdrawn'
@@ -546,7 +460,7 @@ def test_a_certificate_status_is_trimmed(app):
 def test_a_project_with_an_empty_certificate_field_has_no_tag(app, ea_certificate):
     """Nothing to say about the certificate means neither tag, and the filter off."""
     with patch(POST, return_value=_token()), \
-            patch(GET, side_effect=_track([_project(1, ea_certificate=ea_certificate)], [])):
+            patch(GET, side_effect=_track([_project(1, ea_certificate=ea_certificate)])):
         project = TrackService.open_project(1)
 
     assert project['ea_certificate'] is None
@@ -564,7 +478,7 @@ def test_a_project_with_an_empty_certificate_field_has_no_tag(app, ea_certificat
 def test_a_project_with_a_certificate_number_has_one_issued(app, ea_certificate):
     """The number is the tag's text, trimmed."""
     with patch(POST, return_value=_token()), \
-            patch(GET, side_effect=_track([_project(1, ea_certificate=ea_certificate)], [])):
+            patch(GET, side_effect=_track([_project(1, ea_certificate=ea_certificate)])):
         project = TrackService.open_project(1)
 
     assert project['ea_certificate'] == ea_certificate.strip()
@@ -575,7 +489,7 @@ def test_a_project_with_a_certificate_number_has_one_issued(app, ea_certificate)
 def test_a_project_without_a_type_or_region_has_no_ids(app):
     """The filter bar treats a missing id as matching no option."""
     with patch(POST, return_value=_token()), \
-            patch(GET, side_effect=_track([_project(1, type=None, region_env=None)], [])):
+            patch(GET, side_effect=_track([_project(1, type=None, region_env=None)])):
         project = TrackService.open_project(1)
 
     assert project['type_id'] is None

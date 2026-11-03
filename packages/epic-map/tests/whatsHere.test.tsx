@@ -16,7 +16,7 @@ import {
   type SelectAreaState,
 } from "@/components/MapTools/SelectAreaContext";
 import { searchedLayers, toGroups } from "@/components/MapTools/whatsHere";
-import { COMPONENT_HIGHLIGHT_COLOR } from "@/utils/config";
+import { RESULT_HIGHLIGHT_COLOR } from "@/utils/config";
 
 const CARIBOU = "WHSE_WILDLIFE_INVENTORY.GCPB_CARIBOU_POPULATION_SP";
 const PIP = "WHSE_ADMIN_BOUNDARIES.PIP_CONSULTATION_AREAS_SP";
@@ -258,7 +258,7 @@ describe("a focused result on the map", () => {
     expect(showHighlight).toHaveBeenCalledWith(
       map,
       { objectName: CARIBOU, featureId: `${CARIBOU}.2`, geometry: null },
-      COMPONENT_HIGHLIGHT_COLOR,
+      RESULT_HIGHLIGHT_COLOR,
     );
     await waitFor(() => expect(map.easeTo).toHaveBeenCalled());
     expect(map.easeTo.mock.calls[0][0].zoom).toBe(9);
@@ -288,7 +288,7 @@ describe("a focused result on the map", () => {
         keyProperty: "cnsltn_area_guid",
         keys: ["{P1}"],
       },
-      COMPONENT_HIGHLIGHT_COLOR,
+      RESULT_HIGHLIGHT_COLOR,
     );
     await waitFor(() => expect(map.easeTo).toHaveBeenCalled());
   });
@@ -306,7 +306,7 @@ describe("a focused result on the map", () => {
     expect(showHighlight).toHaveBeenCalledWith(
       map,
       { objectName: null, featureId: null, geometry },
-      COMPONENT_HIGHLIGHT_COLOR,
+      RESULT_HIGHLIGHT_COLOR,
     );
   });
 

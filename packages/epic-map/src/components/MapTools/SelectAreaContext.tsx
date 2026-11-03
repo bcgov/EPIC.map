@@ -43,7 +43,7 @@ export interface ResultGroup {
   error: string | null;
 }
 
-/** The row with the navy highlight. */
+/** The row whose feature is highlighted on the map. */
 export type Focus =
   | { kind: "selected"; featureId: string }
   | { kind: "result"; groupKey: string; featureKey: string };
@@ -209,7 +209,7 @@ interface SelectArea extends SelectAreaState {
   clear: () => void;
   /** The focused Selected row, if any. */
   focusedId: string | null;
-  /** Toggles the navy highlight on a selected feature. */
+  /** Toggles the highlight on a selected feature. */
   focus: (featureId: string) => void;
   /** Toggles the navy highlight on a result. */
   focusResult: (groupKey: string, featureKey: string) => void;

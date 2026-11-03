@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Box, Button, CircularProgress, Typography } from "@mui/material";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import { Box, CircularProgress, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import DashedEmptyState from "@/components/Layers/DashedEmptyState";
+import ErrorNotice from "@/components/Layers/ErrorNotice";
 import LayersSection from "@/components/Layers/LayersSection";
 import ImportedLayerRow from "@/components/Layers/UserLayers/ImportedLayerRow";
 import { useImportedLayersContext } from "@/components/Layers/UserLayers/ImportedLayersContext";
@@ -59,30 +59,11 @@ export default function MyLayersSection() {
 
     if (error)
       return (
-        <Box sx={{ padding: "0 1rem 0.5rem", textAlign: "center" }}>
-          <Typography
-            sx={{ ...caption, color: theme.palette.text.primary }}
-          >
-            <WarningAmberIcon
-              aria-hidden
-              sx={{
-                verticalAlign: "text-bottom",
-                marginRight: "0.25rem",
-                fontSize: "1rem",
-                color: theme.palette.text.secondary,
-              }}
-            />
-            Couldn’t load your layers
-          </Typography>
-          <Button
-            variant="text"
-            color="secondary"
-            onClick={retry}
-            sx={{ fontSize: theme.typography.caption.fontSize }}
-          >
-            Try again
-          </Button>
-        </Box>
+        <ErrorNotice
+          message="Couldn’t load your layers"
+          action="Try again"
+          onAction={retry}
+        />
       );
 
     if (layers.length > 0)

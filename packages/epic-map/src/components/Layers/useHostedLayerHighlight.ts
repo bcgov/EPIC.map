@@ -5,7 +5,7 @@ import { EAO_OBJECT_NAME } from "@/utils/localLayers";
 
 const NONE: readonly string[] = [];
 
-/** EAO features to highlight in navy: the focused Selected row, else the panel's component. */
+/** EAO features to highlight: the focused Selected row, else the panel's component. */
 export const useHostedLayerHighlight = (objectName: string): readonly string[] => {
   const { selectedFeatureIds } = useRevealedComponents();
   const { focusedId } = useSelectArea();

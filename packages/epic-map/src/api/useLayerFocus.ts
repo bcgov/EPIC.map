@@ -21,7 +21,8 @@ const CATALOGUE_LAYERS_PATH = "/catalogue/layers";
  * exactly the right move.
  */
 const NO_FEATURES_MESSAGE = "This layer publishes nothing to zoom to";
-const UNREACHABLE_MESSAGE = "Could not reach the data catalogue - try again";
+export const UNREACHABLE_MESSAGE =
+  "Could not reach the data catalogue - try again";
 
 const messageFor = (error: unknown): string =>
   axios.isAxiosError(error) && error.response?.status === 404
