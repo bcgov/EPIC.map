@@ -60,7 +60,7 @@ export const whenStyleReady = (map: MapLibreMap, work: () => void) => {
  * Like `whenStyleReady`, but without waiting on tiles: a filter change reloads
  * them, which would hold the work back until the map is idle.
  */
-const whenStyleParsed = (map: MapLibreMap, work: () => void) => {
+export const whenStyleParsed = (map: MapLibreMap, work: () => void) => {
   // getStyle() is undefined until the style has loaded.
   if (map.getStyle()) {
     work();

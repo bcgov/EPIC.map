@@ -41,6 +41,7 @@ import {
   showLocalHighlight,
 } from "@/components/Layers/layerUtils";
 import { useImportedLayersContext } from "@/components/Layers/UserLayers/ImportedLayersContext";
+import { useMeasure } from "@/components/MapTools/MeasureContext";
 import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
 import { hasProjectAt } from "@/components/Projects/projectUtils";
 import type { MapExtent } from "@/types";
@@ -131,14 +132,15 @@ export default function MetaDataControl() {
   const hostedRef = useRef(hostedShown);
   hostedRef.current = hostedShown;
 
-  // No identify while Select area is on.
-  const selecting = useSelectArea().tool === "select";
-  const selectingRef = useRef(selecting);
-  selectingRef.current = selecting;
+  const { tool } = useSelectArea();
+  const { placing } = useMeasure();
+  const toolOwnsClicks = tool === "select" || placing;
+  const toolOwnsClicksRef = useRef(toolOwnsClicks);
+  toolOwnsClicksRef.current = toolOwnsClicks;
 
   useEffect(() => {
-    if (selecting) setClick(null);
-  }, [selecting]);
+    if (toolOwnsClicks) setClick(null);
+  }, [toolOwnsClicks]);
 
   // Counts up for the life of the widget, never per map instance
   const clicks = useRef(0);
@@ -147,7 +149,7 @@ export default function MetaDataControl() {
     if (!map) return undefined;
 
     const onClick = (event: MapMouseEvent) => {
-      if (selectingRef.current) return;
+      if (toolOwnsClicksRef.current) return;
 
       // A project dot opens its own card instead of a popup beside it: a
       // small, deliberate target with nothing of its own to identify.

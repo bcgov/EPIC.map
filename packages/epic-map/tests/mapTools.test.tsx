@@ -59,6 +59,16 @@ vi.mock("@/components/MapTools/useResultHighlight", () => ({
   useResultHighlight: () => {},
 }));
 
+// Drawing needs WebGL; the distance maths stays real.
+const drawMeasure = vi.fn();
+const eraseMeasure = vi.fn();
+
+vi.mock("@/components/MapTools/measure", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  drawMeasure: (...args: unknown[]) => drawMeasure(...args),
+  eraseMeasure: (...args: unknown[]) => eraseMeasure(...args),
+}));
+
 // Only which result is open; the popup has its own test.
 vi.mock("@/components/MapTools/ResultInfoPopup", async () => {
   const { useSelectArea } = await import("@/components/MapTools/SelectAreaContext");
@@ -75,8 +85,10 @@ const { default: MapToolsControl } = await import(
 const { SelectAreaProvider } = await import(
   "@/components/MapTools/SelectAreaContext"
 );
+const { MeasureProvider } = await import("@/components/MapTools/MeasureContext");
 
 const INFO = "Click projects or components on the map to add them.";
+const MEASURE_INFO = "Click points on the map to measure or draw an area.";
 
 const BOUNDARY = { featureId: "{F1}", label: "Project Boundary" };
 const PUMPHOUSE = { featureId: "{A1}", label: "Proposed Pumphouse" };
@@ -84,16 +96,21 @@ const PUMPHOUSE = { featureId: "{A1}", label: "Proposed Pumphouse" };
 const fakeMap = () => ({
   on: vi.fn(),
   off: vi.fn(),
+  getCanvasContainer: vi.fn(() => canvasContainer),
   getContainer: () => ({
     getBoundingClientRect: () => ({ left: 0, top: 0 }),
   }),
 });
 type FakeMap = ReturnType<typeof fakeMap>;
 
+let canvasContainer = document.createElement("div");
+
 const renderTools = (map: FakeMap | null = null) =>
   render(
     <SelectAreaProvider>
-      <MapToolsControl map={map as never} />
+      <MeasureProvider>
+        <MapToolsControl map={map as never} />
+      </MeasureProvider>
     </SelectAreaProvider>,
   );
 
@@ -105,16 +122,26 @@ const selectedRows = () =>
     .queryAllByRole("listitem");
 const infoShown = () => screen.queryAllByText(INFO).length > 0;
 
+/** Fires a map event at the handlers still listening for it. */
+const fire = (
+  map: FakeMap,
+  type: string,
+  point = { x: 1, y: 1 },
+  lngLat = { lng: 0, lat: 0 },
+) => {
+  const listening = map.on.mock.calls.filter(
+    ([event, handler]) =>
+      event === type &&
+      !map.off.mock.calls.some(([, removed]) => removed === handler),
+  );
+  act(() => listening.forEach(([, handler]) => handler({ point, lngLat })));
+};
+
 /** Clicks the map on whatever `hit` describes. */
 const clickMap = (map: FakeMap, feature: typeof hit.feature, dot = false) => {
   hit.feature = feature;
   hit.dot = dot;
-  const listening = map.on.mock.calls.filter(
-    ([event, handler]) =>
-      event === "click" &&
-      !map.off.mock.calls.some(([, removed]) => removed === handler),
-  );
-  act(() => listening.forEach(([, handler]) => handler({ point: { x: 1, y: 1 } })));
+  fire(map, "click");
 };
 
 const RESULTS: WhatsHereLayerResult[] = [
@@ -156,6 +183,9 @@ const group = (name: string) =>
   screen.getByRole("heading", { name: new RegExp(`^${name}`) }).closest("section")!;
 
 beforeEach(() => {
+  canvasContainer = document.createElement("div");
+  drawMeasure.mockReset();
+  eraseMeasure.mockReset();
   hit.dot = false;
   hit.feature = null;
   search.mockReset();
@@ -196,6 +226,182 @@ describe("map tools", () => {
     await userEvent.click(selectArea());
     expect(selectArea().getAttribute("aria-pressed")).toBe("true");
     expect(measure().getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+describe("measuring", () => {
+  // 0.01 degrees of latitude apart: about 1.1 km.
+  const P1 = { lng: -123, lat: 50 };
+  const P2 = { lng: -123, lat: 50.01 };
+  const P3 = { lng: -123, lat: 50.02 };
+
+  const text = (value: string) => screen.queryByText(value);
+  // The status region repeats the hint.
+  const card = () => screen.queryByText(MEASURE_INFO, { selector: "p" });
+  const segmentRows = () =>
+    screen.queryAllByRole("listitem").map((row) => row.textContent);
+  const lastDrawn = () => drawMeasure.mock.calls[drawMeasure.mock.calls.length - 1];
+
+  /** Measure on, with a point dropped at each. */
+  const placing = async (...at: (typeof P1)[]) => {
+    const map = fakeMap();
+    renderTools(map);
+    await userEvent.click(measure());
+    at.forEach((lngLat) => fire(map, "click", undefined, lngLat));
+    return map;
+  };
+
+  it("shows the info card while Measure is on, and dismisses it when turned off", async () => {
+    renderTools();
+
+    await userEvent.click(measure());
+    expect(measure().getAttribute("aria-pressed")).toBe("true");
+    expect(card()).not.toBeNull();
+    expect(screen.getByRole("status").textContent).toBe(MEASURE_INFO);
+
+    await userEvent.click(measure());
+    expect(measure().getAttribute("aria-pressed")).toBe("false");
+    expect(card()).toBeNull();
+  });
+
+  it("swaps the Select area card for its own", async () => {
+    renderTools();
+
+    await userEvent.click(selectArea());
+    await userEvent.click(measure());
+
+    expect(infoShown()).toBe(false);
+    expect(card()).not.toBeNull();
+  });
+
+  it("shows a crosshair over the map while on", async () => {
+    await placing();
+    expect(canvasContainer.style.cursor).toBe("crosshair");
+
+    await userEvent.click(measure());
+    expect(canvasContainer.style.cursor).toBe("");
+  });
+
+  it("prompts for the first point beside the pointer, only over the map", async () => {
+    const map = await placing();
+    expect(text("Add first point")).toBeNull();
+
+    fire(map, "mousemove", { x: 120, y: 80 });
+    expect(text("Add first point")).not.toBeNull();
+    expect(getComputedStyle(text("Add first point")!).top).toBe("80px");
+
+    fire(map, "mouseout");
+    expect(text("Add first point")).toBeNull();
+  });
+
+  it("previews the segment being drawn, with its length at the cursor", async () => {
+    const map = await placing(P1);
+
+    fire(map, "mousemove", { x: 120, y: 80 }, { lng: -123, lat: 50.003 });
+
+    expect(text("~330 m")).not.toBeNull();
+    expect(lastDrawn()).toEqual([
+      map,
+      [[-123, 50]],
+      [
+        [-123, 50],
+        [-123, 50.003],
+      ],
+    ]);
+    expect(card()).toBeNull();
+    expect(screen.getByRole("heading", { name: "Line length" })).toBeDefined();
+    expect(text("~0 km")).not.toBeNull();
+    expect(segmentRows()).toEqual([]);
+    expect(text("Click Done to measure the line")).toBeNull();
+    expect(button("Done").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("lists each segment and the total, with the hint, from two points", async () => {
+    await placing(P1, P2, P3);
+
+    expect(segmentRows()).toEqual([
+      "Point 1 \u2192 Point 2~1.1 km",
+      "Point 2 \u2192 Point 3~1.1 km",
+    ]);
+    expect(text("~2.2 km")).not.toBeNull();
+    expect(text("Click Done to measure the line")).not.toBeNull();
+    expect(button("Done").hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("status").textContent).toBe("Line length about 2.2 km.");
+  });
+
+  it("undoes the last point, back to the empty state", async () => {
+    await placing(P1, P2);
+
+    await userEvent.click(button("Undo"));
+    expect(segmentRows()).toEqual([]);
+    expect(text("Click Done to measure the line")).toBeNull();
+
+    await userEvent.click(button("Undo"));
+    expect(card()).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+  });
+
+  it("finishes the line on Done, keeping it and its lengths but nothing to add to it", async () => {
+    const map = await placing(P1, P2);
+    fire(map, "mousemove", { x: 120, y: 80 }, { lng: -123, lat: 50.013 });
+    expect(text("~330 m")).not.toBeNull();
+
+    await userEvent.click(button("Done"));
+
+    expect(lastDrawn()).toEqual([
+      map,
+      [
+        [-123, 50],
+        [-123, 50.01],
+      ],
+      null,
+    ]);
+    expect(text("~330 m")).toBeNull();
+    expect(canvasContainer.style.cursor).toBe("");
+    expect(card()).toBeNull();
+    expect(segmentRows()).toEqual(["Point 1 \u2192 Point 2~1.1 km"]);
+    expect(text("Click Done to measure the line")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    expect(button("Clear")).toBeDefined();
+
+    fire(map, "click", undefined, P3);
+    expect(segmentRows()).toEqual(["Point 1 \u2192 Point 2~1.1 km"]);
+  });
+
+  it("clears a finished line and starts again with Measure still on", async () => {
+    const map = await placing(P1, P2);
+    await userEvent.click(button("Done"));
+
+    await userEvent.click(button("Clear"));
+
+    expect(measure().getAttribute("aria-pressed")).toBe("true");
+    expect(card()).not.toBeNull();
+    expect(lastDrawn()).toEqual([map, [], null]);
+    expect(canvasContainer.style.cursor).toBe("crosshair");
+
+    fire(map, "click", undefined, P1);
+    expect(text("~0 km")).not.toBeNull();
+  });
+
+  it("takes the line away when Measure is turned off", async () => {
+    await placing(P1, P2);
+
+    await userEvent.click(measure());
+    expect(eraseMeasure).toHaveBeenCalled();
+
+    await userEvent.click(measure());
+    expect(card()).not.toBeNull();
+  });
+
+  it("takes the line away when Select area takes over", async () => {
+    await placing(P1, P2);
+
+    await userEvent.click(selectArea());
+    expect(eraseMeasure).toHaveBeenCalled();
+
+    await userEvent.click(measure());
+    expect(card()).not.toBeNull();
   });
 });
 

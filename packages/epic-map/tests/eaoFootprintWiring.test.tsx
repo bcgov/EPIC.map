@@ -14,6 +14,7 @@ import { useEffect, useRef } from "react";
 import { cleanup, render } from "@testing-library/react";
 import type { MapProject } from "@/components/Filters/filterUtils";
 import type { ProjectFeatures } from "@/api/useProjects";
+import { MeasureProvider, useMeasure } from "@/components/MapTools/MeasureContext";
 import {
   SelectAreaProvider,
   useSelectArea,
@@ -184,6 +185,24 @@ const Selecting = ({
     ids.forEach((featureId) => area.add({ featureId, label: featureId }));
     if (focused) area.focus(focused);
   }, [area, ids, focused]);
+  return null;
+};
+
+/** Turns on Measure; with `done`, finishes a two-point line. */
+const Measuring = ({ done = false }: { done?: boolean }) => {
+  const { toggleTool } = useSelectArea();
+  const { add, finish } = useMeasure();
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    toggleTool("measure");
+    if (done) {
+      add([0, 0]);
+      add([0, 1]);
+      finish();
+    }
+  }, [toggleTool, add, finish, done]);
   return null;
 };
 
@@ -499,5 +518,37 @@ describe("the Select area selection on the map", () => {
     });
 
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe("clicks while Measure is on", () => {
+  const clickWith = (done: boolean) => {
+    state.hit = 205;
+    const onSelect = vi.fn();
+    const map = fakeMap();
+
+    render(
+      <SelectAreaProvider>
+        <MeasureProvider>
+          <Measuring done={done} />
+          <ProjectsControl map={map as never} selectedId={null} onSelect={onSelect} />
+        </MeasureProvider>
+      </SelectAreaProvider>,
+    );
+
+    const click = map.on.mock.calls.find((call) => call[0] === "click");
+    (click![1] as (event: unknown) => void)({
+      point: { x: 1, y: 1 },
+      lngLat: { lng: -123, lat: 50 },
+    });
+    return onSelect;
+  };
+
+  it("opens no project while points are being placed", () => {
+    expect(clickWith(false)).not.toHaveBeenCalled();
+  });
+
+  it("opens projects again once the line is done", () => {
+    expect(clickWith(true)).toHaveBeenCalledWith(205);
   });
 });

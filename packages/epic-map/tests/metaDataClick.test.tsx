@@ -8,8 +8,9 @@
 // every other layer on the map.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { cleanup, render } from "@testing-library/react";
+import { MeasureProvider, useMeasure } from "@/components/MapTools/MeasureContext";
 import {
   SelectAreaProvider,
   useSelectArea,
@@ -180,5 +181,56 @@ describe("while Select area is on", () => {
 
     expect(map.unproject).not.toHaveBeenCalled();
     expect(view.queryByTestId("identify-popup")).toBeNull();
+  });
+});
+
+describe("while Measure is on", () => {
+  /** Turns on Measure; with `done`, finishes a two-point line. */
+  const Measuring = ({ done = false }: { done?: boolean }) => {
+    const { toggleTool } = useSelectArea();
+    const { add, finish } = useMeasure();
+    const started = useRef(false);
+    useEffect(() => {
+      if (started.current) return;
+      started.current = true;
+      toggleTool("measure");
+      if (done) {
+        add([0, 0]);
+        add([0, 1]);
+        finish();
+      }
+    }, [toggleTool, add, finish, done]);
+    return null;
+  };
+
+  const renderMeasuring = (done: boolean) =>
+    render(
+      <SelectAreaProvider>
+        <MeasureProvider>
+          <Measuring done={done} />
+          <MetaDataControl />
+        </MeasureProvider>
+      </SelectAreaProvider>,
+    );
+
+  it("leaves clicks to the points being placed", () => {
+    const map = fakeMap();
+    under.map = map;
+
+    const view = renderMeasuring(false);
+    clickAt(map);
+
+    expect(map.unproject).not.toHaveBeenCalled();
+    expect(view.queryByTestId("identify-popup")).toBeNull();
+  });
+
+  it("identifies again once the line is done", () => {
+    const map = fakeMap();
+    under.map = map;
+
+    renderMeasuring(true);
+    clickAt(map);
+
+    expect(map.unproject).toHaveBeenCalled();
   });
 });

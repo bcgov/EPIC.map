@@ -6,7 +6,11 @@ import { useTheme } from "@mui/material/styles";
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import { BORDER_DEFAULT } from "@/components/Filters/filterTokens";
 import { eaoFeatureAt } from "@/components/Layers/eaoVisibility";
-import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
+import { formatDistance, lineLength } from "@/components/MapTools/measure";
+import { useMeasure } from "@/components/MapTools/MeasureContext";
+import MeasureLayer from "@/components/MapTools/MeasureLayer";
+import MeasurePanel, { MEASURE_HINT } from "@/components/MapTools/MeasurePanel";
+import { useSelectArea, type MapTool } from "@/components/MapTools/SelectAreaContext";
 import ResultInfoPopup from "@/components/MapTools/ResultInfoPopup";
 import SelectAreaPanel, { SELECT_AREA_HINT } from "@/components/MapTools/SelectAreaPanel";
 import { useResultHighlight } from "@/components/MapTools/useResultHighlight";
@@ -94,7 +98,14 @@ export default function MapToolsControl({
     results,
     queryId,
   } = useSelectArea();
+  const { points, clear: clearMeasure } = useMeasure();
   const selecting = active === "select";
+  const measuring = active === "measure";
+
+  const switchTo = (tool: MapTool) => {
+    clearMeasure();
+    toggle(tool);
+  };
 
   useResultHighlight(map);
 
@@ -115,15 +126,19 @@ export default function MapToolsControl({
   }, [map, selecting, add]);
 
   // A summary, not the list.
-  const announcement = !selecting
-    ? ""
-    : queryId !== null
-      ? "Searching the layers on the map."
-      : results
-        ? `${results.reduce((sum, { features }) => sum + features.length, 0)} features found.`
-        : selected.length === 0
-          ? SELECT_AREA_HINT
-          : "";
+  const announcement = measuring
+    ? points.length === 0
+      ? MEASURE_HINT
+      : `Line length about ${formatDistance(lineLength(points))}.`
+    : !selecting
+      ? ""
+      : queryId !== null
+        ? "Searching the layers on the map."
+        : results
+          ? `${results.reduce((sum, { features }) => sum + features.length, 0)} features found.`
+          : selected.length === 0
+            ? SELECT_AREA_HINT
+            : "";
 
   return (
     <>
@@ -131,6 +146,7 @@ export default function MapToolsControl({
         {announcement}
       </Box>
       <ResultInfoPopup map={map} />
+      {measuring && <MeasureLayer map={map} />}
       <Box
         sx={{
           position: "absolute",
@@ -155,19 +171,19 @@ export default function MapToolsControl({
             label="Select area"
             icon={<HighlightAltOutlinedIcon />}
             active={selecting}
-            onClick={() => toggle("select")}
+            onClick={() => switchTo("select")}
           />
-          {/* Measuring itself is a later ticket; the button only toggles. */}
           <ToolButton
             label="Measure"
             icon={<StraightenOutlinedIcon />}
-            active={active === "measure"}
-            onClick={() => toggle("measure")}
+            active={measuring}
+            onClick={() => switchTo("measure")}
           />
         </Box>
 
         <Box sx={{ display: "flex", minHeight: 0 }}>
           {selecting && <SelectAreaPanel map={map} />}
+          {measuring && <MeasurePanel />}
         </Box>
       </Box>
     </>

@@ -1,22 +1,11 @@
 import { Box, Button, ButtonBase, CircularProgress, IconButton, Typography } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import SaveAltIcon from "@mui/icons-material/SaveAlt";
 import SearchIcon from "@mui/icons-material/Search";
 import { useTheme } from "@mui/material/styles";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useWhatsHereApi } from "@/api/useWhatsHere";
-import {
-  ACTIVE_FILL,
-  BORDER_DARK,
-  FOCUS_RING,
-  HOVER_FILL,
-  INFO_BORDER,
-  INFO_FILL,
-  INFO_ICON,
-  LINK,
-  MENU_SEPARATOR,
-} from "@/components/Filters/filterTokens";
+import { ACTIVE_FILL, FOCUS_RING, LINK } from "@/components/Filters/filterTokens";
 import { useLayers } from "@/components/Layers/LayersContext";
 import { useImportedLayersContext } from "@/components/Layers/UserLayers/ImportedLayersContext";
 import {
@@ -24,62 +13,21 @@ import {
   type ResultFeature,
   type ResultGroup,
 } from "@/components/MapTools/SelectAreaContext";
+import {
+  primaryButtonSx,
+  secondaryButtonSx,
+  SMALL_TEXT,
+  ToolFooter,
+  ToolHint,
+  ToolPanel,
+} from "@/components/MapTools/ToolPanel";
 import WhatsHereResults from "@/components/MapTools/WhatsHereResults";
 import { searchedLayers, toGroups, whatsHereRequest } from "@/components/MapTools/whatsHere";
-
-const PANEL_WIDTH = "17.375rem";
-
-const SMALL_TEXT = { fontSize: "0.75rem", lineHeight: 1.5 } as const;
 
 export const SELECT_AREA_HINT = "Click projects or components on the map to add them.";
 
 const NO_LAYERS_MESSAGE = "Switch on a layer in the Layers panel to see what is here.";
 const FAILED_MESSAGE = "The layers could not be searched. Please try again.";
-
-const footerButtonSx = {
-  // Half the row each, so a lone button keeps its size.
-  flex: "0 0 calc(50% - 0.5rem)",
-  height: "1.625rem",
-  minWidth: 0,
-  padding: "0 0.5rem",
-  ...SMALL_TEXT,
-  textTransform: "none",
-  whiteSpace: "nowrap",
-  "& .MuiButton-startIcon": { margin: "0 0.375rem 0 0" },
-  "& .MuiButton-startIcon > svg": { fontSize: "1rem" },
-} as const;
-
-const EmptyState = () => {
-  const theme = useTheme();
-
-  return (
-    <Box sx={{ padding: "0.75rem 1rem" }}>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "flex-start",
-          gap: "0.5rem",
-          padding: "1rem 1.5rem",
-          backgroundColor: INFO_FILL,
-          border: `1px solid ${INFO_BORDER}`,
-          borderRadius: `${theme.shape.borderRadius}px`,
-        }}
-      >
-        <InfoOutlinedIcon
-          sx={{
-            flexShrink: 0,
-            marginTop: "0.125rem",
-            fontSize: "1.125rem",
-            color: INFO_ICON,
-          }}
-        />
-        <Typography sx={{ ...SMALL_TEXT, color: theme.palette.text.primary }}>
-          {SELECT_AREA_HINT}
-        </Typography>
-      </Box>
-    </Box>
-  );
-};
 
 const SelectedList = () => {
   const theme = useTheme();
@@ -187,7 +135,6 @@ export default function SelectAreaPanel({ map }: { map: MapLibreMap | null }) {
   const theme = useTheme();
   const { selected, results, queryId, clear, showInfo } = useSelectArea();
   const runWhatsHere = useRunWhatsHere();
-  const navy = theme.palette.primary.main;
   const querying = queryId !== null;
   const hasFeatures = results?.some(({ features }) => features.length > 0) ?? false;
 
@@ -205,20 +152,9 @@ export default function SelectAreaPanel({ map }: { map: MapLibreMap | null }) {
   };
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 0,
-        width: PANEL_WIDTH,
-        marginTop: "0.5rem",
-        backgroundColor: theme.palette.common.white,
-        borderRadius: `${theme.shape.borderRadius}px`,
-        boxShadow: theme.shadows[3],
-      }}
-    >
+    <ToolPanel>
       {selected.length === 0 ? (
-        <EmptyState />
+        <ToolHint>{SELECT_AREA_HINT}</ToolHint>
       ) : (
         <>
           <Box sx={{ minHeight: 0, overflowY: "auto" }}>
@@ -226,25 +162,8 @@ export default function SelectAreaPanel({ map }: { map: MapLibreMap | null }) {
             <WhatsHereResults onInfo={openInfo} />
           </Box>
 
-          <Box
-            sx={{
-              display: "flex",
-              flexShrink: 0,
-              gap: "1rem",
-              padding: "0.75rem 1rem",
-              borderTop: `1px solid ${MENU_SEPARATOR}`,
-            }}
-          >
-            <Button
-              onClick={clear}
-              sx={{
-                ...footerButtonSx,
-                border: `1px solid ${BORDER_DARK}`,
-                color: theme.palette.text.primary,
-                backgroundColor: theme.palette.common.white,
-                "&:hover": { backgroundColor: HOVER_FILL },
-              }}
-            >
+          <ToolFooter>
+            <Button onClick={clear} sx={secondaryButtonSx(theme)}>
               Clear all
             </Button>
             {results === null ? (
@@ -254,37 +173,21 @@ export default function SelectAreaPanel({ map }: { map: MapLibreMap | null }) {
                 startIcon={
                   querying ? <CircularProgress size="1rem" color="inherit" /> : <SearchIcon />
                 }
-                sx={{
-                  ...footerButtonSx,
-                  border: `1px solid ${navy}`,
-                  color: theme.palette.primary.contrastText,
-                  backgroundColor: navy,
-                  "&:hover": { backgroundColor: theme.palette.primary.dark },
-                  "&.Mui-disabled": { color: theme.palette.primary.contrastText, opacity: 0.7 },
-                }}
+                sx={primaryButtonSx(theme)}
               >
                 What&rsquo;s here
               </Button>
             ) : (
               hasFeatures && (
                 // Export is a later ticket.
-                <Button
-                  startIcon={<SaveAltIcon />}
-                  sx={{
-                    ...footerButtonSx,
-                    border: `1px solid ${navy}`,
-                    color: theme.palette.primary.contrastText,
-                    backgroundColor: navy,
-                    "&:hover": { backgroundColor: theme.palette.primary.dark },
-                  }}
-                >
+                <Button startIcon={<SaveAltIcon />} sx={primaryButtonSx(theme)}>
                   Export
                 </Button>
               )
             )}
-          </Box>
+          </ToolFooter>
         </>
       )}
-    </Box>
+    </ToolPanel>
   );
 }

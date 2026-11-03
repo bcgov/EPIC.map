@@ -434,6 +434,11 @@ export const HIGHLIGHT_POINT_SIZE_PX = 12;
 /** The component clicked in the project panel or the Selected list. */
 export const COMPONENT_HIGHLIGHT_COLOR = "#013366";
 
+/** The measured line and its points. */
+export const MEASURE_COLOR = "#013366";
+export const MEASURE_WIDTH_PX = 2;
+export const MEASURE_POINT_RADIUS_PX = 4;
+
 /** Outline of every feature in the Select area selection, under the navy. */
 export const SELECTION_COLOR = HIGHLIGHT_COLOR;
 export const SELECTION_WIDTH_PX = 2;
