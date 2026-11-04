@@ -33,11 +33,6 @@ class User(BaseModel):
     is_active = Column(Boolean, default=True, server_default='t', nullable=False)
 
     @classmethod
-    def get_all(cls):
-        """Fetch list of users by access type."""
-        return cls.query.all()
-
-    @classmethod
     def find_by_auth_guid(cls, auth_guid: str) -> Optional[User]:
         """Return the active user for an identity provider guid."""
         if not auth_guid:
@@ -50,21 +45,6 @@ class User(BaseModel):
         if not username:
             return None
         return cls.query.filter_by(username=username).first()
-
-    @classmethod
-    def create_user(cls, user_data) -> User:
-        """Create user."""
-        user_data = User(
-            first_name=user_data.get('first_name', None),
-            middle_name=user_data.get('middle_name', None),
-            last_name=user_data.get('last_name', None),
-            email_address=user_data.get('email_address', None),
-            contact_number=user_data.get('contact_number', None),
-            username=user_data.get('username', None),
-            auth_guid=user_data.get('auth_guid', None),
-        )
-        user_data.save()
-        return user_data
 
     @classmethod
     def update_user(cls, user_id, user_dict) -> Optional[User]:
