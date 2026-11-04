@@ -250,12 +250,17 @@ describe("variants", () => {
 });
 
 describe("label order", () => {
-  it("puts the footprint first and leaves the rest in their order", () => {
+  const labelsOf = (labels: string[]) =>
+    onlySubmission(labels.map((label) => component({ label }))).labels.map(
+      ({ label }) => label,
+    );
+
+  it("puts the footprint first and sorts the rest", () => {
     const submission = onlySubmission([
-      component({ label: "Access Route" }),
+      component({ label: "Pumphouse" }),
       component({ label: "Falls Reservoir" }),
       component({ label: "Project Boundary", footprint: true }),
-      component({ label: "Pumphouse" }),
+      component({ label: "Access Route" }),
     ]);
 
     expect(submission.labels.map(({ label }) => label)).toEqual([
@@ -264,6 +269,57 @@ describe("label order", () => {
       "Falls Reservoir",
       "Pumphouse",
     ]);
+  });
+
+  it("sorts numbers by value and ignores case", () => {
+    expect(labelsOf(["Pit 25", "pit 5", "Pit 1", "Pit 15", "access road"])).toEqual([
+      "access road",
+      "Pit 1",
+      "pit 5",
+      "Pit 15",
+      "Pit 25",
+    ]);
+  });
+
+  it("gives the same order whatever order the data arrives in", () => {
+    const labels = ["Year 15", "Dam", "Year 5", "Year 1"];
+
+    expect(labelsOf(labels)).toEqual(labelsOf([...labels].reverse()));
+  });
+
+  it("orders labels that differ only in case the same either way", () => {
+    expect(labelsOf(["Pit 5", "pit 5"])).toEqual(labelsOf(["pit 5", "Pit 5"]));
+  });
+});
+
+describe("comment order", () => {
+  const commentsOf = (comments: Array<string | null>) =>
+    onlySubmission(
+      comments.map((comment) => component({ label: "Supernatant Pond", comment })),
+    ).labels[0].variants.map(({ comment }) => comment);
+
+  it("sorts a label's comments with numbers by value", () => {
+    expect(
+      commentsOf([
+        "Year 25 - Figure 4-7",
+        "T-Creek Alternative - Figure 4-11",
+        "Year 5 - Figure 4-5",
+        "year 15 - Figure 4-6",
+        "Harper Creek Alternative - Figure 4-11",
+        "Year 1 - Figure 4-4",
+      ]),
+    ).toEqual([
+      "Harper Creek Alternative - Figure 4-11",
+      "T-Creek Alternative - Figure 4-11",
+      "Year 1 - Figure 4-4",
+      "Year 5 - Figure 4-5",
+      "year 15 - Figure 4-6",
+      "Year 25 - Figure 4-7",
+    ]);
+  });
+
+  it("puts the uncommented row first", () => {
+    expect(commentsOf(["Phase 2", null, "Phase 1"])).toEqual([null, "Phase 1", "Phase 2"]);
   });
 });
 

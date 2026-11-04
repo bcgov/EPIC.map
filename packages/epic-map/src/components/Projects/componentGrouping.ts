@@ -103,24 +103,33 @@ const flagOf = (features: readonly ProjectComponent[]): ComponentFlag | null => 
   return null;
 };
 
+/** Numbers by value: "Year 5" before "Year 15". Case only breaks ties. */
+const naturalOrder = new Intl.Collator("en", { numeric: true }).compare;
+
+const commentOrder = (a: CommentVariant, b: CommentVariant) =>
+  naturalOrder(a.comment ?? "", b.comment ?? "");
+
 const toLabelGroup = (features: ProjectComponent[]): LabelGroup => ({
   label: features[0].label,
   featureIds: idsOf(features),
-  variants: groupBy(features, ({ comment }) => comment ?? "").map((same) => ({
-    key: same[0].featureId,
-    comment: same[0].comment,
-    features: same,
-    featureIds: idsOf(same),
-    flag: flagOf(same),
-  })),
+  variants: groupBy(features, ({ comment }) => comment ?? "")
+    .map((same) => ({
+      key: same[0].featureId,
+      comment: same[0].comment,
+      features: same,
+      featureIds: idsOf(same),
+      flag: flagOf(same),
+    }))
+    .sort(commentOrder),
 });
 
 const isFootprint = ({ variants }: LabelGroup) =>
   variants.some(({ features }) => features.some(({ footprint }) => footprint));
 
-/** The project's boundary first; sort is stable, so the rest keep their order. */
-const footprintFirst = (labels: LabelGroup[]) =>
-  labels.sort((a, b) => Number(isFootprint(b)) - Number(isFootprint(a)));
+/** The project's boundary first, then the rest in natural order. */
+const labelOrder = (a: LabelGroup, b: LabelGroup) =>
+  Number(isFootprint(b)) - Number(isFootprint(a)) ||
+  naturalOrder(a.label, b.label);
 
 const toSubmission = (features: ProjectComponent[]): Submission => {
   const subcategory = subcategoryOf(features[0]);
@@ -132,7 +141,9 @@ const toSubmission = (features: ProjectComponent[]): Submission => {
     date: latestDate(features),
     sources: unique(features.map(({ source }) => source)),
     featureIds: idsOf(features),
-    labels: footprintFirst(groupBy(features, ({ label }) => label).map(toLabelGroup)),
+    labels: groupBy(features, ({ label }) => label)
+      .map(toLabelGroup)
+      .sort(labelOrder),
   };
 };
 
