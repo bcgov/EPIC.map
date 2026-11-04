@@ -45,80 +45,74 @@ def test_username_falls_back_to_preferred_username(app):
 @pytest.mark.parametrize(
     'groups,expected',
     [
-        (['/EPIC/MAP/user'], True),
-        (['MAP'], True),
-        (['/EPIC/map/admin'], True),
-        (['/EPIC/COMPLIANCE/user'], False),
+        (['/TRACK/VIEWER'], True),
+        (['/TRACK/SUPER_USER'], True),
+        (['/track/super_user'], True),
+        (['/SUBMIT/EAO_STAFF', '/TRACK/INSTANCE_ADMIN'], True),
+        (['/TRACK/NO_ROLE'], False),
+        (['/TRACK'], False),
+        (['/SUBMIT/EAO_STAFF'], False),
+        (['/COMPLIANCE/USER'], False),
+        (['/ENGAGE/EAO_TEAM_MEMBER'], False),
+        (['/SUBTRACK/VIEWER'], False),
+        (['VIEWER'], False),
         ([], False),
     ],
 )
-def test_group_membership_decides_access_when_a_group_is_required(
-    app, groups, expected
-):
-    """With AUTH_REQUIRED_GROUP set, a token is only good here if it names it."""
+def test_a_role_in_an_allowed_app_grants_access(app, groups, expected):
+    """A role group under TRACK gets in; NO_ROLE and other apps do not."""
     with app.app_context():
-        app.config['AUTH_REQUIRED_GROUP'] = 'MAP'
-        assert token_utils.belongs_to_app(idir_claims(groups=groups)) is expected
+        assert token_utils.has_app_access(idir_claims(groups=groups)) is expected
 
 
-@pytest.mark.parametrize('groups', [[], ['/EPIC/COMPLIANCE/user']])
-def test_groups_are_not_consulted_when_no_group_is_required(app, groups):
-    """Unset AUTH_REQUIRED_GROUP means the gate is off, not that it denies all."""
+def test_no_allowed_app_groups_denies_everyone(app, monkeypatch):
+    """An empty list fails closed rather than switching the check off."""
+    monkeypatch.setitem(app.config, 'ALLOWED_APP_GROUPS', [])
     with app.app_context():
-        app.config['AUTH_REQUIRED_GROUP'] = ''
-        assert token_utils.belongs_to_app(idir_claims(groups=groups)) is True
+        assert token_utils.has_app_access(idir_claims()) is False
 
 
-ALLOWLIST = ['compliance-web', 'submit-web', 'track-web', 'map-web']
+ALLOWLIST = ['epic-centre', 'map-web']
 
 
 @pytest.mark.parametrize('client', ALLOWLIST)
-def test_a_token_from_any_allowed_client_is_accepted(app, client):
+def test_a_token_from_any_allowed_client_is_accepted(app, client, monkeypatch):
     """Each EPIC application has its own keycloak client; all of them may call."""
     with app.app_context():
-        app.config['ALLOWED_CLIENT_IDS'] = ALLOWLIST
+        monkeypatch.setitem(app.config, 'ALLOWED_CLIENT_IDS', ALLOWLIST)
         assert token_utils.is_allowed_client(idir_claims(azp=client)) is True
 
 
-def test_the_audience_claim_is_accepted_as_well_as_azp(app):
-    """A deployment that puts the client in aud rather than azp still works."""
+@pytest.mark.parametrize('aud', ['epic-centre', ['epic-submit', 'account', 'epic-centre']])
+def test_an_allowed_client_in_aud_alone_is_refused(app, monkeypatch, aud):
+    """Keycloak lists in aud every client the user holds a role in, so only azp names the caller."""
     with app.app_context():
-        app.config['ALLOWED_CLIENT_IDS'] = ALLOWLIST
-        claims = idir_claims(aud='track-web', azp='something-else')
+        monkeypatch.setitem(app.config, 'ALLOWED_CLIENT_IDS', ALLOWLIST)
+        claims = idir_claims(aud=aud, azp='epic-submit')
 
-        assert token_utils.is_allowed_client(claims) is True
-
-
-def test_an_audience_list_is_searched_not_compared(app):
-    """`aud` may be a list; any entry on the allowlist is enough."""
-    with app.app_context():
-        app.config['ALLOWED_CLIENT_IDS'] = ALLOWLIST
-        claims = idir_claims(aud=['account', 'submit-web'], azp='unlisted')
-
-        assert token_utils.is_allowed_client(claims) is True
+        assert token_utils.is_allowed_client(claims) is False
 
 
-def test_a_token_from_an_unlisted_client_is_refused(app):
+def test_a_token_from_an_unlisted_client_is_refused(app, monkeypatch):
     """A client in the shared realm that this API does not serve is not a caller."""
     with app.app_context():
-        app.config['ALLOWED_CLIENT_IDS'] = ALLOWLIST
+        monkeypatch.setitem(app.config, 'ALLOWED_CLIENT_IDS', ALLOWLIST)
         claims = idir_claims(aud='account', azp='some-other-realm-client')
 
         assert token_utils.is_allowed_client(claims) is False
 
 
-def test_an_empty_allowlist_denies_everything(app):
+def test_an_empty_allowlist_denies_everything(app, monkeypatch):
     """A misconfigured deployment must stop serving, not serve everyone."""
     with app.app_context():
-        app.config['ALLOWED_CLIENT_IDS'] = []
+        monkeypatch.setitem(app.config, 'ALLOWED_CLIENT_IDS', [])
 
         assert token_utils.is_allowed_client(idir_claims()) is False
 
 
-def test_a_single_entry_allowlist_behaves_like_one_audience(app):
-    """The shape this collapses to once a dedicated api scope exists."""
+def test_a_token_without_azp_is_refused(app, monkeypatch):
+    """No azp means no named caller, whatever aud says."""
     with app.app_context():
-        app.config['ALLOWED_CLIENT_IDS'] = ['epic-map-api']
+        monkeypatch.setitem(app.config, 'ALLOWED_CLIENT_IDS', ALLOWLIST)
 
-        assert token_utils.is_allowed_client(idir_claims(aud='epic-map-api')) is True
-        assert token_utils.is_allowed_client(idir_claims(azp='map-web')) is False
+        assert token_utils.is_allowed_client(idir_claims(aud='epic-centre', azp=None)) is False

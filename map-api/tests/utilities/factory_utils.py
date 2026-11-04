@@ -50,7 +50,7 @@ SECOND_IDIR_USERNAME = 'BJONES'
 
 # The keycloak client a token is issued to, in the `azp` claim. In the shared
 # EAO realm every EPIC application receives aud "account", so azp is what
-# actually distinguishes them - which is why the API checks both.
+# actually distinguishes them - which is why the API checks azp.
 TEST_CLIENT_ID = 'map-web'
 TEST_SHARED_AUDIENCE = 'account'
 
@@ -77,7 +77,7 @@ def idir_claims(**overrides):
         'given_name': 'Jane',
         'family_name': 'Smith',
         'email': 'jane.smith@gov.bc.ca',
-        'groups': ['/EPIC/MAP/user'],
+        'groups': ['/TRACK/VIEWER'],
         'resource_access': {
             CONFIG.JWT_OIDC_CLIENT_ID: {'roles': ['user']},
         },

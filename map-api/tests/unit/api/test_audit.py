@@ -67,9 +67,9 @@ def test_host_app_comes_from_azp(claims, expected):
 def test_host_app_ignores_the_audience(app):
     """The aud claim is shared across clients, so it cannot name the caller."""
     with app.app_context():
-        claims = idir_claims(aud='account', azp='submit-web')
+        claims = idir_claims(aud='account', azp='epic-centre')
 
-        assert token_utils.host_app(claims) == 'submit-web'
+        assert token_utils.host_app(claims) == 'epic-centre'
 
 
 # --- append only ------------------------------------------------------------
@@ -95,7 +95,7 @@ def test_audit_event_has_no_updated_columns(column):
 
 @pytest.mark.parametrize(
     'host_app',
-    ['compliance-web', 'submit-web', 'track-web', 'map-web'],
+    ['epic-centre', 'map-web'],
 )
 def test_an_audited_call_records_the_calling_application(
     app, client, jwt, session, stub_user_sync, host_app
