@@ -20,15 +20,16 @@ export const BC_EXTENT: MapExtent = [-139.1, 48.2, -114.0, 60.1];
 export const DEFAULT_EXTENT: MapExtent = BC_EXTENT;
 
 /**
- * How far the camera may travel, as `[west, south, east, north]`. BC_EXTENT
- * padded by a few degrees so border and offshore projects can still be framed
- * with room around them. MapLibre also refuses to zoom out past the point where
- * this box would no longer fill the viewport, which is the real floor on a large
- * screen; MIN_ZOOM is the floor on a small one.
+ * Where the camera's centre may go, as `[west, south, east, north]`: BC_EXTENT
+ * padded by a few degrees so border and offshore projects can still be framed.
+ * It bounds the centre only, not the viewport - MapLibre's `maxBounds` would
+ * zoom in until the box filled the screen, cropping BC on any viewport whose
+ * shape differs from the box's.
  */
-export const MAX_BOUNDS: MapExtent = [-143, 47, -110, 61];
+export const CENTER_BOUNDS: MapExtent = [-143, 47, -110, 61];
 
-export const MIN_ZOOM = 4;
+/** Low enough to fit BC in the import preview, the smallest map (~z3.2). */
+export const MIN_ZOOM = 3;
 export const MAX_ZOOM = 18;
 
 /**

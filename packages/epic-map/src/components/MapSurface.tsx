@@ -15,10 +15,10 @@ import ProjectsControl from "@/components/Projects/ProjectsControl";
 import { LayersProvider } from "@/components/Layers/LayersContext";
 import { RevealedComponentsProvider } from "@/components/Projects/RevealedComponentsContext";
 import { carryWidgetLayers } from "@/components/Layers/layerUtils";
+import { constrainToBC } from "@/utils/camera";
 import {
   DEFAULT_BASEMAP,
   DEFAULT_EXTENT,
-  MAX_BOUNDS,
   MAX_ZOOM,
   MIN_ZOOM,
   PROJECT_CARD_WIDTH_PX,
@@ -70,7 +70,7 @@ export default function MapSurface({
       container,
       style: appliedStyle.current,
       bounds: DEFAULT_EXTENT,
-      maxBounds: MAX_BOUNDS,
+      transformConstrain: constrainToBC,
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
       renderWorldCopies: false,
