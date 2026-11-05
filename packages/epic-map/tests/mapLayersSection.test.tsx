@@ -15,6 +15,7 @@ import {
   RevealedComponentsProvider,
   useRevealedComponents,
 } from "@/components/Projects/RevealedComponentsContext";
+import type { MapExtent } from "@/types";
 
 const component = (overrides: Partial<ProjectComponent>): ProjectComponent => ({
   featureId: "{F1}",
@@ -30,8 +31,11 @@ const component = (overrides: Partial<ProjectComponent>): ProjectComponent => ({
   sensitive: false,
   adjusted: false,
   footprint: false,
+  bounds: [-123, 49, -123, 49],
   ...overrides,
 });
+
+const SHREW_BOUNDS: MapExtent = [-122.5, 49.1, -122.2, 49.4];
 
 const COMPONENTS = [
   component({ featureId: "{P1}", label: "Access Route", comment: "Amendment 1" }),
@@ -46,6 +50,7 @@ const COMPONENTS = [
     componentType: "Value component",
     label: "Wildlife Habitat Area",
     comment: "Pacific Water Shrew",
+    bounds: SHREW_BOUNDS,
   }),
 ];
 
@@ -78,10 +83,12 @@ const Probe = () => {
   return null;
 };
 
+const frameOnMap = vi.fn();
+
 const renderSection = () =>
   render(
     <RevealedComponentsProvider>
-      <MapLayersSection projectId={7} />
+      <MapLayersSection projectId={7} frameOnMap={frameOnMap} />
       <Probe />
     </RevealedComponentsProvider>,
   );
@@ -91,6 +98,7 @@ beforeEach(() => {
   revealed.ids = [];
   revealed.hidden = [];
   revealed.selected = [];
+  frameOnMap.mockClear();
 });
 afterEach(cleanup);
 
@@ -370,6 +378,86 @@ describe("selecting a component", () => {
   });
 });
 
+describe("moving the map to a selected component", () => {
+  const row = (name: string) => screen.getByRole("button", { name });
+
+  it("frames the row that was clicked", () => {
+    renderSection();
+
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(frameOnMap).toHaveBeenCalledTimes(1);
+    expect(frameOnMap).toHaveBeenCalledWith(SHREW_BOUNDS);
+  });
+
+  it("frames every feature of the row together", () => {
+    state.components = [
+      component({ featureId: "{A1}", bounds: [-124, 50, -123.5, 50.5] }),
+      component({ featureId: "{A2}", bounds: [-123, 49, -123, 49] }),
+    ];
+    renderSection();
+
+    fireEvent.click(row("Access Route"));
+
+    expect(frameOnMap).toHaveBeenCalledWith([-124, 49, -123, 50.5]);
+  });
+
+  it("frames only the features drawn, leaving a hidden sensitive one out", () => {
+    state.components = [
+      component({ featureId: "{A1}", bounds: [-124, 50, -123.5, 50.5] }),
+      component({ featureId: "{S1}", sensitive: true, bounds: [-120, 55, -120, 55] }),
+    ];
+    renderSection();
+
+    fireEvent.click(row("Access Route"));
+
+    expect(frameOnMap).toHaveBeenCalledWith([-124, 50, -123.5, 50.5]);
+  });
+
+  it("moves to a newly selected component", () => {
+    renderSection();
+
+    fireEvent.click(row("Access Route Amendment 1"));
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(frameOnMap).toHaveBeenCalledTimes(2);
+    expect(frameOnMap).toHaveBeenLastCalledWith(SHREW_BOUNDS);
+  });
+
+  it("stays put when the selected row is clicked again", () => {
+    renderSection();
+
+    fireEvent.click(row("Pacific Water Shrew"));
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(frameOnMap).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays put when the selected component is taken off the map", () => {
+    renderSection();
+
+    fireEvent.click(row("Pacific Water Shrew"));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show Wildlife Habitat Area: Pacific Water Shrew on the map",
+      }),
+    );
+
+    expect(frameOnMap).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays put for a component that is off the map", () => {
+    state.components = [
+      component({ featureId: "{S1}", label: "Laydown Area", sensitive: true }),
+    ];
+    renderSection();
+
+    fireEvent.click(row("Laydown Area"));
+
+    expect(frameOnMap).not.toHaveBeenCalled();
+  });
+});
+
 describe("sharing the component highlight with Select area", () => {
   const row = (name: string) => screen.getByRole("button", { name });
   const area: { current: ReturnType<typeof useSelectArea> | null } = {
@@ -388,7 +476,7 @@ describe("sharing the component highlight with Select area", () => {
     render(
       <SelectAreaProvider>
         <RevealedComponentsProvider>
-          <MapLayersSection projectId={7} />
+          <MapLayersSection projectId={7} frameOnMap={frameOnMap} />
           <Probe />
           <AreaProbe />
         </RevealedComponentsProvider>

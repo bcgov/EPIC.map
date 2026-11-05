@@ -45,7 +45,14 @@ const { default: ProjectCard } = await import(
 
 const card = (certificate: Partial<Project>) => {
   state.project = { ...PROJECT, ...certificate };
-  render(<ProjectCard projectId={7} point={null} onClose={vi.fn()} />);
+  render(
+    <ProjectCard
+      projectId={7}
+      point={null}
+      onClose={vi.fn()}
+      frameOnMap={vi.fn()}
+    />,
+  );
 };
 
 beforeEach(() => {

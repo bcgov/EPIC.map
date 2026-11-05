@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { FeatureCollection, Point } from "geojson";
 import type { MapProject } from "@/components/Filters/filterUtils";
+import type { MapExtent } from "@/types";
 import { PROJECTS_REFRESH_MS } from "@/utils/config";
 import { epicMapQueryKey } from "@/utils/queryKeys";
 import { useMapWidget } from "@/widget/MapWidgetContext";
@@ -138,6 +139,8 @@ export interface ProjectComponent {
   sensitive: boolean;
   adjusted: boolean;
   footprint: boolean;
+  /** West, south, east, north in degrees; null for an empty geometry. */
+  bounds: MapExtent | null;
 }
 
 export const useProjectComponents = (projectId: number) => {

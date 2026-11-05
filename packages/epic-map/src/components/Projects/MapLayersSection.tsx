@@ -20,6 +20,8 @@ import SubmissionGroup, {
   type ComponentControls,
   listSx,
 } from "@/components/Projects/SubmissionGroup";
+import type { MapExtent } from "@/types";
+import { unionBounds } from "@/utils/geo";
 
 const EMPTY_TEXT_COLOR = "#757371";
 
@@ -124,8 +126,16 @@ const ComponentTypeSection = ({
   );
 };
 
+type MapLayersSectionProps = {
+  projectId: number;
+  frameOnMap: (bounds: MapExtent) => void;
+};
+
 /** A project's submitted project and value components, and their map toggles. */
-export default function MapLayersSection({ projectId }: { projectId: number }) {
+export default function MapLayersSection({
+  projectId,
+  frameOnMap,
+}: MapLayersSectionProps) {
   const {
     data: components,
     isLoading,
@@ -189,6 +199,16 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
     select: (key) => {
       unfocus();
       setSelectedKey((current) => (current === key ? null : key));
+      // Re-clicking only deselects.
+      if (key === selectedKey) return;
+      // Drawn features only, so a hidden sensitive one stays unrevealed.
+      const shown = new Set(revealed);
+      const bounds = unionBounds(
+        (findVariant(groups, key)?.features ?? [])
+          .filter(({ featureId }) => shown.has(featureId))
+          .map(({ bounds }) => bounds),
+      );
+      if (bounds) frameOnMap(bounds);
     },
   };
 

@@ -28,6 +28,7 @@ import {
 import ExpandableText from "@/components/Projects/ExpandableText";
 import MapLayersSection from "@/components/Projects/MapLayersSection";
 import WorksSection from "@/components/Projects/WorksSection";
+import type { MapExtent } from "@/types";
 import { PROJECT_CARD_WIDTH_PX } from "@/utils/config";
 
 const GLYPH_ICONS: Record<ProjectGlyph, ElementType> = {
@@ -85,6 +86,7 @@ type ProjectCardProps = {
   /** The dot's own properties, shown while the rest of the card loads. */
   point: ProjectPoint | null;
   onClose: () => void;
+  frameOnMap: (bounds: MapExtent) => void;
 };
 
 /** The selected project, docked on the map's right edge. */
@@ -92,6 +94,7 @@ export default function ProjectCard({
   projectId,
   point,
   onClose,
+  frameOnMap,
 }: ProjectCardProps) {
   const theme = useTheme();
   const { data: project, error, isLoading } = useProject(projectId);
@@ -222,7 +225,7 @@ export default function ProjectCard({
         </Box>
         {project && !error && (
           <>
-            <MapLayersSection projectId={projectId} />
+            <MapLayersSection projectId={projectId} frameOnMap={frameOnMap} />
             <WorksSection projectId={projectId} />
           </>
         )}

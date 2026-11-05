@@ -16,6 +16,7 @@ import ProjectTooltip from "@/components/Projects/ProjectTooltip";
 import {
   addMissingProjectImage,
   type DrawnProjectPoint,
+  frameBesideCard,
   glyphForType,
   type HoveredProject,
   hoveredProjectAt,
@@ -25,6 +26,7 @@ import {
   setSelectedProject,
   showProjects,
 } from "@/components/Projects/projectUtils";
+import type { MapExtent } from "@/types";
 import { FOCUS_FLY_MS, PROJECT_CARD_WIDTH_PX } from "@/utils/config";
 
 /** Space kept between a revealed dot and the card's edge. */
@@ -203,6 +205,13 @@ export default function ProjectsControl({
     if (map) setSelectedProject(map, selectedId);
   }, [map, selectedId]);
 
+  const frameOnMap = useCallback(
+    (bounds: MapExtent) => {
+      if (map) frameBesideCard(map, bounds);
+    },
+    [map],
+  );
+
   const point =
     selectedId === null
       ? null
@@ -220,6 +229,7 @@ export default function ProjectsControl({
           projectId={selectedId}
           point={point}
           onClose={() => onSelect(null)}
+          frameOnMap={frameOnMap}
         />
       )}
     </>

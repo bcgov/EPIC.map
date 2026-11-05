@@ -36,6 +36,7 @@ def insert_feature(feature_id: str, **overrides):
         'date_received': None,
         'sensitive': None,
         'gis_adjusted': None,
+        'wkt': 'POINT(-123 49)',
         **overrides,
     }
     db.session.execute(
@@ -50,7 +51,7 @@ def insert_feature(feature_id: str, **overrides):
                 :track_id, 'Nixon Road Wellsite', :label, :component_type,
                 :category, :subcategory, :date_received, :sensitive,
                 :gis_adjusted,
-                ST_Transform(ST_GeomFromText('POINT(-123 49)', 4326), 3857)
+                ST_Transform(ST_GeomFromText(:wkt, 4326), 3857)
             )
         """),
         row,
@@ -102,6 +103,33 @@ def test_newest_submission_comes_first(app, session):
 
     assert [component['feature_id'] for component in components] == ['{A3}', '{A2}', '{A1}']
     assert components[0]['date'] == date(2026, 8, 25)
+
+
+def test_a_point_is_bounded_by_itself(app, session):
+    """A zero-size box, in degrees."""
+    insert_feature('{A1}')
+
+    [component] = ProjectComponentService.for_project(TRACK_ID)
+
+    assert component['bounds'] == pytest.approx([-123, 49, -123, 49])
+
+
+def test_a_polygon_is_bounded_by_its_extent(app, session):
+    """West, south, east, north in degrees."""
+    insert_feature('{A1}', wkt='POLYGON((-124 50, -122 50, -123 51.5, -124 50))')
+
+    [component] = ProjectComponentService.for_project(TRACK_ID)
+
+    assert component['bounds'] == pytest.approx([-124, 50, -122, 51.5])
+
+
+def test_an_empty_geometry_has_no_bounds(app, session):
+    """Null, not four nulls."""
+    insert_feature('{A1}', wkt='POLYGON EMPTY')
+
+    [component] = ProjectComponentService.for_project(TRACK_ID)
+
+    assert component['bounds'] is None
 
 
 def test_a_project_with_no_submission_is_empty(app, session):

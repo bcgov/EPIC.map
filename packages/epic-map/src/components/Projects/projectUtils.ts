@@ -8,7 +8,14 @@ import type {
 } from "maplibre-gl";
 import type { Project, ProjectPoint, ProjectWork } from "@/api/useProjects";
 import { whenStyleReady } from "@/components/Layers/layerUtils";
-import { WIDGET_ID_PREFIX } from "@/utils/config";
+import type { MapExtent } from "@/types";
+import {
+  FOCUS_FLY_MS,
+  FOCUS_MAX_ZOOM,
+  FOCUS_PADDING_PX,
+  PROJECT_CARD_WIDTH_PX,
+  WIDGET_ID_PREFIX,
+} from "@/utils/config";
 
 // --- Project card colours ---
 
@@ -368,6 +375,22 @@ export const hoveredProjectAt = (
   if (typeof name !== "string" || !name) return null;
   const [longitude, latitude] = top.geometry.coordinates;
   return { id: top.id, name, lngLat: [longitude, latitude] };
+};
+
+// --- Component framing ---
+
+/** Fits bounds left of the card; a point lands at FOCUS_MAX_ZOOM. */
+export const frameBesideCard = (map: MapLibreMap, bounds: MapExtent) => {
+  const camera = map.cameraForBounds(bounds, {
+    padding: {
+      top: FOCUS_PADDING_PX,
+      bottom: FOCUS_PADDING_PX,
+      left: FOCUS_PADDING_PX,
+      right: FOCUS_PADDING_PX + PROJECT_CARD_WIDTH_PX,
+    },
+    maxZoom: FOCUS_MAX_ZOOM,
+  });
+  if (camera) map.easeTo({ ...camera, duration: FOCUS_FLY_MS });
 };
 
 // --- Work state badges and meta line ---

@@ -25,6 +25,7 @@ const component = (overrides: Partial<ProjectComponent> = {}): ProjectComponent 
   sensitive: false,
   adjusted: false,
   footprint: false,
+  bounds: null,
   ...overrides,
 });
 
