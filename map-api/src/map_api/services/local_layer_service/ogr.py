@@ -28,7 +28,7 @@ from typing import Callable, List
 
 # The same six arguments throughout: a parameter object would move the list
 # rather than shorten it, and put a layer between the test and the argv.
-# pylint: disable=too-many-arguments
+# pylint: disable=too-many-arguments,too-many-positional-arguments
 
 
 # Pinned: a load that cannot be repeated is not evidence. The ingest image is
