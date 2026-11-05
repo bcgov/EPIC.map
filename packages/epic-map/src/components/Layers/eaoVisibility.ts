@@ -99,26 +99,50 @@ export const footprintTrackIdAt = (
   return null;
 };
 
-/** The topmost drawn footprint or component within `tolerance` pixels of a point, or null. */
-export const eaoFeatureAt = (
+/** Drawn footprints and components within `tolerance` pixels of a point, topmost first. */
+const eaoFeaturesNear = (
   map: MapLibreMap,
   { x, y }: MapLibrePoint,
   tolerance: number,
-): { featureId: string; label: string } | null => {
+) => {
   const layers = localDrawnIds(map, localLayerId(EAO_OBJECT_NAME)).filter(
     (id) => map.getLayer(id),
   );
-  if (layers.length === 0) return null;
+  if (layers.length === 0) return [];
 
   const box: [[number, number], [number, number]] = [
     [x - tolerance, y - tolerance],
     [x + tolerance, y + tolerance],
   ];
-  for (const feature of map.queryRenderedFeatures(box, { layers })) {
+  return map.queryRenderedFeatures(box, { layers });
+};
+
+/** The topmost drawn footprint or component within `tolerance` pixels of a point, or null. */
+export const eaoFeatureAt = (
+  map: MapLibreMap,
+  point: MapLibrePoint,
+  tolerance: number,
+): { featureId: string; label: string } | null => {
+  for (const feature of eaoFeaturesNear(map, point, tolerance)) {
     const featureId = feature.properties?.feature_id;
     if (typeof featureId !== "string") continue;
     const label = String(feature.properties?.label ?? "").trim();
     return { featureId, label: label || "Unnamed feature" };
   }
   return null;
+};
+
+/**
+ * Every drawn footprint and component within `tolerance` pixels of a point,
+ * topmost first, so a caller can skip those that are not its own.
+ */
+export const eaoFeatureIdsAt = (
+  map: MapLibreMap,
+  point: MapLibrePoint,
+  tolerance: number,
+): string[] => {
+  const ids = eaoFeaturesNear(map, point, tolerance)
+    .map((feature) => feature.properties?.feature_id)
+    .filter((id): id is string => typeof id === "string");
+  return [...new Set(ids)];
 };

@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import type { ReactNode, Ref } from "react";
 import { Box, ButtonBase, IconButton, Switch, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import EditNoteIcon from "@mui/icons-material/EditNote";
@@ -28,7 +28,7 @@ import {
 const MUTED_TEXT_COLOR = "#9f9d9c";
 
 /** Labels shown before the rest collapse behind "Show all". */
-const COLLAPSED_LABELS = 5;
+export const COLLAPSED_LABELS = 5;
 
 const FLAGS = {
   sensitive: { text: "Sensitive", color: "#ce3e39", Icon: WarningIcon },
@@ -90,6 +90,7 @@ export interface ComponentControls {
   setShown: (featureIds: readonly string[], shown: boolean) => void;
   selectedKey: string | null;
   select: (variantKey: string) => void;
+  selectedRowRef: Ref<HTMLButtonElement>;
 }
 
 const EYE_CLASS = "epic-map-component-eye";
@@ -137,6 +138,7 @@ type SelectableProps = {
   selected: boolean;
   shown: boolean;
   onSelect: () => void;
+  selectedRef: Ref<HTMLButtonElement>;
   children: ReactNode;
 };
 
@@ -145,9 +147,11 @@ const Selectable = ({
   selected,
   shown,
   onSelect,
+  selectedRef,
   children,
 }: SelectableProps) => (
   <ButtonBase
+    ref={selected ? selectedRef : undefined}
     aria-pressed={selected}
     onClick={onSelect}
     sx={{
@@ -199,6 +203,7 @@ const LabelEntry = ({ group, submissionShown, controls }: LabelEntryProps) => {
             selected={controls.selectedKey === first.key}
             shown={submissionShown && labelShown}
             onSelect={() => controls.select(first.key)}
+            selectedRef={controls.selectedRowRef}
           >
             <span>{group.label}</span>
             {first.comment && (
@@ -243,6 +248,7 @@ const LabelEntry = ({ group, submissionShown, controls }: LabelEntryProps) => {
                   selected={controls.selectedKey === variant.key}
                   shown={submissionShown && shown}
                   onSelect={() => controls.select(variant.key)}
+                  selectedRef={controls.selectedRowRef}
                 >
                   <Box
                     component="span"
@@ -276,6 +282,8 @@ type SubmissionGroupProps = {
   submission: Submission;
   shown: boolean;
   onToggle: () => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
   controls: ComponentControls;
 };
 
@@ -284,10 +292,11 @@ export default function SubmissionGroup({
   submission,
   shown,
   onToggle,
+  expanded,
+  onToggleExpanded,
   controls,
 }: SubmissionGroupProps) {
   const theme = useTheme();
-  const [expanded, setExpanded] = useState(false);
   const title = submissionTitle(submission);
   const { labels } = submission;
   const collapsible = labels.length > COLLAPSED_LABELS;
@@ -350,7 +359,7 @@ export default function SubmissionGroup({
       </Box>
       {collapsible && (
         <ButtonBase
-          onClick={() => setExpanded((open) => !open)}
+          onClick={onToggleExpanded}
           aria-expanded={expanded}
           sx={{
             margin: "0.5rem 0 0.5rem 1.5rem",

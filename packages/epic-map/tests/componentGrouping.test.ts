@@ -4,6 +4,7 @@ import {
   findVariant,
   groupBy,
   groupComponents,
+  rowPlaces,
   submissionDate,
   submissionSources,
   submissionTitle,
@@ -354,5 +355,29 @@ describe("row flags", () => {
     ]).labels;
 
     expect(variants.map(({ flag }) => flag)).toEqual(["sensitive", null]);
+  });
+});
+
+describe("row places", () => {
+  it("finds each feature's row: its section, submission, label and variant", () => {
+    const groups = groupComponents([
+      component({ featureId: "{A}", label: "Access Route" }),
+      component({ featureId: "{B1}", label: "Borrow Pit", comment: "North" }),
+      component({ featureId: "{B2}", label: "Borrow Pit", comment: "South" }),
+      component({ featureId: "{B3}", label: "Borrow Pit", comment: "South" }),
+      component({ featureId: "{V}", componentType: "Value component" }),
+    ]);
+    const places = rowPlaces(groups);
+    const [projectSubmission] = groups[0].submissions;
+
+    expect(places.get("{B3}")).toEqual({
+      type: "Project component",
+      submissionKey: projectSubmission.key,
+      labelIndex: 1,
+      variantKey: "{B2}",
+    });
+    expect(places.get("{A}")?.labelIndex).toBe(0);
+    expect(places.get("{V}")?.type).toBe("Value component");
+    expect(places.get("{ELSEWHERE}")).toBeUndefined();
   });
 });
