@@ -6,9 +6,9 @@ const COMPONENT_TYPE_SECTIONS: ReadonlyArray<{
   type: ComponentType;
   title: string;
 }> = [
-  { type: "Project component", title: "Project Components" },
-  { type: "Value component", title: "Value Components" },
-];
+    { type: "Project component", title: "Project Components" },
+    { type: "Value component", title: "Value Components" },
+  ];
 
 export type ComponentFlag = "sensitive" | "adjusted";
 
@@ -169,6 +169,32 @@ export const findVariant = (
     .flatMap(({ labels }) => labels)
     .flatMap(({ variants }) => variants)
     .find((variant) => variant.key === key);
+
+/** Where a feature's row sits in the list. */
+export interface RowPlace {
+  type: ComponentType;
+  submissionKey: string;
+  labelIndex: number;
+  variantKey: string;
+}
+
+/** Each feature's row, by feature id. */
+export const rowPlaces = (
+  groups: readonly ComponentTypeGroup[],
+): ReadonlyMap<string, RowPlace> => {
+  const places = new Map<string, RowPlace>();
+  for (const { type, submissions } of groups) {
+    for (const { key: submissionKey, labels } of submissions) {
+      labels.forEach(({ variants }, labelIndex) => {
+        for (const { key: variantKey, featureIds } of variants) {
+          const place = { type, submissionKey, labelIndex, variantKey };
+          featureIds.forEach((id) => places.set(id, place));
+        }
+      });
+    }
+  }
+  return places;
+};
 
 /** "Category · Subcategory · Number", leaving out whichever is absent. */
 export const submissionTitle = ({ category, subcategory, number }: Submission) =>

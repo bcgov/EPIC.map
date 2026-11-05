@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   componentSpecIds,
   eaoFeatureAt,
+  eaoFeatureIdsAt,
   eaoSpecFilters,
   FOOTPRINT_SPEC_IDS,
   footprintDrawnIds,
@@ -303,6 +304,38 @@ describe("clicking a feature in Select area", () => {
       eaoFeatureAt(fakeMap([{ properties: {} }]) as never, { x: 1, y: 1 } as never, 5),
     ).toBeNull();
     expect(eaoFeatureAt(fakeMap([]) as never, { x: 1, y: 1 } as never, 5)).toBeNull();
+  });
+});
+
+describe("clicking a component for the project panel", () => {
+  const fakeMap = (hits: object[]) => ({
+    getStyle: () => ({
+      layers: [drawnId("footprint-fill"), drawnId("point"), "basemap-roads"].map(
+        (id) => ({ id }),
+      ),
+    }),
+    getLayer: (id: string) => ({ id }),
+    queryRenderedFeatures: () => hits,
+  });
+
+  it("answers every feature hit, topmost first, each once", () => {
+    const map = fakeMap([
+      { properties: { feature_id: "{A1}" } },
+      { properties: {} },
+      { properties: { feature_id: "{F1}" } },
+      { properties: { feature_id: "{A1}" } },
+    ]);
+
+    expect(eaoFeatureIdsAt(map as never, { x: 1, y: 1 } as never, 5)).toEqual([
+      "{A1}",
+      "{F1}",
+    ]);
+  });
+
+  it("answers nothing while the EAO layer is not drawn", () => {
+    const map = { ...fakeMap([{ properties: { feature_id: "{A1}" } }]), getLayer: () => undefined };
+
+    expect(eaoFeatureIdsAt(map as never, { x: 1, y: 1 } as never, 5)).toEqual([]);
   });
 });
 

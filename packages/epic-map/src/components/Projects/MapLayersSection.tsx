@@ -1,25 +1,38 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, ButtonBase, Collapse, Skeleton, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
-import { type ProjectComponent, useProjectComponents } from "@/api/useProjects";
+import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
+import {
+  type ComponentType,
+  type ProjectComponent,
+  useProjectComponents,
+} from "@/api/useProjects";
+import { eaoFeatureIdsAt } from "@/components/Layers/eaoVisibility";
+import { useMeasure } from "@/components/MapTools/MeasureContext";
 import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
 import {
   type ComponentTypeGroup,
   findVariant,
   groupComponents,
+  type RowPlace,
+  rowPlaces,
 } from "@/components/Projects/componentGrouping";
 import {
   BODY_TEXT,
+  hasProjectAt,
   LINK_COLOR,
   SECONDARY_TEXT_COLOR,
   TEXT_COLOR,
 } from "@/components/Projects/projectUtils";
 import { useRevealedComponents } from "@/components/Projects/RevealedComponentsContext";
 import SubmissionGroup, {
+  COLLAPSED_LABELS,
   type ComponentControls,
   listSx,
 } from "@/components/Projects/SubmissionGroup";
+import { METADATA_TOLERANCE_PX } from "@/utils/config";
+import { scrollIntoNearestView } from "@/utils/scroll";
 
 const EMPTY_TEXT_COLOR = "#757371";
 
@@ -57,26 +70,118 @@ const useShowOnMap = (
   }, [selected, setSelectedFeatureIds]);
 };
 
+/**
+ * Hands over the row of the topmost listed feature under each map click, and
+ * points the cursor over one. A map tool's clicks, and a project dot, are left
+ * to them.
+ */
+const useMapPicks = (
+  map: MapLibreMap | null,
+  places: ReadonlyMap<string, RowPlace>,
+  onPick: (place: RowPlace) => void,
+) => {
+  const { tool } = useSelectArea();
+  const { placing } = useMeasure();
+  const toolOwnsClicks = tool === "select" || placing;
+  const placesRef = useRef(places);
+  placesRef.current = places;
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
+
+  useEffect(() => {
+    if (!map || toolOwnsClicks) return undefined;
+
+    const canvas = map.getCanvas();
+    // Whether this hook set the cursor, so it never clears another's.
+    let pointing = false;
+
+    const listedAt = (point: MapMouseEvent["point"]) =>
+      eaoFeatureIdsAt(map, point, METADATA_TOLERANCE_PX)
+        .map((id) => placesRef.current.get(id))
+        .find((place) => place !== undefined);
+
+    const onClick = (event: MapMouseEvent) => {
+      if (hasProjectAt(map, event.point)) return;
+      const place = listedAt(event.point);
+      if (place) onPickRef.current(place);
+    };
+    const unpoint = () => {
+      if (pointing) canvas.style.cursor = "";
+      pointing = false;
+    };
+    const onMove = (event: MapMouseEvent) => {
+      // The dot's own hover has the cursor there.
+      if (hasProjectAt(map, event.point)) {
+        pointing = false;
+        return;
+      }
+      if (!listedAt(event.point)) {
+        unpoint();
+        return;
+      }
+      // Set on every move: leaving a dot clears it.
+      canvas.style.cursor = "pointer";
+      pointing = true;
+    };
+
+    map.on("click", onClick);
+    map.on("mousemove", onMove);
+    map.on("mouseout", unpoint);
+    return () => {
+      map.off("click", onClick);
+      map.off("mousemove", onMove);
+      map.off("mouseout", unpoint);
+      unpoint();
+    };
+  }, [map, toolOwnsClicks]);
+};
+
+/** The set with `key` in or out; the same set if that changes nothing. */
+const toggledTo = <T,>(
+  set: ReadonlySet<T>,
+  key: T,
+  on: boolean,
+): ReadonlySet<T> => {
+  if (set.has(key) === on) return set;
+  const next = new Set(set);
+  if (on) next.add(key);
+  else next.delete(key);
+  return next;
+};
+
+const toggled = <T,>(set: ReadonlySet<T>, key: T) =>
+  toggledTo(set, key, !set.has(key));
+
 type ComponentTypeSectionProps = {
   group: ComponentTypeGroup;
+  open: boolean;
+  onToggleOpen: () => void;
+  /** Called once the section has finished opening. */
+  onOpened: () => void;
   hiddenSubmissions: ReadonlySet<string>;
   onToggle: (submissionKey: string) => void;
+  expandedSubmissions: ReadonlySet<string>;
+  onToggleExpanded: (submissionKey: string) => void;
   controls: ComponentControls;
 };
 
 const ComponentTypeSection = ({
   group,
+  open,
+  onToggleOpen,
+  onOpened,
   hiddenSubmissions,
   onToggle,
+  expandedSubmissions,
+  onToggleExpanded,
   controls,
 }: ComponentTypeSectionProps) => {
-  const [open, setOpen] = useState(true);
   const bodyId = `epic-map-project-${group.type.replace(/\s+/g, "-").toLowerCase()}`;
 
   return (
     <Box component="section" sx={{ marginTop: "0.5rem" }}>
       <ButtonBase
-        onClick={() => setOpen((shown) => !shown)}
+        onClick={onToggleOpen}
         aria-expanded={open}
         aria-controls={bodyId}
         sx={{
@@ -107,7 +212,7 @@ const ComponentTypeSection = ({
           {group.title}
         </Typography>
       </ButtonBase>
-      <Collapse in={open}>
+      <Collapse in={open} onEntered={onOpened}>
         <Box component="ul" id={bodyId} sx={listSx}>
           {group.submissions.map((submission) => (
             <SubmissionGroup
@@ -115,6 +220,8 @@ const ComponentTypeSection = ({
               submission={submission}
               shown={!hiddenSubmissions.has(submission.key)}
               onToggle={() => onToggle(submission.key)}
+              expanded={expandedSubmissions.has(submission.key)}
+              onToggleExpanded={() => onToggleExpanded(submission.key)}
               controls={controls}
             />
           ))}
@@ -124,8 +231,16 @@ const ComponentTypeSection = ({
   );
 };
 
+type MapLayersSectionProps = {
+  projectId: number;
+  map: MapLibreMap | null;
+};
+
 /** A project's submitted project and value components, and their map toggles. */
-export default function MapLayersSection({ projectId }: { projectId: number }) {
+export default function MapLayersSection({
+  projectId,
+  map,
+}: MapLayersSectionProps) {
   const {
     data: components,
     isLoading,
@@ -133,15 +248,23 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
   } = useProjectComponents(projectId);
   const groups = useMemo(() => groupComponents(components ?? []), [components]);
   // Submissions switched off. Everything starts on.
-  const [hiddenSubmissions, setHiddenSubmissions] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const [hiddenSubmissions, setHiddenSubmissions] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const [hiddenByUser, setHiddenByUser] = useState<ReadonlySet<string> | null>(
     null,
   );
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-
-  // One highlight between this list and Select area's: last click wins.
+  const [closedTypes, setClosedTypes] = useState<ReadonlySet<ComponentType>>(
+    () => new Set(),
+  );
+  const [expandedSubmissions, setExpandedSubmissions] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const selectedRowRef = useRef<HTMLButtonElement>(null);
+  const [mapPick, setMapPick] = useState<{
+    opening: ComponentType | null;
+  } | null>(null);
   const { focused, unfocus } = useSelectArea();
   useEffect(() => {
     if (focused !== null) setSelectedKey(null);
@@ -177,6 +300,33 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
 
   useShowOnMap(components ?? NO_COMPONENTS, revealed, highlighted);
 
+  const places = useMemo(() => rowPlaces(groups), [groups]);
+
+  // Not through `select`: a map click selects, never deselects.
+  useMapPicks(map, places, (place) => {
+    const { type, submissionKey, labelIndex, variantKey } = place;
+    setSelectedKey(variantKey);
+    if (labelIndex >= COLLAPSED_LABELS) {
+      setExpandedSubmissions((current) =>
+        toggledTo(current, submissionKey, true),
+      );
+    }
+    setClosedTypes((current) => toggledTo(current, type, false));
+    setMapPick({ opening: closedTypes.has(type) ? type : null });
+  });
+
+  useEffect(() => {
+    if (mapPick && !mapPick.opening) {
+      scrollIntoNearestView(selectedRowRef.current);
+    }
+  }, [mapPick]);
+
+  const opened = (type: ComponentType) => {
+    if (mapPick?.opening !== type) return;
+    setMapPick(null);
+    scrollIntoNearestView(selectedRowRef.current);
+  };
+
   const controls: ComponentControls = {
     isShown: (featureIds) => featureIds.some((id) => !hiddenFeatures.has(id)),
     setShown: (featureIds, shown) =>
@@ -190,14 +340,8 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
       unfocus();
       setSelectedKey((current) => (current === key ? null : key));
     },
+    selectedRowRef,
   };
-
-  const toggle = (submissionKey: string) =>
-    setHiddenSubmissions((current) => {
-      const next = new Set(current);
-      if (!next.delete(submissionKey)) next.add(submissionKey);
-      return next;
-    });
 
   return (
     <Box
@@ -263,8 +407,19 @@ export default function MapLayersSection({ projectId }: { projectId: number }) {
           <ComponentTypeSection
             key={group.type}
             group={group}
+            open={!closedTypes.has(group.type)}
+            onToggleOpen={() =>
+              setClosedTypes((current) => toggled(current, group.type))
+            }
+            onOpened={() => opened(group.type)}
             hiddenSubmissions={hiddenSubmissions}
-            onToggle={toggle}
+            onToggle={(key) =>
+              setHiddenSubmissions((current) => toggled(current, key))
+            }
+            expandedSubmissions={expandedSubmissions}
+            onToggleExpanded={(key) =>
+              setExpandedSubmissions((current) => toggled(current, key))
+            }
             controls={controls}
           />
         ))

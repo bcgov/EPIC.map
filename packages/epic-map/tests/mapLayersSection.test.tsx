@@ -5,7 +5,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect } from "react";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { ProjectComponent } from "@/api/useProjects";
 import {
   SelectAreaProvider,
@@ -49,7 +56,12 @@ const COMPONENTS = [
   }),
 ];
 
-const state: { components: ProjectComponent[] } = { components: COMPONENTS };
+const state: {
+  components: ProjectComponent[];
+  /** EAO features under a map click, topmost first. */
+  underClick: string[];
+  onDot: boolean;
+} = { components: COMPONENTS, underClick: [], onDot: false };
 
 vi.mock("@/api/useProjects", () => ({
   useProjectComponents: () => ({
@@ -57,6 +69,22 @@ vi.mock("@/api/useProjects", () => ({
     isLoading: false,
     isError: false,
   }),
+}));
+
+// What a click hits is eaoVisibility's and projectUtils' own test.
+vi.mock("@/components/Layers/eaoVisibility", () => ({
+  eaoFeatureIdsAt: () => state.underClick,
+}));
+
+vi.mock("@/components/Projects/projectUtils", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  hasProjectAt: () => state.onDot,
+}));
+
+const scrollIntoNearestView = vi.fn<(element: HTMLElement | null) => void>();
+vi.mock("@/utils/scroll", () => ({
+  scrollIntoNearestView: (element: HTMLElement | null) =>
+    scrollIntoNearestView(element),
 }));
 
 const { default: MapLayersSection } = await import(
@@ -78,16 +106,43 @@ const Probe = () => {
   return null;
 };
 
-const renderSection = () =>
+type Listener = (event: unknown) => void;
+
+/** Keeps its listeners, so a test can click and move over it. */
+const fakeMap = () => {
+  const listeners = new Map<string, Set<Listener>>();
+  const of = (type: string) => listeners.get(type) ?? new Set<Listener>();
+  const fire = (type: string) =>
+    act(() => of(type).forEach((listener) => listener({ point: { x: 1, y: 1 } })));
+  const canvas = { style: { cursor: "" } };
+  return {
+    on: (type: string, listener: Listener) =>
+      listeners.set(type, of(type).add(listener)),
+    off: (type: string, listener: Listener) => of(type).delete(listener),
+    getCanvas: () => canvas,
+    canvas,
+    click: () => fire("click"),
+    move: () => fire("mousemove"),
+    out: () => fire("mouseout"),
+    listening: () => [...listeners.values()].some((set) => set.size > 0),
+  };
+};
+
+type FakeMap = ReturnType<typeof fakeMap>;
+
+const renderSection = (map: FakeMap | null = null) =>
   render(
     <RevealedComponentsProvider>
-      <MapLayersSection projectId={7} />
+      <MapLayersSection projectId={7} map={map as never} />
       <Probe />
     </RevealedComponentsProvider>,
   );
 
 beforeEach(() => {
   state.components = COMPONENTS;
+  state.underClick = [];
+  state.onDot = false;
+  scrollIntoNearestView.mockClear();
   revealed.ids = [];
   revealed.hidden = [];
   revealed.selected = [];
@@ -388,7 +443,7 @@ describe("sharing the component highlight with Select area", () => {
     render(
       <SelectAreaProvider>
         <RevealedComponentsProvider>
-          <MapLayersSection projectId={7} />
+          <MapLayersSection projectId={7} map={null} />
           <Probe />
           <AreaProbe />
         </RevealedComponentsProvider>
@@ -429,5 +484,225 @@ describe("sharing the component highlight with Select area", () => {
 
     expect(area.current?.focusedId).toBeNull();
     expect(revealed.selected).toEqual(["{P1}"]);
+  });
+});
+
+describe("clicking a component on the map", () => {
+  const row = (name: string) => screen.getByRole("button", { name });
+  const selectedRows = () =>
+    screen
+      .getAllByRole("button")
+      .filter(
+        (button) =>
+          button.getAttribute("aria-pressed") === "true" &&
+          !button.getAttribute("aria-label"),
+      );
+
+  const clickOnMap = (map: FakeMap, featureIds: string[]) => {
+    state.underClick = featureIds;
+    map.click();
+  };
+
+  it("selects its row, highlights it and scrolls to it", () => {
+    const map = fakeMap();
+    renderSection(map);
+
+    clickOnMap(map, ["{V2}"]);
+
+    expect(row("Pacific Water Shrew").getAttribute("aria-pressed")).toBe("true");
+    expect(revealed.selected).toEqual(["{V2}"]);
+    expect(scrollIntoNearestView).toHaveBeenCalledWith(row("Pacific Water Shrew"));
+  });
+
+  it("replaces the row selected before, from the list or the map", () => {
+    const map = fakeMap();
+    renderSection(map);
+
+    fireEvent.click(row("Access Route Amendment 1"));
+    clickOnMap(map, ["{V2}"]);
+    expect(selectedRows()).toEqual([row("Pacific Water Shrew")]);
+
+    clickOnMap(map, ["{V1}"]);
+    expect(selectedRows()).toEqual([row("Data sensitive")]);
+    expect(revealed.selected).toEqual(["{V1}"]);
+  });
+
+  it("keeps its row selected, and in view, when clicked again", () => {
+    const map = fakeMap();
+    renderSection(map);
+
+    clickOnMap(map, ["{V2}"]);
+    clickOnMap(map, ["{V2}"]);
+
+    expect(row("Pacific Water Shrew").getAttribute("aria-pressed")).toBe("true");
+    expect(scrollIntoNearestView).toHaveBeenCalledTimes(2);
+  });
+
+  it("takes the topmost feature the panel lists", () => {
+    const map = fakeMap();
+    renderSection(map);
+
+    clickOnMap(map, ["{ANOTHER_PROJECT}", "{V2}", "{P1}"]);
+
+    expect(revealed.selected).toEqual(["{V2}"]);
+  });
+
+  it("leaves the selection alone where none of the panel's features were hit", () => {
+    const map = fakeMap();
+    renderSection(map);
+    fireEvent.click(row("Access Route Amendment 1"));
+
+    clickOnMap(map, ["{ANOTHER_PROJECT}"]);
+    clickOnMap(map, []);
+
+    expect(revealed.selected).toEqual(["{P1}"]);
+    expect(scrollIntoNearestView).not.toHaveBeenCalled();
+  });
+
+  it("leaves a click on a project dot to the dot", () => {
+    const map = fakeMap();
+    renderSection(map);
+    state.onDot = true;
+
+    clickOnMap(map, ["{V2}"]);
+
+    expect(revealed.selected).toEqual([]);
+  });
+
+  it("opens Show all when the row is collapsed under it", () => {
+    state.components = Array.from({ length: 7 }, (_, index) =>
+      component({ featureId: `{L${index}}`, label: `Component ${index + 1}` }),
+    );
+    const map = fakeMap();
+    renderSection(map);
+
+    clickOnMap(map, ["{L5}"]);
+
+    expect(row("Component 6").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Component 7")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Show fewer" })).toBeDefined();
+  });
+
+  it("keeps Show all closed for a row already shown", () => {
+    state.components = Array.from({ length: 7 }, (_, index) =>
+      component({ featureId: `{L${index}}`, label: `Component ${index + 1}` }),
+    );
+    const map = fakeMap();
+    renderSection(map);
+
+    clickOnMap(map, ["{L1}"]);
+
+    expect(screen.getByRole("button", { name: "Show all 7 components" })).toBeDefined();
+  });
+
+  it("opens a collapsed section, and scrolls once it has opened", async () => {
+    const map = fakeMap();
+    renderSection(map);
+    const section = screen.getByRole("button", { name: "Value Components" });
+    fireEvent.click(section);
+
+    clickOnMap(map, ["{V2}"]);
+
+    expect(section.getAttribute("aria-expanded")).toBe("true");
+    expect(scrollIntoNearestView).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(scrollIntoNearestView).toHaveBeenCalledWith(row("Pacific Water Shrew")),
+    );
+  });
+
+  it("does not scroll for a row selected from the list", () => {
+    renderSection(fakeMap());
+
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(scrollIntoNearestView).not.toHaveBeenCalled();
+  });
+
+  it("leaves clicks to Select area while it is on, and stops listening on close", () => {
+    const map = fakeMap();
+    const area: { current: ReturnType<typeof useSelectArea> | null } = {
+      current: null,
+    };
+    const AreaProbe = () => {
+      area.current = useSelectArea();
+      return null;
+    };
+    const { unmount } = render(
+      <SelectAreaProvider>
+        <RevealedComponentsProvider>
+          <MapLayersSection projectId={7} map={map as never} />
+          <Probe />
+          <AreaProbe />
+        </RevealedComponentsProvider>
+      </SelectAreaProvider>,
+    );
+
+    act(() => area.current?.toggleTool("select"));
+    expect(map.listening()).toBe(false);
+
+    act(() => area.current?.toggleTool("select"));
+    clickOnMap(map, ["{V2}"]);
+    expect(revealed.selected).toEqual(["{V2}"]);
+
+    unmount();
+    expect(map.listening()).toBe(false);
+  });
+});
+
+describe("pointing at a component on the map", () => {
+  const moveOver = (map: FakeMap, featureIds: string[]) => {
+    state.underClick = featureIds;
+    map.move();
+  };
+
+  it("points over a listed component, and stops off it", () => {
+    const map = fakeMap();
+    renderSection(map);
+
+    moveOver(map, ["{ANOTHER_PROJECT}", "{V2}"]);
+    expect(map.canvas.style.cursor).toBe("pointer");
+
+    moveOver(map, ["{ANOTHER_PROJECT}"]);
+    expect(map.canvas.style.cursor).toBe("");
+  });
+
+  it("points again after a dot's hover cleared the cursor", () => {
+    const map = fakeMap();
+    renderSection(map);
+
+    moveOver(map, ["{V2}"]);
+    map.canvas.style.cursor = "";
+    moveOver(map, ["{V2}"]);
+
+    expect(map.canvas.style.cursor).toBe("pointer");
+  });
+
+  it("leaves a cursor it did not set alone, a dot's included", () => {
+    const map = fakeMap();
+    renderSection(map);
+    map.canvas.style.cursor = "pointer";
+
+    moveOver(map, []);
+    expect(map.canvas.style.cursor).toBe("pointer");
+
+    moveOver(map, ["{V2}"]);
+    state.onDot = true;
+    map.move();
+    state.onDot = false;
+    moveOver(map, []);
+    expect(map.canvas.style.cursor).toBe("pointer");
+  });
+
+  it("stops pointing when the mouse leaves the map, or the panel closes", () => {
+    const map = fakeMap();
+    const { unmount } = renderSection(map);
+
+    moveOver(map, ["{V2}"]);
+    map.out();
+    expect(map.canvas.style.cursor).toBe("");
+
+    moveOver(map, ["{V2}"]);
+    unmount();
+    expect(map.canvas.style.cursor).toBe("");
   });
 });
