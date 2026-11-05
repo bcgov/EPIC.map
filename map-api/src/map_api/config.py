@@ -26,7 +26,8 @@ from functools import lru_cache
 from urllib.parse import quote_plus
 
 import redis
-import rsa
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from dotenv import find_dotenv, load_dotenv
 
 from map_api.utils.util import parse_csv
@@ -58,11 +59,8 @@ TEST_ALLOWED_CLIENT_IDS = ('epic-centre', 'map-web')
 # in the generated JWKS below.
 TEST_JWT_KID = 'epic-map'
 
-# Size of the throwaway keypair the test suite signs with. 1024 is deliberate:
-# `rsa` generates in pure Python, where 2048 bits regularly costs ten seconds or
-# more before the first test can run. The key is generated in memory, lives only
-# for the run and guards nothing.
-TEST_JWT_KEY_BITS = 1024
+# Size of the throwaway keypair the test suite signs with. PyJWT warns below 2048.
+TEST_JWT_KEY_BITS = 2048
 
 
 def _b64url_uint(value: int) -> str:
@@ -80,7 +78,8 @@ def generate_test_jwt_keypair():
     TestConfig - the app's and the token factory's - and the half that signs has
     to belong to the same key as the half that verifies.
     """
-    public_key, private_key = rsa.newkeys(TEST_JWT_KEY_BITS)
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=TEST_JWT_KEY_BITS)
+    public_key = private_key.public_key().public_numbers()
     public_jwks = {
         'keys': [
             {
@@ -93,7 +92,12 @@ def generate_test_jwt_keypair():
             }
         ]
     }
-    return private_key.save_pkcs1().decode('utf-8'), public_jwks
+    private_key_pem = private_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    )
+    return private_key_pem.decode('utf-8'), public_jwks
 
 
 def get_named_config(config_name: str = 'development'):
@@ -219,9 +223,8 @@ class _Config():  # pylint: disable=too-few-public-methods
     JWT_OIDC_ALGORITHMS = os.getenv('JWT_OIDC_ALGORITHMS', 'RS256')
     JWT_OIDC_JWKS_URI = os.getenv('JWT_OIDC_JWKS_URI')
     JWT_OIDC_ISSUER = os.getenv('JWT_OIDC_ISSUER')
-    # Required by flask-jwt-oidc but not checked: python-jose can only compare
-    # `aud` against a single string, and this API serves several keycloak
-    # clients. ALLOWED_CLIENT_IDS below decides who may call.
+    # Required by flask-jwt-oidc but not checked: keycloak lists in `aud` every
+    # client the user holds a role in. ALLOWED_CLIENT_IDS below decides who may call.
     JWT_OIDC_AUDIENCE = os.getenv('JWT_OIDC_AUDIENCE', 'account')
     JWT_OIDC_CACHING_ENABLED = os.getenv('JWT_OIDC_CACHING_ENABLED', 'True')
     JWT_OIDC_JWKS_CACHE_TIMEOUT = 300
@@ -315,7 +318,7 @@ class TestConfig(_Config):  # pylint: disable=too-few-public-methods
     JWT_OIDC_TEST_AUDIENCE = os.getenv('JWT_OIDC_TEST_AUDIENCE') or 'account'
     JWT_OIDC_TEST_CLIENT_SECRET = os.getenv('JWT_OIDC_TEST_CLIENT_SECRET')
     # Defaulted, not left to the environment: with no issuer configured
-    # python-jose skips the issuer check entirely, which would quietly turn the
+    # PyJWT skips the issuer check entirely, which would quietly turn the
     # "token from another realm" test into one that proves nothing.
     JWT_OIDC_TEST_ISSUER = (
         os.getenv('JWT_OIDC_TEST_ISSUER') or 'http://localhost:8081/auth/realms/demo'

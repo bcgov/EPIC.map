@@ -14,11 +14,11 @@
 """Bring in the common JWT Manager."""
 from functools import wraps
 
+import jwt as pyjwt
 from flask import current_app, g, request
 from flask.globals import request_ctx
 from flask_jwt_oidc import JwtManager
 from flask_jwt_oidc.exceptions import AuthError
-from jose import jwt as jose_jwt
 
 from map_api.exceptions import PermissionDeniedError
 from map_api.utils import token as token_utils
@@ -28,30 +28,28 @@ from map_api.utils.constant import GROUP_MAP
 class MultiClientJwtManager(JwtManager):
     """A JwtManager that accepts tokens from any of several keycloak clients.
 
-    Signature, issuer and expiry validation are unchanged - the same python-jose
-    call, the same JWKS lookup, the same errors. The audience decision is the
-    only difference.
+    Signature, issuer and expiry are verified by the same PyJWT call and JWKS
+    lookup as the library's own. Two things differ: the audience decision, and
+    iat, which is left unchecked as python-jose left it.
 
-    It has to be overridden here rather than configured: python-jose compares
-    `aud` against exactly one string and raises when it does not match, so with
-    several EPIC clients in one realm there is no value of JWT_OIDC_AUDIENCE
-    that admits all of them and nothing else. Passing None does not help either
-    - jose then rejects every token that carries an `aud` at all. So the aud
-    check is turned off in the decode call and replaced, immediately after, by
-    token_utils.is_allowed_client against the *verified* claims.
+    It has to be overridden here rather than configured: keycloak lists in `aud`
+    every client the user holds a role in, so no value of JWT_OIDC_AUDIENCE
+    identifies the caller. The client is in `azp`, which PyJWT does not check. So the
+    aud check is turned off in the decode call and replaced, immediately after,
+    by token_utils.is_allowed_client against the *verified* claims.
 
     Overriding here rather than in the request hook means every entry point the
     library offers - requires_auth, has_one_of_roles, requires_roles - goes
     through the same check, including @auth.require on individual resources.
 
-    Pinned against flask-jwt-oidc==0.7.0; this mirrors JwtManager._validate_token
+    Pinned against flask-jwt-oidc==0.9.0; this mirrors JwtManager._validate_token
     from that release.
     """
 
     def _validate_token(self, token):
         try:
-            unverified_header = jose_jwt.get_unverified_header(token)
-        except jose_jwt.JWTError as jerr:
+            unverified_header = pyjwt.get_unverified_header(token)
+        except pyjwt.PyJWTError as jerr:
             raise AuthError({'code': 'invalid_header',
                              'description':
                                  'Invalid header. '
@@ -81,19 +79,20 @@ class MultiClientJwtManager(JwtManager):
                              'description': 'Unable to find jwks key referenced in token'}, 401)
 
         try:
-            payload = jose_jwt.decode(
+            payload = pyjwt.decode(
                 token,
                 rsa_key,
                 algorithms=self.algorithms,
                 issuer=self.issuer,
                 # The audience is checked below instead, against the allowlist.
-                # Everything else jose verifies here is unchanged.
-                options={'verify_aud': False},
+                # iat is unchecked, as under python-jose, so clock skew with keycloak cannot 401 a fresh token.
+                options={'verify_aud': False, 'verify_iat': False},
             )
-        except jose_jwt.ExpiredSignatureError as sig:
+        except pyjwt.ExpiredSignatureError as sig:
             raise AuthError({'code': 'token_expired',
                              'description': 'token has expired'}, 401) from sig
-        except jose_jwt.JWTClaimsError as jwe:
+        except (pyjwt.InvalidIssuerError, pyjwt.ImmatureSignatureError,
+                pyjwt.MissingRequiredClaimError) as jwe:
             raise AuthError({'code': 'invalid_claims',
                              'description':
                                  'incorrect claims,'
@@ -119,6 +118,7 @@ class MultiClientJwtManager(JwtManager):
                                  ' not serve'}, 401)
 
         request_ctx.current_user = g.jwt_oidc_token_info = payload
+        return payload
 
 
 jwt = (

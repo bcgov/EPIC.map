@@ -25,5 +25,5 @@ from map_api.utils.constant import CACHE_ENTRY_LIMIT
 
 # lower case name as used by convention in most Flask apps
 cache = Cache(  # pylint: disable=invalid-name
-    config={'CACHE_TYPE': 'simple', 'CACHE_THRESHOLD': CACHE_ENTRY_LIMIT}
+    config={'CACHE_TYPE': 'SimpleCache', 'CACHE_THRESHOLD': CACHE_ENTRY_LIMIT}
 )
