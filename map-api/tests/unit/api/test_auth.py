@@ -17,11 +17,14 @@ These cover the checks that happen before any handler runs, so none of them
 need a database.
 """
 import logging
+import time
 from http import HTTPStatus
 
+import jwt as pyjwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 
-from tests.utilities.factory_utils import factory_auth_header, idir_claims
+from tests.utilities.factory_utils import JWT_HEADER, factory_auth_header, idir_claims
 
 
 ALLOWED_CLIENTS = ['epic-centre', 'map-web']
@@ -249,3 +252,52 @@ def test_an_expired_token_from_an_allowed_client_is_still_rejected(
     response = client.get(ENDPOINT, headers=header)
 
     assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_a_token_signed_by_another_key_is_rejected(client):
+    """The kid names the trusted key, but the signature is from a different one."""
+    other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = pyjwt.encode(idir_claims(), other_key, algorithm='RS256', headers=JWT_HEADER)
+
+    response = client.get(ENDPOINT, headers={'Authorization': f'Bearer {token}'})
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+@pytest.mark.parametrize('algorithm, key', [('HS256', 'x' * 32), ('none', None)])
+def test_a_token_not_signed_with_rs256_is_rejected(client, algorithm, key):
+    """Only RS256 is accepted, so an HMAC or unsigned token cannot stand in for one."""
+    token = pyjwt.encode(idir_claims(), key, algorithm=algorithm, headers={'kid': JWT_HEADER['kid']})
+
+    response = client.get(ENDPOINT, headers={'Authorization': f'Bearer {token}'})
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_a_token_naming_an_unknown_key_is_rejected(client, jwt):
+    """A kid that is not in the JWKS cannot be verified."""
+    token = jwt.create_jwt(idir_claims(), {**JWT_HEADER, 'kid': 'not-a-published-key'})
+
+    response = client.get(ENDPOINT, headers={'Authorization': f'Bearer {token}'})
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_a_token_not_yet_valid_is_rejected(client, jwt):
+    """Not-before is enforced, so a token cannot be used before it says it may be."""
+    header = factory_auth_header(jwt, claims=idir_claims(nbf=int(time.time()) + 300))
+
+    response = client.get(ENDPOINT, headers=header)
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_a_token_issued_slightly_in_the_future_is_accepted(
+    client, jwt, stub_user_sync
+):  # pylint: disable=unused-argument
+    """Issued-at is not checked, so keycloak's clock running ahead of ours is not a 401."""
+    header = factory_auth_header(jwt, claims=idir_claims(iat=int(time.time()) + 30))
+
+    response = client.get(ENDPOINT, headers=header)
+
+    assert response.status_code == HTTPStatus.OK
