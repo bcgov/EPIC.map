@@ -1,5 +1,22 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "cypress";
 import registerCodeCoverageTasks from "@cypress/code-coverage/task";
+
+const SUPPORT_FILE = fileURLToPath(new URL("./cypress/support/component.ts", import.meta.url));
+
+/**
+ * Cypress 15 warms up the support file before any HTML is served, so the federation
+ * plugin takes it for the app entry and defers its body behind an unawaited host init.
+ * Awaiting that init keeps cy.mount and the coverage hooks registered before the spec runs.
+ */
+const awaitFederationBootstrap = () => ({
+  name: "await-federation-bootstrap",
+  enforce: "post",
+  transform(code, id) {
+    if (id.split("?")[0] !== SUPPORT_FILE || !code.includes("mf-entry-bootstrap")) return;
+    return code.replace(/^\(async \(\) => \{/m, "await (async () => {");
+  },
+});
 
 /**
  * Component testing only. There is no `e2e` block because nothing here drives a
@@ -22,6 +39,11 @@ export default defineConfig({
     devServer: {
       framework: "react",
       bundler: "vite",
+      // Naming viteConfig turns off vite.config.ts discovery, hence configFile.
+      viteConfig: {
+        configFile: fileURLToPath(new URL("./vite.config.ts", import.meta.url)),
+        plugins: [awaitFederationBootstrap()],
+      },
     },
     setupNodeEvents(on, config) {
       registerCodeCoverageTasks(on, config);
