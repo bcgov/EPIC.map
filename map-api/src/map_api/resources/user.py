@@ -20,7 +20,7 @@ from flask_restx import Namespace, Resource
 
 from map_api.auth import auth
 from map_api.exceptions import ResourceNotFoundError
-from map_api.schemas.user import CurrentUserSchema, UserRequestSchema, UserSchema
+from map_api.schemas.user import CurrentUserSchema, UserSchema, UserUpdateSchema
 from map_api.services.user_service import UserService
 from map_api.utils.util import cors_preflight
 
@@ -31,12 +31,8 @@ API = Namespace('users', description='Endpoints for User Management')
 """Custom exception messages
 """
 
-# TODO: these endpoints require a signed-in user but not a particular role. The
-# role model is still to be decided; when it is, swap @auth.require here for
-# @auth.has_one_of_roles([...]), which is already wired up in map_api.auth.
-
-user_request_model = ApiHelper.convert_ma_schema_to_restx_model(
-    API, UserRequestSchema(), 'User'
+user_update_model = ApiHelper.convert_ma_schema_to_restx_model(
+    API, UserUpdateSchema(), 'UserUpdate'
 )
 user_list_model = ApiHelper.convert_ma_schema_to_restx_model(
     API, UserSchema(), 'UserListItem'
@@ -72,74 +68,34 @@ class CurrentUser(Resource):
         return CurrentUserSchema().dump(user), HTTPStatus.OK
 
 
-@cors_preflight('GET, OPTIONS, POST')
-@API.route('', methods=['POST', 'GET', 'OPTIONS'])
-class Users(Resource):
-    """Resource for managing users."""
-
-    @staticmethod
-    @API.response(code=200, description='Success', model=[user_list_model])
-    @ApiHelper.swagger_decorators(API, endpoint_description='Fetch all users')
-    @auth.require
-    def get():
-        """Fetch all users."""
-        users = UserService.get_all_users()
-        user_list_schema = UserSchema(many=True)
-        return user_list_schema.dump(users), HTTPStatus.OK
-
-    @staticmethod
-    @ApiHelper.swagger_decorators(API, endpoint_description='Create a user')
-    @API.expect(user_request_model)
-    @API.response(code=201, model=user_request_model, description='UserCreated')
-    @API.response(400, 'Bad Request')
-    @auth.require
-    def post():
-        """Create a user."""
-        user_data = UserRequestSchema().load(API.payload)
-        created_user = UserService.create_user(user_data)
-        return UserSchema().dump(created_user), HTTPStatus.CREATED
-
-
-@cors_preflight('GET, OPTIONS, PATCH, DELETE')
-@API.route('/<user_id>', methods=['PATCH', 'GET', 'OPTIONS', 'DELETE'])
+@cors_preflight('OPTIONS, PATCH, DELETE')
+@API.route('/<int:user_id>', methods=['PATCH', 'OPTIONS', 'DELETE'])
 @API.doc(params={'user_id': 'The user identifier'})
 class User(Resource):
-    """Resource for managing a single user."""
+    """The signed-in user's own record."""
 
     @staticmethod
-    @ApiHelper.swagger_decorators(API, endpoint_description='Fetch a user by id')
-    @API.response(code=200, model=user_list_model, description='Success')
-    @API.response(404, 'Not Found')
-    @auth.require
-    def get(user_id):
-        """Fetch a user by id."""
-        user = UserService.get_user_by_id(user_id)
-        if not user:
-            raise ResourceNotFoundError(f'User with {user_id} not found')
-        return UserSchema().dump(user), HTTPStatus.OK
-
-    @staticmethod
-    @ApiHelper.swagger_decorators(API, endpoint_description='Update a user by id')
-    @API.expect(user_request_model)
+    @ApiHelper.swagger_decorators(API, endpoint_description='Update the signed-in user')
+    @API.expect(user_update_model)
     @API.response(code=200, model=user_list_model, description='Success')
     @API.response(400, 'Bad Request')
     @API.response(404, 'Not Found')
     @auth.require
     def patch(user_id):
-        """Update a user by id."""
-        user_data = UserRequestSchema().load(API.payload)
+        """Update the signed-in user; anyone else's id is not found."""
+        user_data = UserUpdateSchema().load(API.payload)
         updated_user = UserService.update_user(user_id, user_data)
         if not updated_user:
             raise ResourceNotFoundError(f'User with {user_id} not found')
         return UserSchema().dump(updated_user), HTTPStatus.OK
 
     @staticmethod
-    @ApiHelper.swagger_decorators(API, endpoint_description='Delete a user by id')
+    @ApiHelper.swagger_decorators(API, endpoint_description='Delete the signed-in user')
     @API.response(code=200, model=user_list_model, description='Deleted')
     @API.response(404, 'Not Found')
     @auth.require
     def delete(user_id):
-        """Delete a user by id."""
+        """Delete the signed-in user; anyone else's id is not found."""
         deleted_user = UserService.delete_user(user_id)
         if not deleted_user:
             raise ResourceNotFoundError(f'User with {user_id} not found')

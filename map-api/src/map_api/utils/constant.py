@@ -18,9 +18,8 @@ import os
 from .enum import PermissionEnum
 
 
-# The application's name in the shared EAO Keycloak realm. Used as the default
-# value of AUTH_REQUIRED_GROUP when group gating is switched on.
-AUTH_APP = 'MAP'
+# A role group that grants no access to its app, e.g. /TRACK/NO_ROLE.
+NO_ACCESS_ROLE = 'NO_ROLE'
 
 # What a signed-in user can do before any Keycloak role says otherwise. Roles
 # are still to be decided, so every authenticated IDIR user is a plain user;

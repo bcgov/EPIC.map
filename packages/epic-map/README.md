@@ -301,6 +301,9 @@ Two steps, in this order:
    on map-api have to include you and they fail differently:
 
    - `ALLOWED_CLIENT_IDS` — your client id. Missing, every call is a **401**.
+   - `ALLOWED_APP_GROUPS` - your app's top-level Keycloak group. A user needs a role
+     group under a listed app (not `NO_ROLE`), and your tokens must carry `groups`.
+     Missing, the call is a **403**.
    - `CORS_ORIGIN` — your origin. Missing, the browser blocks every call at the
      preflight and the request never reaches map-api at all. In devtools this is a
      CORS error, not a 401, and no amount of fixing your token will change it.
@@ -313,8 +316,8 @@ Two steps, in this order:
    single `epic-map-api` client scope in the shared `eao-epic` realm, which your
    client requests so its tokens carry the right audience. That scope has to be
    created by the **BC Gov Pathfinder SSO team**, through the standard SSO request
-   process for the realm — not by the EPIC.map team. When it lands, the allowlist
-   collapses to that one entry and per-application entries go away.
+   process for the realm — not by the EPIC.map team. When it lands, map-api checks
+   that audience instead and per-application entries go away.
 
 Your application must be in the same realm (`eao-epic`). A token from another realm
 is rejected on the issuer check, before the allowlist is consulted.

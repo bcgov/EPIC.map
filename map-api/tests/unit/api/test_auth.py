@@ -16,6 +16,7 @@
 These cover the checks that happen before any handler runs, so none of them
 need a database.
 """
+import logging
 from http import HTTPStatus
 
 import pytest
@@ -23,7 +24,7 @@ import pytest
 from tests.utilities.factory_utils import factory_auth_header, idir_claims
 
 
-ALLOWED_CLIENTS = ['compliance-web', 'submit-web', 'track-web', 'map-web']
+ALLOWED_CLIENTS = ['epic-centre', 'map-web']
 
 
 ENDPOINT = '/api/users/me'
@@ -96,56 +97,52 @@ def test_expired_token_is_rejected(client, jwt):
     assert response.status_code == HTTPStatus.UNAUTHORIZED
 
 
-def test_any_realm_token_is_accepted_while_group_gating_is_off(
-    app, client, jwt, monkeypatch, stub_user_sync
-):  # pylint: disable=unused-argument
-    """AUTH_REQUIRED_GROUP unset means groups are not consulted at all.
-
-    This is the current state: the realm has no group for EPIC.map yet, so any
-    valid IDIR token from it gets in.
-    """
-    monkeypatch.setitem(app.config, 'AUTH_REQUIRED_GROUP', '')
-    header = factory_auth_header(jwt, groups=['/EPIC/COMPLIANCE/user'])
-
-    response = client.get('/api/users/me', headers=header)
-
-    assert response.status_code != HTTPStatus.FORBIDDEN
-
-
-def test_token_from_another_epic_app_is_rejected_when_a_group_is_required(
-    app, client, jwt, monkeypatch
-):
-    """With the group set, the shared realm stops being a way in."""
-    monkeypatch.setitem(app.config, 'AUTH_REQUIRED_GROUP', 'MAP')
-    header = factory_auth_header(jwt, groups=['/EPIC/COMPLIANCE/user'])
+@pytest.mark.parametrize(
+    'groups',
+    [[], ['/TRACK'], ['/TRACK/NO_ROLE'], ['/COMPLIANCE/USER'], ['/SUBMIT/EAO_STAFF']],
+)
+def test_a_centre_token_without_a_track_role_is_rejected(client, jwt, groups):
+    """Centre signs in every IDIR user, so the map checks for a Track role itself."""
+    header = factory_auth_header(jwt, azp='epic-centre', groups=groups)
 
     response = client.get(ENDPOINT, headers=header)
 
     assert response.status_code == HTTPStatus.FORBIDDEN
 
 
-def test_token_with_no_groups_is_rejected_when_a_group_is_required(
-    app, client, jwt, monkeypatch
-):
-    """A user who has authenticated but has no access is told so, not let in."""
-    monkeypatch.setitem(app.config, 'AUTH_REQUIRED_GROUP', 'MAP')
-    header = factory_auth_header(jwt, groups=[])
-
-    response = client.get(ENDPOINT, headers=header)
-
-    assert response.status_code == HTTPStatus.FORBIDDEN
-
-
-def test_map_group_is_accepted_when_a_group_is_required(
-    app, client, jwt, monkeypatch, stub_user_sync
+@pytest.mark.parametrize('groups', [['/TRACK/VIEWER'], ['/TRACK/SUPER_USER']])
+def test_a_centre_token_with_a_track_role_is_accepted(
+    client, jwt, stub_user_sync, groups
 ):  # pylint: disable=unused-argument
-    """The group is matched against the whole path, wherever MAP sits in it."""
-    monkeypatch.setitem(app.config, 'AUTH_REQUIRED_GROUP', 'MAP')
-    header = factory_auth_header(jwt, groups=['/EPIC/MAP/user'])
+    """Any Track role other than NO_ROLE can use the map."""
+    header = factory_auth_header(jwt, azp='epic-centre', groups=groups)
 
     response = client.get(ENDPOINT, headers=header)
 
-    assert response.status_code != HTTPStatus.FORBIDDEN
+    assert response.status_code == HTTPStatus.OK
+
+
+@pytest.mark.parametrize('host', ['epic-submit', 'epictrack-web', 'epic-compliance'])
+def test_a_token_from_an_app_that_does_not_host_the_map_is_rejected(client, jwt, host):
+    """Only Centre and map-web host the map for now, even when aud names Centre too."""
+    header = factory_auth_header(jwt, aud=[host, 'account', 'epic-centre'], azp=host)
+
+    response = client.get(ENDPOINT, headers=header)
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_a_refused_client_is_logged_by_its_azp(app, client, jwt, caplog, monkeypatch):
+    """The log names the app that was turned away, so an allowlist mismatch is easy to spot."""
+    # Alembic's fileConfig disables existing loggers once a test has run migrations.
+    monkeypatch.setattr(app.logger, 'disabled', False)
+    header = factory_auth_header(jwt, aud=['account', 'epic-centre'], azp='epic-submit')
+
+    with caplog.at_level(logging.WARNING):
+        response = client.get(ENDPOINT, headers=header)
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert 'azp epic-submit is not in ALLOWED_CLIENT_IDS' in caplog.text
 
 
 def test_signed_in_user_is_returned_with_their_permissions(

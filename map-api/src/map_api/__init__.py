@@ -126,16 +126,14 @@ def create_app(run_mode=os.getenv('FLASK_ENV', 'development')):
 
         token_info = _verify_bearer_token()
 
-        # The EAO realm is shared across the EPIC applications, so once the
-        # realm has a group for this app, a genuine token is not by itself
-        # permission to be here. No-op while AUTH_REQUIRED_GROUP is unset.
-        if not token_utils.belongs_to_app(token_info):
+        # Any IDIR user can get a token from the realm;
+        # the apps turn non-members away themselves, but centre does not
+        if not token_utils.has_app_access(token_info):
             current_app.logger.warning(
-                'Rejected %s: token carries groups %s, none of which match '
-                'AUTH_REQUIRED_GROUP=%s',
+                'Rejected %s: no role in %s among groups %s',
                 token_utils.auth_guid(token_info),
+                app.config.get('ALLOWED_APP_GROUPS'),
                 token_utils.groups(token_info),
-                app.config.get('AUTH_REQUIRED_GROUP'),
             )
             raise PermissionDeniedError(
                 'You do not have access to this application.'
@@ -146,18 +144,17 @@ def create_app(run_mode=os.getenv('FLASK_ENV', 'development')):
 
     build_cache(app)
 
+    if not app.config.get('ALLOWED_CLIENT_IDS'):
+        app.logger.warning(
+            'ALLOWED_CLIENT_IDS is empty: every token will be refused. Set it to '
+            'the keycloak client ids of the applications that host the map.'
+        )
+
     if not app.config.get('CORS_ORIGINS'):
         app.logger.warning(
             'CORS_ORIGINS is empty: no browser origin can call this API. Set '
             'CORS_ORIGIN to the list of EPIC application origins for this '
             'environment.'
-        )
-
-    if not app.config.get('AUTH_REQUIRED_GROUP'):
-        app.logger.warning(
-            'AUTH_REQUIRED_GROUP is not set: every valid IDIR token from the '
-            'realm is accepted, including staff who only work in the other '
-            'EPIC applications. Set it once the realm has a group for this app.'
         )
 
     @app.after_request

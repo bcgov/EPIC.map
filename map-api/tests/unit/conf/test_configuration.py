@@ -64,3 +64,12 @@ def test_prod_config_secret_key(monkeypatch):  # pylint: disable=missing-docstri
     monkeypatch.setenv(key, 'SECRET_KEY')
     reload(config)
     assert config.ProdConfig().SECRET_KEY == 'SECRET_KEY'
+
+
+def test_an_unset_client_allowlist_admits_no_client(monkeypatch):
+    """No fallback to JWT_OIDC_AUDIENCE: an unset ALLOWED_CLIENT_IDS refuses every token."""
+    # Empty rather than deleted, or load_dotenv would refill it from a local .env.
+    monkeypatch.setenv('ALLOWED_CLIENT_IDS', '')
+    monkeypatch.setenv('JWT_OIDC_AUDIENCE', 'epic-map')
+    reload(config)
+    assert config.ProdConfig().ALLOWED_CLIENT_IDS == []

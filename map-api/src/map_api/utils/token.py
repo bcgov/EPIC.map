@@ -18,6 +18,8 @@ a change on the identity provider side has one place to land.
 """
 from flask import current_app
 
+from map_api.utils.constant import NO_ACCESS_ROLE
+
 
 def auth_guid(token_info) -> str:
     """Return the stable identifier for the user.
@@ -38,26 +40,6 @@ def idir_username(token_info) -> str:
 def groups(token_info):
     """Return the realm groups the token carries."""
     return (token_info or {}).get('groups') or []
-
-
-def client_ids(token_info):
-    """Return every keycloak client the token names, from `aud` and `azp`.
-
-    `aud` may be a single string or a list. `azp` (authorized party) is the
-    client the token was actually issued to, and is what distinguishes the EPIC
-    applications from each other: in the shared EAO realm every one of them
-    receives `aud: "account"`, so `azp` usually carries the real answer.
-    """
-    token_info = token_info or {}
-
-    audience = token_info.get('aud') or []
-    if isinstance(audience, str):
-        audience = [audience]
-    if not isinstance(audience, list):
-        audience = []
-
-    authorized_party = token_info.get('azp')
-    return [name for name in [*audience, authorized_party] if name]
 
 
 def host_app(token_info) -> str:
@@ -82,13 +64,12 @@ def is_allowed_client(token_info) -> bool:
     now backs several EPIC applications, each with its own keycloak client in
     the same realm, so one audience string can no longer describe who may call.
 
+    Only `azp`, the client the token was issued to, is read. Keycloak puts every
+    client the user holds a role in into `aud`, so `aud` names clients the token
+    was never issued to.
+
     Signature, issuer and expiry are unaffected - they are still verified by
     flask-jwt-oidc before this is consulted.
-
-    Deliberately one function with one caller path, so that moving to a
-    dedicated scope later is a configuration change and nothing else: once the
-    SSO team adds `epic-map-api`, ALLOWED_CLIENT_IDS becomes a single entry and
-    the code here is already correct.
 
     An empty allowlist denies everything. A misconfigured deployment should stop
     serving rather than accept tokens from any client in a shared realm.
@@ -97,23 +78,14 @@ def is_allowed_client(token_info) -> bool:
     if not allowed:
         return False
 
-    return any(name in allowed for name in client_ids(token_info))
+    return (token_info or {}).get('azp') in allowed
 
 
-def belongs_to_app(token_info) -> bool:
-    """Whether the token grants access to this application.
-
-    The EAO realm is shared across the EPIC applications, so once the realm has
-    a group for this app, a valid token is not on its own an entitlement to be
-    here. Until then AUTH_REQUIRED_GROUP is unset and any IDIR account in the
-    realm can sign in - see the startup warning in create_app.
-    """
-    required_group = (current_app.config.get('AUTH_REQUIRED_GROUP') or '').strip()
-    if not required_group:
-        return True
-
-    required_group = required_group.upper()
-    return any(required_group in group.upper() for group in groups(token_info))
+def has_app_access(token_info) -> bool:
+    """Whether the token holds a role group under one of ALLOWED_APP_GROUPS, as Track's own access check does."""
+    apps = {name.upper() for name in current_app.config.get('ALLOWED_APP_GROUPS') or []}
+    paths = (group.strip('/').upper().split('/') for group in groups(token_info))
+    return any(len(path) > 1 and path[0] in apps and path[1] != NO_ACCESS_ROLE for path in paths)
 
 
 def user_data_from_token(token_info):

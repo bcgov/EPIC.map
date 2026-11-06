@@ -14,7 +14,7 @@
 """Bring in the common JWT Manager."""
 from functools import wraps
 
-from flask import g, request
+from flask import current_app, g, request
 from flask.globals import request_ctx
 from flask_jwt_oidc import JwtManager
 from flask_jwt_oidc.exceptions import AuthError
@@ -107,6 +107,12 @@ class MultiClientJwtManager(JwtManager):
         # Checked against verified claims, never the unverified header, so a
         # token cannot name an allowed client without also being genuine.
         if not token_utils.is_allowed_client(payload):
+            current_app.logger.warning(
+                'Rejected %s: azp %s is not in ALLOWED_CLIENT_IDS %s',
+                token_utils.auth_guid(payload),
+                token_utils.host_app(payload),
+                current_app.config.get('ALLOWED_CLIENT_IDS'),
+            )
             raise AuthError({'code': 'invalid_claims',
                              'description':
                                  'Token was issued to a client this API does'

@@ -32,15 +32,19 @@ Four things gate a request, in order:
 2. **The issuing client is on the allowlist.** This API backs several EPIC
    applications, each with its own Keycloak client in the shared realm, and in
    that realm they all receive `aud: "account"` - so one audience string cannot
-   describe who may call. `ALLOWED_CLIENT_IDS` is checked against the `aud` and
-   `azp` claims instead, on the already-verified payload. An unlisted client is
+   describe who may call. `ALLOWED_CLIENT_IDS` is checked against the `azp`
+   claim instead, on the already-verified payload. `aud` is not read: Keycloak
+   lists there every client the user holds a role in. An unlisted client is
    a 401. An empty allowlist denies everything, deliberately: a misconfigured
    deployment should stop serving rather than accept any client in a shared
    realm. See `MultiClientJwtManager` in `auth.py` and `is_allowed_client` in
    `utils/token.py`.
-3. **Group membership**, if `AUTH_REQUIRED_GROUP` is set. The realm is shared
-   with the other EPIC applications, so once it has a group for EPIC.map a valid
-   token stops being permission to be here on its own.
+3. **A role in an allowed app** (temporary, while testers come in; access will
+   move to per-layer group checks). Any IDIR user can get a token from the realm;
+   each EPIC app turns non-members away itself. The token's `groups` must hold a
+   role under one of `ALLOWED_APP_GROUPS`, currently only `TRACK` (e.g.
+   `/TRACK/VIEWER`), the same check Track makes. `/TRACK/NO_ROLE` grants
+   nothing. Anything else is a 403. See `has_app_access` in `utils/token.py`.
 4. **Client roles**, where an endpoint asks for them with
    `@auth.has_one_of_roles([...])`. Roles are read from `resource_access`, not
    from the realm, so a role granted by another EPIC application does not carry
@@ -51,16 +55,11 @@ call creates their local `staff_users` row, so a user does not have to be seeded
 by an administrator before they can sign in - Keycloak decides who gets in, and
 that row is a profile, not an allowlist.
 
-### Current state: groups and roles are not enforced
+### Current state: client roles are not enforced
 
-The realm has no group or client roles for EPIC.map yet, so both of the
-optional checks above are switched off:
-
-- **`AUTH_REQUIRED_GROUP` is empty**, which means any valid IDIR token from the
-  `eao-epic` realm is accepted - including staff who only work in EPIC.compliance
-  or EPIC.track. The API logs a warning at startup while this is the case. Set
-  it to `MAP` once the realm has that group and the `epic-map` client has a
-  Group Membership mapper putting `groups` in the token.
+- **Every allowed client must put `groups` in its access token**, as full paths
+  (Group Membership mapper, "Full group path" on). Without it every caller from
+  that client is a 403.
 - **No endpoint asks for a role.** Every signed-in user is reported with the
   `User` permission, from `DEFAULT_PERMISSIONS` in `utils/constant.py`, whether
   or not their token carries a client role. Any role the token *does* carry is
@@ -69,11 +68,11 @@ optional checks above are switched off:
   endpoints that need it.
 
 The relevant settings are `JWT_OIDC_*`, `ALLOWED_CLIENT_IDS` and
-`AUTH_REQUIRED_GROUP` in `sample.env`. `ALLOWED_CLIENT_IDS` is the one to change
-when another EPIC application starts embedding the map — add its Keycloak client
-id, the `azp` its tokens carry. `JWT_OIDC_AUDIENCE` is only the fallback used
-when `ALLOWED_CLIENT_IDS` is unset, and `JWT_OIDC_CLIENT_ID` no longer decides
-who may call.
+`ALLOWED_APP_GROUPS` in `sample.env`. When another EPIC application starts
+embedding the map, add its Keycloak client id (the `azp` its tokens carry) to
+`ALLOWED_CLIENT_IDS` and its top-level group to `ALLOWED_APP_GROUPS`. An unset
+`ALLOWED_CLIENT_IDS` refuses every token. `JWT_OIDC_AUDIENCE` is not checked, and
+`JWT_OIDC_CLIENT_ID` no longer decides who may call.
 
 Requests that reach a handler are recorded by `AuditService` — auth guid, IDIR
 username, the calling application from `azp`, method, path and status. The table

@@ -13,7 +13,7 @@ data:
   JWT_OIDC_JWKS_CACHE_TIMEOUT: "{{ .Values.auth.jwt.cacheTimeout }}"
   JWT_OIDC_WELL_KNOWN_CONFIG: {{ .Values.auth.jwt.wellKnownConfig }}
   ALLOWED_CLIENT_IDS: {{ .Values.allowedClientIds | quote }}
-  AUTH_REQUIRED_GROUP: {{ .Values.authRequiredGroup | quote }}
+  ALLOWED_APP_GROUPS: {{ .Values.allowedAppGroups | quote }}
   CORS_ORIGIN: {{ .Values.corsOrigin | quote }}
   KEYCLOAK_BASE_URL: {{ .Values.auth.keycloak.uri }}
   # config.py reads KEYCLOAK_REALMNAME, not KEYCLOAK_REALM_NAME.

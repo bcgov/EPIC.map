@@ -52,7 +52,7 @@ LOCAL_CORS_ORIGINS = (
 # Keycloak clients whose tokens this API accepts when ALLOWED_CLIENT_IDS is not
 # set in a test run. Named here so the suite does not depend on a developer's
 # .env - see ALLOWED_CLIENT_IDS on _Config for what this list means.
-TEST_ALLOWED_CLIENT_IDS = ('compliance-web', 'submit-web', 'track-web', 'map-web')
+TEST_ALLOWED_CLIENT_IDS = ('epic-centre', 'map-web')
 
 # The kid the test suite stamps on the tokens it signs, matching the single key
 # in the generated JWKS below.
@@ -219,9 +219,9 @@ class _Config():  # pylint: disable=too-few-public-methods
     JWT_OIDC_ALGORITHMS = os.getenv('JWT_OIDC_ALGORITHMS', 'RS256')
     JWT_OIDC_JWKS_URI = os.getenv('JWT_OIDC_JWKS_URI')
     JWT_OIDC_ISSUER = os.getenv('JWT_OIDC_ISSUER')
-    # Kept as the fallback for ALLOWED_CLIENT_IDS below. It no longer drives the
-    # audience check directly: python-jose can only compare `aud` against a
-    # single string, and this API now serves several keycloak clients.
+    # Required by flask-jwt-oidc but not checked: python-jose can only compare
+    # `aud` against a single string, and this API serves several keycloak
+    # clients. ALLOWED_CLIENT_IDS below decides who may call.
     JWT_OIDC_AUDIENCE = os.getenv('JWT_OIDC_AUDIENCE', 'account')
     JWT_OIDC_CACHING_ENABLED = os.getenv('JWT_OIDC_CACHING_ENABLED', 'True')
     JWT_OIDC_JWKS_CACHE_TIMEOUT = 300
@@ -231,31 +231,23 @@ class _Config():  # pylint: disable=too-few-public-methods
     # map_api.utils.token.is_allowed_client.
     JWT_OIDC_CLIENT_ID = os.getenv('JWT_OIDC_CLIENT_ID', 'epic-map')
 
-    # The keycloak clients whose tokens this API accepts. Every EPIC application
-    # that embeds the map has its own client in the shared EAO realm, and a token
-    # names its client in `azp` (and sometimes in `aud`), so a single audience is
-    # no longer enough:
+    # The keycloak clients whose tokens this API accepts, matched against `azp`.
+    # Every EPIC application that embeds the map has its own client in the shared
+    # EAO realm, so a single audience is no longer enough:
     #
-    #     ALLOWED_CLIENT_IDS=compliance-web,submit-web,track-web,map-web
+    #     ALLOWED_CLIENT_IDS=epic-centre,epic-map
     #
-    # When the SSO team adds a dedicated scope for this API, this collapses back
-    # to one entry (ALLOWED_CLIENT_IDS=epic-map-api) with no code change - the
-    # check itself lives in one function, map_api.utils.token.is_allowed_client.
-    #
-    # Falls back to JWT_OIDC_AUDIENCE so an environment that has not been updated
-    # keeps the single-audience behaviour it had before.
-    ALLOWED_CLIENT_IDS = parse_csv(os.getenv('ALLOWED_CLIENT_IDS')) or [JWT_OIDC_AUDIENCE]
+    # `aud` is not read: keycloak lists there every client the user holds a role
+    # in. See map_api.utils.token.is_allowed_client. Unset, every token is refused.
+    ALLOWED_CLIENT_IDS = parse_csv(os.getenv('ALLOWED_CLIENT_IDS'))
 
     # Browser origins allowed to call this API. Bearer tokens are used rather
     # than cookies, so credentialed CORS is deliberately not enabled - see
     # create_app.
     CORS_ORIGINS = parse_csv(os.getenv('CORS_ORIGIN'))
 
-    # The keycloak group a token must carry to reach this API. Left unset until
-    # the realm has a group for EPIC.map: while it is empty any valid IDIR token
-    # from the realm is accepted, which includes staff who only work in the
-    # other EPIC applications. Set it to 'MAP' once the group exists.
-    AUTH_REQUIRED_GROUP = os.getenv('AUTH_REQUIRED_GROUP', '')
+    # Temporary gate while testers come in, until access is decided per layer by group.
+    ALLOWED_APP_GROUPS = parse_csv(os.getenv('ALLOWED_APP_GROUPS')) or ['TRACK']
 
     # Service account details
     KEYCLOAK_BASE_URL = os.getenv('KEYCLOAK_BASE_URL')
@@ -316,6 +308,7 @@ class TestConfig(_Config):  # pylint: disable=too-few-public-methods
     # Fixed rather than env-driven, so the suite asserts the same thing on every
     # machine. A developer's .env cannot widen or narrow what the tests accept.
     ALLOWED_CLIENT_IDS = list(TEST_ALLOWED_CLIENT_IDS)
+    ALLOWED_APP_GROUPS = ['TRACK']
 
     JWT_OIDC_TEST_MODE = True
     # JWT_OIDC_ISSUER = _get_config('JWT_OIDC_TEST_ISSUER')
