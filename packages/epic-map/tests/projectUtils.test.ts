@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createExpression } from "@maplibre/maplibre-gl-style-spec";
 import type { ExpressionSpecification, Map as MapLibreMap } from "maplibre-gl";
 import type { ProjectWork } from "@/api/useProjects";
 import {
   certificateTag,
   formatWorkDate,
+  frameBesideCard,
   glyphForType,
   hoveredProjectAt,
   keepProjectsOnTop,
@@ -18,6 +19,12 @@ import {
   workMetaLine,
   workStateBadge,
 } from "@/components/Projects/projectUtils";
+import {
+  FOCUS_FLY_MS,
+  FOCUS_MAX_ZOOM,
+  FOCUS_PADDING_PX,
+  PROJECT_CARD_WIDTH_PX,
+} from "@/utils/config";
 
 describe("glyphForType", () => {
   it.each([
@@ -204,6 +211,42 @@ describe("hoveredProjectAt", () => {
   it("is null for a dot carrying no name", () => {
     const { map } = fakeMap([PROJECTS_LAYER_ID], [dot(4, "")]);
     expect(hoveredProjectAt(map, [0, 0], null)).toBeNull();
+  });
+});
+
+describe("frameBesideCard", () => {
+  const cameraMap = (camera: object | undefined) => {
+    const map = { cameraForBounds: vi.fn(() => camera), easeTo: vi.fn() };
+    return { map, instance: map as unknown as MapLibreMap };
+  };
+
+  it("fits left of the card, capped at the focus zoom", () => {
+    const { map, instance } = cameraMap({ center: [-123, 49], zoom: 12 });
+
+    frameBesideCard(instance, [-124, 49, -123, 50]);
+
+    expect(map.cameraForBounds).toHaveBeenCalledWith([-124, 49, -123, 50], {
+      padding: {
+        top: FOCUS_PADDING_PX,
+        bottom: FOCUS_PADDING_PX,
+        left: FOCUS_PADDING_PX,
+        right: FOCUS_PADDING_PX + PROJECT_CARD_WIDTH_PX,
+      },
+      maxZoom: FOCUS_MAX_ZOOM,
+    });
+    expect(map.easeTo).toHaveBeenCalledWith({
+      center: [-123, 49],
+      zoom: 12,
+      duration: FOCUS_FLY_MS,
+    });
+  });
+
+  it("stays put when the map cannot fit the bounds", () => {
+    const { map, instance } = cameraMap(undefined);
+
+    frameBesideCard(instance, [-124, 49, -123, 50]);
+
+    expect(map.easeTo).not.toHaveBeenCalled();
   });
 });
 

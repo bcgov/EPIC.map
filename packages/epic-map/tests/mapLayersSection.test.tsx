@@ -22,6 +22,7 @@ import {
   RevealedComponentsProvider,
   useRevealedComponents,
 } from "@/components/Projects/RevealedComponentsContext";
+import type { MapExtent } from "@/types";
 
 const component = (overrides: Partial<ProjectComponent>): ProjectComponent => ({
   featureId: "{F1}",
@@ -37,8 +38,11 @@ const component = (overrides: Partial<ProjectComponent>): ProjectComponent => ({
   sensitive: false,
   adjusted: false,
   footprint: false,
+  bounds: [-123, 49, -123, 49],
   ...overrides,
 });
+
+const SHREW_BOUNDS: MapExtent = [-122.5, 49.1, -122.2, 49.4];
 
 const COMPONENTS = [
   component({ featureId: "{P1}", label: "Access Route", comment: "Amendment 1" }),
@@ -53,6 +57,7 @@ const COMPONENTS = [
     componentType: "Value component",
     label: "Wildlife Habitat Area",
     comment: "Pacific Water Shrew",
+    bounds: SHREW_BOUNDS,
   }),
 ];
 
@@ -76,9 +81,12 @@ vi.mock("@/components/Layers/eaoVisibility", () => ({
   eaoFeatureIdsAt: () => state.underClick,
 }));
 
+const frameBesideCard = vi.fn<(map: unknown, bounds: MapExtent) => void>();
 vi.mock("@/components/Projects/projectUtils", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   hasProjectAt: () => state.onDot,
+  frameBesideCard: (map: unknown, bounds: MapExtent) =>
+    frameBesideCard(map, bounds),
 }));
 
 const scrollIntoNearestView = vi.fn<(element: HTMLElement | null) => void>();
@@ -146,6 +154,7 @@ beforeEach(() => {
   revealed.ids = [];
   revealed.hidden = [];
   revealed.selected = [];
+  frameBesideCard.mockClear();
 });
 afterEach(cleanup);
 
@@ -422,6 +431,98 @@ describe("selecting a component", () => {
 
     expect(screen.getByText("Component 7")).toBeDefined();
     expect(screen.queryByText("Component 6")).toBeNull();
+  });
+});
+
+describe("moving the map to a selected component", () => {
+  const row = (name: string) => screen.getByRole("button", { name });
+
+  it("frames the row that was clicked", () => {
+    const map = fakeMap();
+    renderSection(map);
+
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(frameBesideCard).toHaveBeenCalledTimes(1);
+    expect(frameBesideCard).toHaveBeenCalledWith(map, SHREW_BOUNDS);
+  });
+
+  it("frames every feature of the row together", () => {
+    state.components = [
+      component({ featureId: "{A1}", bounds: [-124, 50, -123.5, 50.5] }),
+      component({ featureId: "{A2}", bounds: [-123, 49, -123, 49] }),
+    ];
+    const map = fakeMap();
+    renderSection(map);
+
+    fireEvent.click(row("Access Route"));
+
+    expect(frameBesideCard).toHaveBeenCalledWith(map, [-124, 49, -123, 50.5]);
+  });
+
+  it("frames only the features drawn, leaving a hidden sensitive one out", () => {
+    state.components = [
+      component({ featureId: "{A1}", bounds: [-124, 50, -123.5, 50.5] }),
+      component({ featureId: "{S1}", sensitive: true, bounds: [-120, 55, -120, 55] }),
+    ];
+    const map = fakeMap();
+    renderSection(map);
+
+    fireEvent.click(row("Access Route"));
+
+    expect(frameBesideCard).toHaveBeenCalledWith(map, [-124, 50, -123.5, 50.5]);
+  });
+
+  it("moves to a newly selected component", () => {
+    const map = fakeMap();
+    renderSection(map);
+
+    fireEvent.click(row("Access Route Amendment 1"));
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(frameBesideCard).toHaveBeenCalledTimes(2);
+    expect(frameBesideCard).toHaveBeenLastCalledWith(map, SHREW_BOUNDS);
+  });
+
+  it("stays put when the selected row is clicked again", () => {
+    renderSection(fakeMap());
+
+    fireEvent.click(row("Pacific Water Shrew"));
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(frameBesideCard).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays put when the selected component is taken off the map", () => {
+    renderSection(fakeMap());
+
+    fireEvent.click(row("Pacific Water Shrew"));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show Wildlife Habitat Area: Pacific Water Shrew on the map",
+      }),
+    );
+
+    expect(frameBesideCard).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays put for a component that is off the map", () => {
+    state.components = [
+      component({ featureId: "{S1}", label: "Laydown Area", sensitive: true }),
+    ];
+    renderSection(fakeMap());
+
+    fireEvent.click(row("Laydown Area"));
+
+    expect(frameBesideCard).not.toHaveBeenCalled();
+  });
+
+  it("stays put before the map has loaded", () => {
+    renderSection(null);
+
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(frameBesideCard).not.toHaveBeenCalled();
   });
 });
 

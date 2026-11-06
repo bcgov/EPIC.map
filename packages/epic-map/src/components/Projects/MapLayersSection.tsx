@@ -20,6 +20,7 @@ import {
 } from "@/components/Projects/componentGrouping";
 import {
   BODY_TEXT,
+  frameBesideCard,
   hasProjectAt,
   LINK_COLOR,
   SECONDARY_TEXT_COLOR,
@@ -32,6 +33,7 @@ import SubmissionGroup, {
   listSx,
 } from "@/components/Projects/SubmissionGroup";
 import { METADATA_TOLERANCE_PX } from "@/utils/config";
+import { unionBounds } from "@/utils/geo";
 import { scrollIntoNearestView } from "@/utils/scroll";
 
 const EMPTY_TEXT_COLOR = "#757371";
@@ -339,6 +341,16 @@ export default function MapLayersSection({
     select: (key) => {
       unfocus();
       setSelectedKey((current) => (current === key ? null : key));
+      // Re-clicking only deselects.
+      if (key === selectedKey) return;
+      // Drawn features only, so a hidden sensitive one stays unrevealed.
+      const shown = new Set(revealed);
+      const bounds = unionBounds(
+        (findVariant(groups, key)?.features ?? [])
+          .filter(({ featureId }) => shown.has(featureId))
+          .map(({ bounds }) => bounds),
+      );
+      if (map && bounds) frameBesideCard(map, bounds);
     },
     selectedRowRef,
   };

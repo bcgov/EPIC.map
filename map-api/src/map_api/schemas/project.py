@@ -123,6 +123,11 @@ class ProjectComponentSchema(Schema):
     sensitive = fields.Bool()
     adjusted = fields.Bool(metadata={'description': 'Whether GIS adjusted the geometry'})
     footprint = fields.Bool(metadata={'description': "Whether this is the project's overall boundary"})
+    bounds = fields.List(
+        fields.Float(),
+        allow_none=True,
+        metadata={'description': 'West, south, east, north in degrees'},
+    )
 
 
 def to_feature_collection(projects: list) -> dict:

@@ -37,3 +37,18 @@ export const geoBounds = (features: readonly Feature[]): MapExtent | null => {
 
   return west === Infinity ? null : [west, south, east, north];
 };
+
+/** The extent covering every non-null one, or null if none. */
+export const unionBounds = (
+  extents: ReadonlyArray<MapExtent | null>,
+): MapExtent | null => {
+  // Truthy, not non-null: an older map-api omits bounds.
+  const known = extents.filter((extent): extent is MapExtent => Boolean(extent));
+  if (known.length === 0) return null;
+  return [
+    Math.min(...known.map(([west]) => west)),
+    Math.min(...known.map(([, south]) => south)),
+    Math.max(...known.map(([, , east]) => east)),
+    Math.max(...known.map(([, , , north]) => north)),
+  ];
+};

@@ -237,6 +237,7 @@ def test_components_are_listed_for_the_card(app, client, jwt, session):
         'sensitive': False,
         'adjusted': True,
         'footprint': False,
+        'bounds': [-124.0, 50.0, -122.0, 51.5],
     }
     with patch(COMPONENT_SERVICE) as service:
         service.for_project.return_value = [component]
@@ -258,4 +259,5 @@ def test_components_are_listed_for_the_card(app, client, jwt, session):
         'sensitive': False,
         'adjusted': True,
         'footprint': False,
+        'bounds': [-124.0, 50.0, -122.0, 51.5],
     }]

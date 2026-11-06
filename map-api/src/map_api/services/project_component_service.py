@@ -52,8 +52,14 @@ class ProjectComponentService:
                        style_category,
                        coalesce(sensitive, false) AS sensitive,
                        coalesce(gis_adjusted, false) AS adjusted,
-                       is_footprint AS footprint
-                FROM cache.eao_project_data
+                       is_footprint AS footprint,
+                       CASE WHEN NOT ST_IsEmpty(geom) THEN ARRAY[
+                           ST_XMin(envelope), ST_YMin(envelope),
+                           ST_XMax(envelope), ST_YMax(envelope)
+                       ] END AS bounds
+                FROM cache.eao_project_data,
+                     -- Envelope first: a 3857 box transforms exactly to 4326.
+                     LATERAL ST_Transform(ST_Envelope(geom), 4326) AS envelope
                 WHERE track_id = :track_id
                 ORDER BY date_received DESC NULLS LAST, label, feature_id
             """),
