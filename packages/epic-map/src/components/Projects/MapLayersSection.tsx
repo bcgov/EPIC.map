@@ -20,6 +20,7 @@ import {
 } from "@/components/Projects/componentGrouping";
 import {
   BODY_TEXT,
+  frameBesideCard,
   hasProjectAt,
   LINK_COLOR,
   SECONDARY_TEXT_COLOR,
@@ -31,7 +32,6 @@ import SubmissionGroup, {
   type ComponentControls,
   listSx,
 } from "@/components/Projects/SubmissionGroup";
-import type { MapExtent } from "@/types";
 import { METADATA_TOLERANCE_PX } from "@/utils/config";
 import { unionBounds } from "@/utils/geo";
 import { scrollIntoNearestView } from "@/utils/scroll";
@@ -236,14 +236,12 @@ const ComponentTypeSection = ({
 type MapLayersSectionProps = {
   projectId: number;
   map: MapLibreMap | null;
-  frameOnMap: (bounds: MapExtent) => void;
 };
 
 /** A project's submitted project and value components, and their map toggles. */
 export default function MapLayersSection({
   projectId,
   map,
-  frameOnMap,
 }: MapLayersSectionProps) {
   const {
     data: components,
@@ -352,7 +350,7 @@ export default function MapLayersSection({
           .filter(({ featureId }) => shown.has(featureId))
           .map(({ bounds }) => bounds),
       );
-      if (bounds) frameOnMap(bounds);
+      if (map && bounds) frameBesideCard(map, bounds);
     },
     selectedRowRef,
   };

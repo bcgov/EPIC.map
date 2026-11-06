@@ -81,9 +81,12 @@ vi.mock("@/components/Layers/eaoVisibility", () => ({
   eaoFeatureIdsAt: () => state.underClick,
 }));
 
+const frameBesideCard = vi.fn<(map: unknown, bounds: MapExtent) => void>();
 vi.mock("@/components/Projects/projectUtils", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   hasProjectAt: () => state.onDot,
+  frameBesideCard: (map: unknown, bounds: MapExtent) =>
+    frameBesideCard(map, bounds),
 }));
 
 const scrollIntoNearestView = vi.fn<(element: HTMLElement | null) => void>();
@@ -110,8 +113,6 @@ const Probe = () => {
   revealed.selected = selectedFeatureIds;
   return null;
 };
-
-const frameOnMap = vi.fn();
 
 type Listener = (event: unknown) => void;
 
@@ -140,11 +141,7 @@ type FakeMap = ReturnType<typeof fakeMap>;
 const renderSection = (map: FakeMap | null = null) =>
   render(
     <RevealedComponentsProvider>
-      <MapLayersSection
-        projectId={7}
-        map={map as never}
-        frameOnMap={frameOnMap}
-      />
+      <MapLayersSection projectId={7} map={map as never} />
       <Probe />
     </RevealedComponentsProvider>,
   );
@@ -157,7 +154,7 @@ beforeEach(() => {
   revealed.ids = [];
   revealed.hidden = [];
   revealed.selected = [];
-  frameOnMap.mockClear();
+  frameBesideCard.mockClear();
 });
 afterEach(cleanup);
 
@@ -441,12 +438,13 @@ describe("moving the map to a selected component", () => {
   const row = (name: string) => screen.getByRole("button", { name });
 
   it("frames the row that was clicked", () => {
-    renderSection();
+    const map = fakeMap();
+    renderSection(map);
 
     fireEvent.click(row("Pacific Water Shrew"));
 
-    expect(frameOnMap).toHaveBeenCalledTimes(1);
-    expect(frameOnMap).toHaveBeenCalledWith(SHREW_BOUNDS);
+    expect(frameBesideCard).toHaveBeenCalledTimes(1);
+    expect(frameBesideCard).toHaveBeenCalledWith(map, SHREW_BOUNDS);
   });
 
   it("frames every feature of the row together", () => {
@@ -454,11 +452,12 @@ describe("moving the map to a selected component", () => {
       component({ featureId: "{A1}", bounds: [-124, 50, -123.5, 50.5] }),
       component({ featureId: "{A2}", bounds: [-123, 49, -123, 49] }),
     ];
-    renderSection();
+    const map = fakeMap();
+    renderSection(map);
 
     fireEvent.click(row("Access Route"));
 
-    expect(frameOnMap).toHaveBeenCalledWith([-124, 49, -123, 50.5]);
+    expect(frameBesideCard).toHaveBeenCalledWith(map, [-124, 49, -123, 50.5]);
   });
 
   it("frames only the features drawn, leaving a hidden sensitive one out", () => {
@@ -466,34 +465,36 @@ describe("moving the map to a selected component", () => {
       component({ featureId: "{A1}", bounds: [-124, 50, -123.5, 50.5] }),
       component({ featureId: "{S1}", sensitive: true, bounds: [-120, 55, -120, 55] }),
     ];
-    renderSection();
+    const map = fakeMap();
+    renderSection(map);
 
     fireEvent.click(row("Access Route"));
 
-    expect(frameOnMap).toHaveBeenCalledWith([-124, 50, -123.5, 50.5]);
+    expect(frameBesideCard).toHaveBeenCalledWith(map, [-124, 50, -123.5, 50.5]);
   });
 
   it("moves to a newly selected component", () => {
-    renderSection();
+    const map = fakeMap();
+    renderSection(map);
 
     fireEvent.click(row("Access Route Amendment 1"));
     fireEvent.click(row("Pacific Water Shrew"));
 
-    expect(frameOnMap).toHaveBeenCalledTimes(2);
-    expect(frameOnMap).toHaveBeenLastCalledWith(SHREW_BOUNDS);
+    expect(frameBesideCard).toHaveBeenCalledTimes(2);
+    expect(frameBesideCard).toHaveBeenLastCalledWith(map, SHREW_BOUNDS);
   });
 
   it("stays put when the selected row is clicked again", () => {
-    renderSection();
+    renderSection(fakeMap());
 
     fireEvent.click(row("Pacific Water Shrew"));
     fireEvent.click(row("Pacific Water Shrew"));
 
-    expect(frameOnMap).toHaveBeenCalledTimes(1);
+    expect(frameBesideCard).toHaveBeenCalledTimes(1);
   });
 
   it("stays put when the selected component is taken off the map", () => {
-    renderSection();
+    renderSection(fakeMap());
 
     fireEvent.click(row("Pacific Water Shrew"));
     fireEvent.click(
@@ -502,18 +503,26 @@ describe("moving the map to a selected component", () => {
       }),
     );
 
-    expect(frameOnMap).toHaveBeenCalledTimes(1);
+    expect(frameBesideCard).toHaveBeenCalledTimes(1);
   });
 
   it("stays put for a component that is off the map", () => {
     state.components = [
       component({ featureId: "{S1}", label: "Laydown Area", sensitive: true }),
     ];
-    renderSection();
+    renderSection(fakeMap());
 
     fireEvent.click(row("Laydown Area"));
 
-    expect(frameOnMap).not.toHaveBeenCalled();
+    expect(frameBesideCard).not.toHaveBeenCalled();
+  });
+
+  it("stays put before the map has loaded", () => {
+    renderSection(null);
+
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(frameBesideCard).not.toHaveBeenCalled();
   });
 });
 
@@ -535,11 +544,7 @@ describe("sharing the component highlight with Select area", () => {
     render(
       <SelectAreaProvider>
         <RevealedComponentsProvider>
-          <MapLayersSection
-            projectId={7}
-            map={null}
-            frameOnMap={frameOnMap}
-          />
+          <MapLayersSection projectId={7} map={null} />
           <Probe />
           <AreaProbe />
         </RevealedComponentsProvider>
@@ -726,11 +731,7 @@ describe("clicking a component on the map", () => {
     const { unmount } = render(
       <SelectAreaProvider>
         <RevealedComponentsProvider>
-          <MapLayersSection
-            projectId={7}
-            map={map as never}
-            frameOnMap={frameOnMap}
-          />
+          <MapLayersSection projectId={7} map={map as never} />
           <Probe />
           <AreaProbe />
         </RevealedComponentsProvider>
