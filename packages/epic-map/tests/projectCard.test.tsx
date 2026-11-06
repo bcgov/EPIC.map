@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 //
-// That the card draws the certificate tag it is given. Which tag that is, and
-// the colour it carries, is certificateTag's own test in projectUtils.
+// That the card draws the certificate tag it is given and pins its header.
+// Which tag, and its colour, is certificateTag's own test in projectUtils.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { Project } from "@/api/useProjects";
 
 const PROJECT: Project = {
@@ -25,15 +26,22 @@ const PROJECT: Project = {
   latitude: 54.7,
 };
 
-const state: { project: Project } = { project: PROJECT };
+const state: { project: Project; error: Error | null } = {
+  project: PROJECT,
+  error: null,
+};
 
 vi.mock("@/api/useProjects", () => ({
-  useProject: () => ({ data: state.project, error: null, isLoading: false }),
+  useProject: () => ({
+    data: state.project,
+    error: state.error,
+    isLoading: false,
+  }),
 }));
 
 // Both reach for the widget's api client; what they draw is their own test.
 vi.mock("@/components/Projects/MapLayersSection", () => ({
-  default: () => <div />,
+  default: () => <div data-testid="map-layers" />,
 }));
 vi.mock("@/components/Projects/WorksSection", () => ({
   default: () => <div />,
@@ -43,15 +51,27 @@ const { default: ProjectCard } = await import(
   "@/components/Projects/ProjectCard"
 );
 
-const card = (certificate: Partial<Project>) => {
+const card = (certificate: Partial<Project> = {}) => {
   state.project = { ...PROJECT, ...certificate };
+  const onClose = vi.fn();
   render(
-    <ProjectCard projectId={7} point={null} onClose={vi.fn()} map={null} />,
+    <ProjectCard projectId={7} point={null} onClose={onClose} map={null} />,
   );
+  return onClose;
+};
+
+/** Mirrors scrollIntoNearestView's container lookup. */
+const scroller = (element: HTMLElement) => {
+  let node = element.parentElement;
+  while (node && !["auto", "scroll"].includes(getComputedStyle(node).overflowY)) {
+    node = node.parentElement;
+  }
+  return node;
 };
 
 beforeEach(() => {
   state.project = PROJECT;
+  state.error = null;
 });
 afterEach(cleanup);
 
@@ -79,5 +99,37 @@ describe("the card's certificate tag", () => {
     card({});
 
     expect(screen.queryByText(/Certificate/)).toBeNull();
+  });
+});
+
+describe("the card's pinned header", () => {
+  /** Not sticky, which would hide a row MAP-100 scrolls to behind it. */
+  it("keeps the name, proponent and close out of the scrolling body", () => {
+    card();
+    const body = scroller(screen.getByTestId("map-layers"));
+    const inBody = (element: HTMLElement) => body?.contains(element);
+
+    expect(inBody(screen.getByText("Mines"))).toBe(true);
+    expect(inBody(screen.getByRole("heading", { name: PROJECT.name }))).toBe(false);
+    expect(inBody(screen.getByText("Pacific Booker Minerals Inc."))).toBe(false);
+    expect(inBody(screen.getByRole("button", { name: "Close project" }))).toBe(false);
+  });
+
+  it("drops the proponent when a refetch fails over cached data", () => {
+    state.error = new Error("Network Error");
+    card();
+
+    expect(
+      screen.getByText("This project could not be loaded. Please try again."),
+    ).toBeDefined();
+    expect(screen.queryByText("Pacific Booker Minerals Inc.")).toBeNull();
+  });
+
+  it("closes the card from the header", async () => {
+    const onClose = card();
+
+    await userEvent.click(screen.getByRole("button", { name: "Close project" }));
+
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });
