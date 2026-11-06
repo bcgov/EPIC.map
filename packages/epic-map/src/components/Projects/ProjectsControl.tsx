@@ -229,6 +229,7 @@ export default function ProjectsControl({
           projectId={selectedId}
           point={point}
           onClose={() => onSelect(null)}
+          map={map}
           frameOnMap={frameOnMap}
         />
       )}

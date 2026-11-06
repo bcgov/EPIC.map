@@ -50,6 +50,7 @@ const card = (certificate: Partial<Project>) => {
       projectId={7}
       point={null}
       onClose={vi.fn()}
+      map={null}
       frameOnMap={vi.fn()}
     />,
   );

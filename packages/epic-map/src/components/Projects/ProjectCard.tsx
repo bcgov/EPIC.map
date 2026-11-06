@@ -2,6 +2,7 @@ import type { ElementType, ReactNode } from "react";
 import axios from "axios";
 import { Box, Button, IconButton, Skeleton, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import type { Map as MapLibreMap } from "maplibre-gl";
 import BeachAccessIcon from "@mui/icons-material/BeachAccess";
 import CategoryIcon from "@mui/icons-material/Category";
 import CloseIcon from "@mui/icons-material/Close";
@@ -86,6 +87,7 @@ type ProjectCardProps = {
   /** The dot's own properties, shown while the rest of the card loads. */
   point: ProjectPoint | null;
   onClose: () => void;
+  map: MapLibreMap | null;
   frameOnMap: (bounds: MapExtent) => void;
 };
 
@@ -94,6 +96,7 @@ export default function ProjectCard({
   projectId,
   point,
   onClose,
+  map,
   frameOnMap,
 }: ProjectCardProps) {
   const theme = useTheme();
@@ -225,7 +228,11 @@ export default function ProjectCard({
         </Box>
         {project && !error && (
           <>
-            <MapLayersSection projectId={projectId} frameOnMap={frameOnMap} />
+            <MapLayersSection
+              projectId={projectId}
+              map={map}
+              frameOnMap={frameOnMap}
+            />
             <WorksSection projectId={projectId} />
           </>
         )}

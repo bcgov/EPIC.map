@@ -12,7 +12,7 @@ python-dotenv
 psycopg2-binary
 marshmallow-sqlalchemy==1.0.0
 marshmallow_enum
-marshmallow==3.18.0
+marshmallow==3.26.2
 jsonschema
 requests
 itsdangerous
@@ -26,6 +26,7 @@ python-dotenv
 requests
 flask_cors
 importlib-resources
+pytz
 tenacity==9.0.0
 redis==8.1.0
 GeoAlchemy2==0.20.0
