@@ -74,33 +74,35 @@ const useShowOnMap = (
 
 /**
  * Hands over the row of the topmost listed feature under each map click, and
- * points the cursor over one. A map tool's clicks, and a project dot, are left
- * to them.
+ * points the cursor over one. Measure's clicks, and a project dot, are left to
+ * them.
  */
 const useMapPicks = (
   map: MapLibreMap | null,
   places: ReadonlyMap<string, RowPlace>,
   onPick: (place: RowPlace) => void,
 ) => {
-  const { tool } = useSelectArea();
+  // Select area adds only the topmost feature, so only its row is picked.
+  const topmostOnly = useSelectArea().tool === "select";
   const { placing } = useMeasure();
-  const toolOwnsClicks = tool === "select" || placing;
   const placesRef = useRef(places);
   placesRef.current = places;
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
 
   useEffect(() => {
-    if (!map || toolOwnsClicks) return undefined;
+    if (!map || placing) return undefined;
 
     const canvas = map.getCanvas();
     // Whether this hook set the cursor, so it never clears another's.
     let pointing = false;
 
-    const listedAt = (point: MapMouseEvent["point"]) =>
-      eaoFeatureIdsAt(map, point, METADATA_TOLERANCE_PX)
+    const listedAt = (point: MapMouseEvent["point"]) => {
+      const ids = eaoFeatureIdsAt(map, point, METADATA_TOLERANCE_PX);
+      return (topmostOnly ? ids.slice(0, 1) : ids)
         .map((id) => placesRef.current.get(id))
         .find((place) => place !== undefined);
+    };
 
     const onClick = (event: MapMouseEvent) => {
       if (hasProjectAt(map, event.point)) return;
@@ -135,7 +137,7 @@ const useMapPicks = (
       map.off("mouseout", unpoint);
       unpoint();
     };
-  }, [map, toolOwnsClicks]);
+  }, [map, placing, topmostOnly]);
 };
 
 /** The set with `key` in or out; the same set if that changes nothing. */
@@ -267,7 +269,8 @@ export default function MapLayersSection({
   const [mapPick, setMapPick] = useState<{
     opening: ComponentType | null;
   } | null>(null);
-  const { focused, unfocus } = useSelectArea();
+  const { tool, selected: selection, add, focused, unfocus } = useSelectArea();
+  const selecting = tool === "select";
   useEffect(() => {
     if (focused !== null) setSelectedKey(null);
   }, [focused]);
@@ -294,11 +297,14 @@ export default function MapLayersSection({
   );
 
   // Only what is drawn: a hidden component has nothing on the map to highlight.
+  // In Select area, only what the selection holds.
   const highlighted = useMemo(() => {
     const selected = findVariant(groups, selectedKey);
-    const shown = new Set(revealed);
+    const shown = new Set(
+      selecting ? selection.map(({ featureId }) => featureId) : revealed,
+    );
     return (selected?.featureIds ?? []).filter((id) => shown.has(id));
-  }, [groups, selectedKey, revealed]);
+  }, [groups, selectedKey, selecting, selection, revealed]);
 
   useShowOnMap(components ?? NO_COMPONENTS, revealed, highlighted);
 
@@ -307,6 +313,7 @@ export default function MapLayersSection({
   // Not through `select`: a map click selects, never deselects.
   useMapPicks(map, places, (place) => {
     const { type, submissionKey, labelIndex, variantKey } = place;
+    unfocus();
     setSelectedKey(variantKey);
     if (labelIndex >= COLLAPSED_LABELS) {
       setExpandedSubmissions((current) =>
@@ -340,16 +347,19 @@ export default function MapLayersSection({
     selectedKey,
     select: (key) => {
       unfocus();
-      setSelectedKey((current) => (current === key ? null : key));
-      // Re-clicking only deselects.
-      if (key === selectedKey) return;
+      // In Select area, re-clicking re-highlights.
+      const deselect = key === selectedKey && !selecting;
+      setSelectedKey(deselect ? null : key);
+      if (deselect) return;
       // Drawn features only, so a hidden sensitive one stays unrevealed.
       const shown = new Set(revealed);
-      const bounds = unionBounds(
-        (findVariant(groups, key)?.features ?? [])
-          .filter(({ featureId }) => shown.has(featureId))
-          .map(({ bounds }) => bounds),
+      const drawn = (findVariant(groups, key)?.features ?? []).filter(
+        ({ featureId }) => shown.has(featureId),
       );
+      if (selecting) {
+        add(...drawn.map(({ featureId, label }) => ({ featureId, label })));
+      }
+      const bounds = unionBounds(drawn.map(({ bounds }) => bounds));
       if (map && bounds) frameBesideCard(map, bounds);
     },
     selectedRowRef,

@@ -71,7 +71,7 @@ export interface SelectAreaState {
 
 export type SelectAreaAction =
   | { type: "toggleTool"; tool: MapTool }
-  | { type: "add"; feature: SelectedFeature }
+  | { type: "add"; features: readonly SelectedFeature[] }
   | { type: "remove"; featureId: string }
   | { type: "clear" }
   | { type: "focus"; focus: Focus }
@@ -141,11 +141,12 @@ export const selectAreaReducer = (
         ...(state.tool === "select" ? INITIAL_STATE : state),
         tool: state.tool === action.tool ? null : action.tool,
       };
-    case "add":
-      if (state.selected.some(({ featureId }) => featureId === action.feature.featureId)) {
-        return state;
-      }
-      return withoutResults({ ...state, selected: [...state.selected, action.feature] });
+    case "add": {
+      const held = new Set(state.selected.map(({ featureId }) => featureId));
+      const added = action.features.filter(({ featureId }) => !held.has(featureId));
+      if (added.length === 0) return state;
+      return withoutResults({ ...state, selected: [...state.selected, ...added] });
+    }
     case "remove":
       return withoutResults({
         ...state,
@@ -202,8 +203,8 @@ export const selectAreaReducer = (
 
 interface SelectArea extends SelectAreaState {
   toggleTool: (tool: MapTool) => void;
-  /** A no-op for a feature already in. */
-  add: (feature: SelectedFeature) => void;
+  /** Skips any feature already in. */
+  add: (...features: SelectedFeature[]) => void;
   remove: (featureId: string) => void;
   /** Clears selection, results and highlights. */
   clear: () => void;
@@ -259,7 +260,7 @@ export const SelectAreaProvider = ({ children }: { children: ReactNode }) => {
   const actions = useMemo(
     () => ({
       toggleTool: (tool: MapTool) => dispatch({ type: "toggleTool", tool }),
-      add: (feature: SelectedFeature) => dispatch({ type: "add", feature }),
+      add: (...features: SelectedFeature[]) => dispatch({ type: "add", features }),
       remove: (featureId: string) => dispatch({ type: "remove", featureId }),
       clear: () => dispatch({ type: "clear" }),
       focus: (featureId: string) =>
