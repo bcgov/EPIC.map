@@ -77,22 +77,18 @@ class LocalLayerInfo(Resource):
     @auth.require
     @ApiHelper.swagger_decorators(
         API,
-        endpoint_description='When this layer was last loaded from its source extract',
+        endpoint_description='When the source extract this layer serves was last updated',
     )
     @API.response(code=200, model=local_layer_info_model, description='Success')
     @API.response(400, 'Bad Request')
     @API.response(404, 'No such layer is hosted here')
     def get(object_name: str):
-        """Return what the panel shows about the layer itself.
-
-        The load date, not the warehouse's: a hosted layer is a copy, and what
-        dates it is when the copy was taken. Null where nothing is loaded.
-        """
-        layer = _registered_layer(object_name)
+        """Return what the panel shows about the layer itself."""
+        _registered_layer(object_name)
 
         return LocalLayerInfoSchema().dump({
             'object_name': object_name,
-            'loaded_date': LocalLayerService.last_loaded(layer, object_name),
+            'last_updated': LocalLayerService.last_updated(object_name),
         }), HTTPStatus.OK
 
 

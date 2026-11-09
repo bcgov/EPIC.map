@@ -69,14 +69,13 @@ export default function LayerInfo({ layer }: { layer: CatalogueLayer }) {
   const width = hasWidthSlider(layer.objectName);
   const lineWidth = lineWidths[layer.id] ?? DEFAULT_LAYER_LINE_WIDTH;
 
-  // A hosted layer carries no catalogue record, so its date is the day map-api
-  // last loaded the extract it is serving - asked for only for those layers.
+  // A hosted layer is dated by its delivered file, not a catalogue record.
   const hosted = isLocalLayer(layer.objectName);
   const { data: hostedInfo } = useLocalLayerInfo(
     hosted ? (layer.objectName as string) : null,
   );
   const lastUpdated = formatDate(
-    hosted ? hostedInfo?.loadedDate : layer.lastUpdated,
+    hosted ? hostedInfo?.lastUpdated : layer.lastUpdated,
   );
 
   const labelSx = {

@@ -267,36 +267,27 @@ class LocalLayerService:
             {'selection': selection, 'tolerance': tolerance},
         ).scalar()
 
-    @classmethod
-    def last_loaded(cls, layer: 'LocalLayer', object_name: str):
-        """Return when the rows this layer is serving were loaded, or None.
-
-        The most recent run that actually replaced the stored extract, which is
-        what "last updated" means to someone reading the panel. A run that found
-        the delivery unchanged, or refused it, left the data where it was, so it
-        is not what dates the layer - the history is kept for the operators, and
-        this is the one line of it the map shows.
-
-        Falls back to the rows' own `loaded_date` where no run is recorded: the
-        ingest always writes its history, so that is data put there by hand, and
-        dating it from the rows beats showing nothing.
-        """
-        recorded = db.session.execute(
+    @staticmethod
+    def last_updated(object_name: str):
+        """Return the served delivery's own date, or None."""
+        # Same digest, same date, so a later skip can date an older load.
+        return db.session.execute(
             text("""
-                SELECT loaded_date
+                SELECT source_updated_date
                 FROM cache.local_layer_loads
-                WHERE object_name = :object_name AND status = 'loaded'
+                WHERE object_name = :object_name
+                  AND source_updated_date IS NOT NULL
+                  AND source_digest = (
+                      SELECT source_digest
+                      FROM cache.local_layer_loads
+                      WHERE object_name = :object_name AND status = 'loaded'
+                      ORDER BY loaded_date DESC
+                      LIMIT 1
+                  )
                 ORDER BY loaded_date DESC
                 LIMIT 1
             """),
             {'object_name': object_name},
-        ).scalar()
-        if recorded is not None:
-            return recorded
-
-        # Interpolated from the registry, never the request.
-        return db.session.execute(
-            text(f'SELECT max(loaded_date) FROM {layer.table}')
         ).scalar()
 
     @staticmethod
