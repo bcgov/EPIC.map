@@ -147,6 +147,14 @@ const renderSection = (map: FakeMap | null = null) =>
     </RevealedComponentsProvider>,
   );
 
+/** Both submissions share a title: project first, value second. */
+const submissionToggles = () =>
+  screen.getAllByRole("checkbox", {
+    name: "Show Project Notification · Pre EA on the map",
+  });
+
+const showValueComponents = () => fireEvent.click(submissionToggles()[1]);
+
 beforeEach(() => {
   state.components = COMPONENTS;
   state.underClick = [];
@@ -204,23 +212,39 @@ describe("the project panel's Map Layers", () => {
     expect(screen.getByText("Pacific Water Shrew")).toBeDefined();
   });
 
-  it("puts every submission on the map to begin with", () => {
+  it("starts with project components on the map and value components off", () => {
     renderSection();
+    const [projectToggle, valueToggle] = submissionToggles();
+
+    expect(revealed.ids).toEqual(["{P1}"]);
+    expect((projectToggle as HTMLInputElement).checked).toBe(true);
+    expect((valueToggle as HTMLInputElement).checked).toBe(false);
+  });
+
+  it("still lists value components while they are off the map", () => {
+    renderSection();
+
+    expect(screen.getByRole("button", { name: "Value Components" })).toBeDefined();
+    expect(screen.getByText("Pacific Water Shrew")).toBeDefined();
+  });
+
+  it("puts value components on the map with their toggle", () => {
+    renderSection();
+
+    showValueComponents();
 
     expect(revealed.ids).toEqual(["{P1}", "{V1}", "{V2}"]);
   });
 
   it("takes a submission off the map with its toggle, and back on", () => {
     renderSection();
-    const [projectToggle] = screen.getAllByRole("checkbox", {
-      name: "Show Project Notification · Pre EA on the map",
-    });
+    const [projectToggle] = submissionToggles();
 
     fireEvent.click(projectToggle);
-    expect(revealed.ids).toEqual(["{V1}", "{V2}"]);
+    expect(revealed.ids).toEqual([]);
 
     fireEvent.click(projectToggle);
-    expect(revealed.ids).toEqual(["{P1}", "{V1}", "{V2}"]);
+    expect(revealed.ids).toEqual(["{P1}"]);
   });
 
   it("takes everything off the map when the panel closes", () => {
@@ -320,11 +344,11 @@ describe("a component's eye", () => {
     renderSection();
 
     fireEvent.click(eye("Access Route"));
-    expect(revealed.ids).toEqual(["{V1}", "{V2}"]);
+    expect(revealed.ids).toEqual([]);
     expect(eye("Access Route").getAttribute("aria-pressed")).toBe("false");
 
     fireEvent.click(eye("Access Route"));
-    expect(revealed.ids).toEqual(["{P1}", "{V1}", "{V2}"]);
+    expect(revealed.ids).toEqual(["{P1}"]);
   });
 
   it("tells the map only of the footprints it hides", () => {
@@ -352,6 +376,7 @@ describe("a component's eye", () => {
 
   it("takes a whole label off the map from the label's eye", () => {
     renderSection();
+    showValueComponents();
 
     fireEvent.click(eye("Wildlife Habitat Area"));
 
@@ -366,6 +391,7 @@ describe("a component's eye", () => {
 
   it("keeps the label's eye on until its last variant is hidden", () => {
     renderSection();
+    showValueComponents();
     const label = eye("Wildlife Habitat Area");
 
     fireEvent.click(eye("Wildlife Habitat Area: Data sensitive"));
@@ -391,6 +417,7 @@ describe("selecting a component", () => {
 
   it("selects one variant of a label", () => {
     renderSection();
+    showValueComponents();
 
     fireEvent.click(row("Pacific Water Shrew"));
 
@@ -409,6 +436,7 @@ describe("selecting a component", () => {
 
   it("highlights nothing while the selection is off the map", () => {
     renderSection();
+    showValueComponents();
 
     fireEvent.click(row("Pacific Water Shrew"));
     fireEvent.click(
@@ -441,6 +469,7 @@ describe("moving the map to a selected component", () => {
   it("frames the row that was clicked", () => {
     const map = fakeMap();
     renderSection(map);
+    showValueComponents();
 
     fireEvent.click(row("Pacific Water Shrew"));
 
@@ -477,6 +506,7 @@ describe("moving the map to a selected component", () => {
   it("moves to a newly selected component", () => {
     const map = fakeMap();
     renderSection(map);
+    showValueComponents();
 
     fireEvent.click(row("Access Route Amendment 1"));
     fireEvent.click(row("Pacific Water Shrew"));
@@ -487,6 +517,7 @@ describe("moving the map to a selected component", () => {
 
   it("stays put when the selected row is clicked again", () => {
     renderSection(fakeMap());
+    showValueComponents();
 
     fireEvent.click(row("Pacific Water Shrew"));
     fireEvent.click(row("Pacific Water Shrew"));
@@ -496,6 +527,7 @@ describe("moving the map to a selected component", () => {
 
   it("stays put when the selected component is taken off the map", () => {
     renderSection(fakeMap());
+    showValueComponents();
 
     fireEvent.click(row("Pacific Water Shrew"));
     fireEvent.click(
@@ -520,6 +552,7 @@ describe("moving the map to a selected component", () => {
 
   it("stays put before the map has loaded", () => {
     renderSection(null);
+    showValueComponents();
 
     fireEvent.click(row("Pacific Water Shrew"));
 
@@ -608,6 +641,7 @@ describe("clicking a component on the map", () => {
   it("selects its row, highlights it and scrolls to it", () => {
     const map = fakeMap();
     renderSection(map);
+    showValueComponents();
 
     clickOnMap(map, ["{V2}"]);
 
@@ -619,6 +653,7 @@ describe("clicking a component on the map", () => {
   it("replaces the row selected before, from the list or the map", () => {
     const map = fakeMap();
     renderSection(map);
+    showValueComponents();
 
     fireEvent.click(row("Access Route Amendment 1"));
     clickOnMap(map, ["{V2}"]);
@@ -643,6 +678,7 @@ describe("clicking a component on the map", () => {
   it("takes the topmost feature the panel lists", () => {
     const map = fakeMap();
     renderSection(map);
+    showValueComponents();
 
     clickOnMap(map, ["{ANOTHER_PROJECT}", "{V2}", "{P1}"]);
 
@@ -664,6 +700,7 @@ describe("clicking a component on the map", () => {
   it("leaves a click on a project dot to the dot", () => {
     const map = fakeMap();
     renderSection(map);
+    showValueComponents();
     state.onDot = true;
 
     clickOnMap(map, ["{V2}"]);
@@ -740,6 +777,7 @@ describe("clicking a component on the map", () => {
         </MeasureProvider>
       </SelectAreaProvider>,
     );
+    showValueComponents();
 
     act(() => area.current?.toggleTool("measure"));
     expect(map.listening()).toBe(false);
@@ -775,6 +813,7 @@ describe("adding to Select area", () => {
         </RevealedComponentsProvider>
       </SelectAreaProvider>,
     );
+    showValueComponents();
     act(() => area.current?.toggleTool("select"));
   };
 
