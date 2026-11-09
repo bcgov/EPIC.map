@@ -26,7 +26,10 @@ same way.
 import argparse
 import importlib.util
 import json
+import sqlite3
 import sys
+from contextlib import closing
+from datetime import datetime
 from pathlib import Path
 
 import psycopg2
@@ -61,6 +64,16 @@ def write(directory: Path, name: str, content: str) -> Path:
 
 # Shaped like the delivered one: a unique value renderer over one string
 # field, one class, a solid stroke.
+def geopackage(directory: Path, name: str, last_changes: dict) -> Path:
+    """Write a minimal GeoPackage with one gpkg_contents row per layer."""
+    path = directory / name
+    with closing(sqlite3.connect(path)) as gpkg:
+        gpkg.execute('CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, last_change TEXT)')
+        gpkg.executemany('INSERT INTO gpkg_contents VALUES (?, ?)', last_changes.items())
+        gpkg.commit()
+    return path
+
+
 def lyrx_document(colour=(0, 0, 0), field='CNSLTN_AREA_NAME') -> dict:
     """Build the smallest .lyrx the translator accepts."""
     return {
@@ -495,6 +508,95 @@ class TestLoadSkipsAnUnchangedDelivery:
                         [extract], None, connection, TARGET)
 
         assert connection.statuses == []
+
+
+class TestSourceUpdated:
+    """The delivery's own date for a hosted layer."""
+
+    def test_the_layer_s_last_change_is_read_as_utc(self, tmp_path):
+        """A GeoPackage dates each layer in UTC."""
+        extract = geopackage(tmp_path, 'PIP.gpkg',
+                             {'FirstNationsOutlines': '2026-09-29T15:37:46.353Z'})
+
+        updated = ingest.source_updated(PIP_CONSULTATION_AREAS, [extract])
+
+        assert updated == datetime(2026, 9, 29, 15, 37, 46, 353000)
+
+    def test_an_offset_is_converted_to_utc(self, tmp_path):
+        """The spec says UTC, but an exporter may write an offset."""
+        extract = geopackage(tmp_path, 'PIP.gpkg',
+                             {'FirstNationsOutlines': '2026-09-29T08:37:46-07:00'})
+
+        updated = ingest.source_updated(PIP_CONSULTATION_AREAS, [extract])
+
+        assert updated == datetime(2026, 9, 29, 15, 37, 46)
+
+    def test_only_the_layer_the_spec_reads_counts(self, tmp_path):
+        """The labels layer is in the file but not loaded."""
+        extract = geopackage(tmp_path, 'PIP.gpkg', {
+            'FirstNationsOutlines': '2026-09-23T20:29:11.796Z',
+            'FirstNationsLabels': '2026-09-23T20:30:02.511Z',
+        })
+
+        updated = ingest.source_updated(PIP_CONSULTATION_AREAS, [extract])
+
+        assert updated == datetime(2026, 9, 23, 20, 29, 11, 796000)
+
+    def test_several_layers_are_dated_by_the_latest(self, tmp_path):
+        """The EAO delivery is three layers in one file."""
+        extract = geopackage(tmp_path, 'EAO.gpkg', {
+            'EAOPoly': '2026-10-16T18:00:00Z',
+            'EAOLine': '2026-10-16T18:05:00Z',
+            'EAOPoint': '2026-10-16T17:55:00Z',
+        })
+
+        updated = ingest.source_updated(EAO_PROJECT_DATA, [extract])
+
+        assert updated == datetime(2026, 10, 16, 18, 5)
+
+    @pytest.mark.parametrize('last_changes', [{}, {'FirstNationsOutlines': None},
+                                              {'FirstNationsOutlines': 'yesterday'}])
+    def test_a_missing_date_is_none(self, tmp_path, last_changes):
+        """No row, no value or one that will not parse."""
+        extract = geopackage(tmp_path, 'PIP.gpkg', last_changes)
+
+        assert ingest.source_updated(PIP_CONSULTATION_AREAS, [extract]) is None
+
+    def test_a_file_that_is_not_a_geopackage_is_none(self, tmp_path):
+        """Never a reason to stop a load."""
+        extract = write(tmp_path, 'PIP.gpkg', 'boundaries')
+
+        assert ingest.source_updated(PIP_CONSULTATION_AREAS, [extract]) is None
+
+    def test_a_skipped_run_records_the_date(self, tmp_path, monkeypatch):
+        """So older loads get a date."""
+        extract = geopackage(tmp_path, 'PIP.gpkg',
+                             {'FirstNationsOutlines': '2026-09-29T15:37:46Z'})
+        lyrx = write(tmp_path, 'PIP.lyrx', json.dumps(lyrx_document()))
+        connection = FakeConnection(
+            previous=('loaded', ingest.digest([extract, lyrx]), None, 1))
+        no_staging(monkeypatch)
+
+        ingest.load(make_args(), PIP_CONSULTATION_AREAS,
+                    [extract], lyrx, connection, TARGET)
+
+        assert connection.statuses == ['skipped']
+        assert connection.history[0][11] == datetime(2026, 9, 29, 15, 37, 46)
+
+    def test_a_loaded_run_records_the_date(self, tmp_path, monkeypatch):
+        """How a new delivery gets its date."""
+        extract = geopackage(tmp_path, 'PIP.gpkg',
+                             {'FirstNationsOutlines': '2026-09-29T15:37:46Z'})
+        lyrx = write(tmp_path, 'PIP.lyrx', json.dumps(lyrx_document()))
+        connection = FakeConnection(previous=None)
+        monkeypatch.setattr(ingest, 'stage', lambda *a, **k: 0.0)
+
+        code = ingest.load(make_args(), PIP_CONSULTATION_AREAS,
+                           [extract], lyrx, connection, TARGET)
+
+        assert code == ingest.EXIT_OK
+        assert connection.statuses == ['loaded']
+        assert connection.history[0][11] == datetime(2026, 9, 29, 15, 37, 46)
 
 
 class TestLoadRefusesABadStyle:

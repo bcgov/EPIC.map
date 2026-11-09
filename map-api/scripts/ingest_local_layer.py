@@ -49,12 +49,14 @@ import argparse
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -320,6 +322,29 @@ def digest(paths: list, style: str = '') -> str:
     return digester.hexdigest()
 
 
+def source_updated(spec, sources: list):
+    """Return the latest gpkg_contents.last_change of the spec's layers, as naive UTC, or None."""
+    dates = []
+    for path, source_layer in zip(source_paths(spec, sources), spec.sources):
+        if path.suffix.lower() != '.gpkg':
+            continue
+        try:
+            with closing(sqlite3.connect(f'{path.resolve().as_uri()}?mode=ro',
+                                         uri=True)) as gpkg:
+                row = gpkg.execute(
+                    'SELECT last_change FROM gpkg_contents WHERE table_name = ?',
+                    (source_layer.name,),
+                ).fetchone()
+            changed = datetime.fromisoformat(row[0])
+        except (sqlite3.Error, TypeError, ValueError):
+            # Display only, so a missing date never stops a load.
+            continue
+        if changed.tzinfo is not None:
+            changed = changed.astimezone(timezone.utc).replace(tzinfo=None)
+        dates.append(changed)
+    return max(dates, default=None)
+
+
 def last_load(connection, spec, statuses: tuple) -> dict:
     """Return the most recent load in any of `statuses`, or an empty dict."""
     with connection.cursor() as cursor:
@@ -339,7 +364,8 @@ def last_load(connection, spec, statuses: tuple) -> dict:
 
 
 def record(connection, spec, status: str, source_name: str, source_digest: str,
-           comparison=None, source_rows=None, notes: dict = None):
+           comparison=None, source_rows=None, notes: dict = None,
+           source_updated_date=None):
     """Write one row of the load history, on a transaction of its own.
 
     Separate because a refusal has just rolled back everything it touched, and
@@ -351,8 +377,9 @@ def record(connection, spec, status: str, source_name: str, source_digest: str,
             INSERT INTO cache.local_layer_loads
                 (object_name, status, source_name, source_digest,
                  area_count, source_rows, vertex_count,
-                 areas_added, areas_removed, areas_changed, notes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 areas_added, areas_removed, areas_changed, notes,
+                 source_updated_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             spec.object_name, status, source_name, source_digest,
             comparison.staged_areas if comparison else None,
@@ -362,6 +389,7 @@ def record(connection, spec, status: str, source_name: str, source_digest: str,
             comparison.counted('removed') if comparison else 0,
             comparison.counted('changed') if comparison else 0,
             json.dumps(notes or {}),
+            source_updated_date,
         ))
     connection.commit()
 
@@ -883,6 +911,12 @@ def load(args, spec, sources: list, lyrx_path, connection, target) -> int:
     # changes. See digest().
     source_digest = digest([*sources] + ([lyrx_path] if lyrx_path else []),
                            owned_style_digest(spec))
+    # Recorded on skips too, so older loads get a date on the next run.
+    updated = source_updated(spec, sources)
+    if updated:
+        print(f'  {source_names} last changed {updated:%Y-%m-%d %H:%M} UTC.')
+    else:
+        print(f'  {source_names} carries no last-changed date, so the map will show none.')
     previous = last_load(connection, spec, ('loaded',))
     # Unchanged bytes are only a reason to stop if the rows they produced are
     # still there. Skipping on the digest alone would leave an emptied table
@@ -893,7 +927,8 @@ def load(args, spec, sources: list, lyrx_path, connection, target) -> int:
         print(f'  {source_names} is byte-for-byte what is already loaded; '
               f'nothing to do.')
         if not args.dry_run:
-            record(connection, spec, 'skipped', source_names, source_digest)
+            record(connection, spec, 'skipped', source_names, source_digest,
+                   source_updated_date=updated)
         return EXIT_OK
 
     if unchanged and not args.force:
@@ -975,7 +1010,7 @@ def load(args, spec, sources: list, lyrx_path, connection, target) -> int:
                'warnings': assessment.warnings,
                'unmatchedNames': coverage.unmatched,
                'allowShrink': args.allow_shrink,
-           })
+           }, source_updated_date=updated)
 
     # Autocommit, because VACUUM cannot run inside a transaction block.
     # transform.sql replaces the rows with DELETE rather than TRUNCATE, so that

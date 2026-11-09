@@ -6,16 +6,14 @@ const LOCAL_LAYERS_PATH = "/local/layers";
 
 export interface LocalLayerInfo {
   objectName: string;
-  /** When the rows being served were loaded, or null if nothing has been. */
-  loadedDate: string | null;
+  /** The delivered extract's own last-changed date, or null if it has none. */
+  lastUpdated: string | null;
 }
 
 /**
  * What the panel says about a layer map-api hosts, rather than about a feature.
  *
- * A catalogue layer is dated by the warehouse's own record. A hosted layer is a
- * copy taken on a schedule, so what dates it is when that copy was last taken -
- * which only map-api knows.
+ * Dated by the delivered file's metadata, as the catalogue record is not public.
  *
  * Refetched rarely: the ingest runs daily at most, and a date that is a few
  * minutes stale is the same date.
