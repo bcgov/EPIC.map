@@ -444,10 +444,13 @@ export const HIGHLIGHT_POINT_SIZE_PX = 12;
 /** The focused What's here result. */
 export const RESULT_HIGHLIGHT_COLOR = "#013366";
 
-/** The measured line and its points. */
-export const MEASURE_COLOR = "#013366";
-export const MEASURE_WIDTH_PX = 2;
-export const MEASURE_POINT_RADIUS_PX = 4;
+/** The measured line or area. */
+export const MEASURE_COLOR = HIGHLIGHT_COLOR;
+export const MEASURE_WIDTH_PX = 1;
+export const MEASURE_POINT_RADIUS_PX = 4.5;
+export const MEASURE_FILL_OPACITY = 0.15;
+/** The dashed edge back to Point 1 while the shape can close. */
+export const MEASURE_CLOSING_COLOR = "rgba(0, 0, 0, 0.5)";
 
 /** Outline of every feature in the Select area selection, under a clicked one. */
 export const SELECTION_COLOR = HIGHLIGHT_COLOR;
