@@ -92,7 +92,8 @@ def test_the_transform_does_not_lock_readers_out():
 @pytest.mark.parametrize('source', SPEC.sources, ids=lambda s: s.name)
 def test_every_class_stages_the_global_id(source):
     """It is the primary key, so a class that omitted it would fail the insert."""
-    assert 'GlobalID     AS global_id' in _sql(source.select)
+    # EAOLine's is GlobalID_1, ArcGIS having been unable to keep the name.
+    assert re.search(r'^\s*GlobalID(_1)?\s+AS global_id$', _sql(source.select), re.MULTILINE)
 
 
 def test_validate_guards_the_key():
