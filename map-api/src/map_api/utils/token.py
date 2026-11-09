@@ -60,7 +60,7 @@ def is_allowed_client(token_info) -> bool:
     """Whether the token was issued to a client this API serves.
 
     This is the audience check, and the only one. It replaces the single
-    JWT_OIDC_AUDIENCE comparison that python-jose would otherwise make: this API
+    JWT_OIDC_AUDIENCE comparison that PyJWT would otherwise make: this API
     now backs several EPIC applications, each with its own keycloak client in
     the same realm, so one audience string can no longer describe who may call.
 
