@@ -107,9 +107,7 @@ export default function ProjectCard({
     axios.isAxiosError(error) && error.response?.status === 404;
 
   const message = (text: string) => (
-    <Typography
-      sx={{ marginTop: "0.5rem", fontSize: "0.875rem", color: SECONDARY_TEXT_COLOR }}
-    >
+    <Typography sx={{ fontSize: "0.875rem", color: SECONDARY_TEXT_COLOR }}>
       {text}
     </Typography>
   );
@@ -132,41 +130,65 @@ export default function ProjectCard({
         boxShadow: theme.shadows[4],
       }}
     >
+      {/* Pinned above the scrolling body, so the list never hides under it. */}
+      <Box
+        sx={{
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "1rem",
+          padding: "0.75rem 1rem 0.625rem",
+          borderBottom: `1px solid ${theme.palette.divider}`,
+        }}
+      >
+        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+          <Typography
+            id="epic-map-project-title"
+            component="h2"
+            sx={{
+              fontSize: "1.125rem",
+              fontWeight: 700,
+              lineHeight: 1.5,
+              color: TEXT_COLOR,
+            }}
+          >
+            {name ?? <Skeleton width="70%" />}
+          </Typography>
+          {isLoading ? (
+            <Skeleton width="50%" />
+          ) : (
+            project?.proponentName &&
+            !error && (
+              <Typography
+                sx={{
+                  marginTop: "0.125rem",
+                  ...BODY_TEXT,
+                  color: SECONDARY_TEXT_COLOR,
+                }}
+              >
+                {project.proponentName}
+              </Typography>
+            )
+          )}
+        </Box>
+        <IconButton
+          onClick={onClose}
+          aria-label="Close project"
+          sx={{ padding: 0, marginTop: "0.125rem", color: TEXT_COLOR }}
+        >
+          <CloseIcon sx={{ fontSize: "1.5rem" }} />
+        </IconButton>
+      </Box>
       <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
         <Box
           sx={{
-            padding: "1rem 1rem 0.75rem",
+            padding: "0.75rem 1rem",
             borderBottom: `1px solid ${theme.palette.divider}`,
           }}
         >
-          <Box sx={{ display: "flex", alignItems: "flex-start", gap: "1rem" }}>
-            <Typography
-              id="epic-map-project-title"
-              component="h2"
-              sx={{
-                flexGrow: 1,
-                minWidth: 0,
-                fontSize: "1.125rem",
-                fontWeight: 700,
-                lineHeight: 1.5,
-                color: TEXT_COLOR,
-              }}
-            >
-              {name ?? <Skeleton width="70%" />}
-            </Typography>
-            <IconButton
-              onClick={onClose}
-              aria-label="Close project"
-              sx={{ padding: 0, marginTop: "0.125rem", color: TEXT_COLOR }}
-            >
-              <CloseIcon sx={{ fontSize: "1.5rem" }} />
-            </IconButton>
-          </Box>
-
           {isLoading ? (
             <>
-              <Skeleton width="50%" />
-              <Skeleton variant="rounded" height="1.5rem" sx={{ my: "0.5rem" }} />
+              <Skeleton variant="rounded" height="1.5rem" sx={{ mb: "0.5rem" }} />
               <Skeleton />
               <Skeleton />
             </>
@@ -176,25 +198,7 @@ export default function ProjectCard({
             message("This project could not be loaded. Please try again.")
           ) : (
             <>
-              {project.proponentName && (
-                <Typography
-                  sx={{
-                    marginTop: "0.25rem",
-                    ...BODY_TEXT,
-                    color: SECONDARY_TEXT_COLOR,
-                  }}
-                >
-                  {project.proponentName}
-                </Typography>
-              )}
-              <Box
-                sx={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "0.5rem",
-                  marginTop: "0.5rem",
-                }}
-              >
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
                 {typeName && (
                   <ProjectTag
                     colors={TAG_COLORS.type}
