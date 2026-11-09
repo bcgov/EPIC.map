@@ -5,6 +5,7 @@
 // and the rest runs against a fake map that captures the handlers.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useEffect } from "react";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { MapProject } from "@/components/Filters/filterUtils";
 import type { ProjectFeatures } from "@/api/useProjects";
@@ -35,10 +36,11 @@ const feature = (id: number): ProjectFeatures["features"][number] => ({
   },
 });
 
-const state: { data: ProjectFeatures | undefined; visible: MapProject[] } = {
-  data: undefined,
-  visible: [],
-};
+const state: {
+  data: ProjectFeatures | undefined;
+  visible: MapProject[];
+  cardMounts: number;
+} = { data: undefined, visible: [], cardMounts: 0 };
 
 vi.mock("@/api/useProjects", () => ({
   useProjectFeatures: () => ({ data: state.data }),
@@ -60,9 +62,15 @@ vi.mock("@/components/Filters/FiltersContext", () => ({
 }));
 
 // The card reaches for the widget's api client; what it draws is its own test.
-vi.mock("@/components/Projects/ProjectCard", () => ({
-  default: () => <div data-testid="project-card" />,
-}));
+vi.mock("@/components/Projects/ProjectCard", () => {
+  const ProjectCard = () => {
+    useEffect(() => {
+      state.cardMounts += 1;
+    }, []);
+    return <div data-testid="project-card" />;
+  };
+  return { default: ProjectCard };
+});
 
 const { default: ProjectsControl } = await import(
   "@/components/Projects/ProjectsControl"
@@ -106,8 +114,22 @@ const hoverOver = (map: FakeMap) =>
 beforeEach(() => {
   state.data = features([1, 2]);
   state.visible = [project(1), project(2)];
+  state.cardMounts = 0;
 });
 afterEach(cleanup);
+
+describe("the card", () => {
+  // So its toggles reset, value components off again.
+  it("opens fresh for each project", () => {
+    const { rerender } = render(
+      <ProjectsControl map={null} selectedId={1} onSelect={vi.fn()} />,
+    );
+
+    rerender(<ProjectsControl map={null} selectedId={2} onSelect={vi.fn()} />);
+
+    expect(state.cardMounts).toBe(2);
+  });
+});
 
 describe("the selection against the filters", () => {
   it("keeps the card while the project still passes them", () => {

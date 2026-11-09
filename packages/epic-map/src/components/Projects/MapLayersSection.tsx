@@ -249,10 +249,9 @@ export default function MapLayersSection({
     isError,
   } = useProjectComponents(projectId);
   const groups = useMemo(() => groupComponents(components ?? []), [components]);
-  // Submissions switched off. Everything starts on.
-  const [hiddenSubmissions, setHiddenSubmissions] = useState<
-    ReadonlySet<string>
-  >(() => new Set());
+  // Submissions switched off: null until the user switches one.
+  const [hiddenSubmissionsByUser, setHiddenSubmissionsByUser] =
+    useState<ReadonlySet<string> | null>(null);
   const [hiddenByUser, setHiddenByUser] = useState<ReadonlySet<string> | null>(
     null,
   );
@@ -282,6 +281,18 @@ export default function MapLayersSection({
     [components],
   );
   const hiddenFeatures = hiddenByUser ?? startHidden;
+
+  // Value components start off
+  const startHiddenSubmissions = useMemo(
+    () =>
+      new Set(
+        groups
+          .filter(({ type }) => type === "Value component")
+          .flatMap(({ submissions }) => submissions.map(({ key }) => key)),
+      ),
+    [groups],
+  );
+  const hiddenSubmissions = hiddenSubmissionsByUser ?? startHiddenSubmissions;
 
   const revealed = useMemo(
     () =>
@@ -426,7 +437,9 @@ export default function MapLayersSection({
             onOpened={() => opened(group.type)}
             hiddenSubmissions={hiddenSubmissions}
             onToggle={(key) =>
-              setHiddenSubmissions((current) => toggled(current, key))
+              setHiddenSubmissionsByUser((current) =>
+                toggled(current ?? startHiddenSubmissions, key),
+              )
             }
             expandedSubmissions={expandedSubmissions}
             onToggleExpanded={(key) =>
