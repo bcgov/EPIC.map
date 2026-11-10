@@ -16,7 +16,6 @@ import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
 import { boundsOutOfView } from "@/components/MetaData/metaDataUtils";
 import type { MapExtent } from "@/types";
 import {
-  RESULT_HIGHLIGHT_COLOR,
   FOCUS_FLY_MS,
   FOCUS_MAX_ZOOM,
   FOCUS_PADDING_PX,
@@ -25,7 +24,7 @@ import { geoBounds } from "@/utils/geo";
 import { hostedLayer } from "@/utils/localLayers";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 
-/** Highlights the focused result in navy, and frames it when out of view. */
+/** Highlights the focused result in gold, as Identify does, and frames it when out of view. */
 export const useResultHighlight = (map: MapLibreMap | null) => {
   const { focused, results } = useSelectArea();
   const { layerFloors } = useLayers();
@@ -74,7 +73,6 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
       showHighlight(
         map,
         { objectName, featureId, geometry: null },
-        RESULT_HIGHLIGHT_COLOR,
       );
       warehouseBounds(objectName, featureId).then(frame, () => {});
     } else if (kind === "hosted" && objectName) {
@@ -85,7 +83,6 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
         showLocalHighlight(
           map,
           { layerId, sourceLayer, keyProperty: spec.keyProperty, keys: [featureKey] },
-          RESULT_HIGHLIGHT_COLOR,
         );
       }
       queryClient
@@ -99,7 +96,6 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
         showHighlight(
           map,
           { objectName: null, featureId: null, geometry: feature.geometry },
-          RESULT_HIGHLIGHT_COLOR,
         );
         frame(geoBounds([feature]));
       }

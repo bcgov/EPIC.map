@@ -441,9 +441,6 @@ export const HIGHLIGHT_CASING_WIDTH_PX = 6;
 export const HIGHLIGHT_FILL_OPACITY = 0.2;
 export const HIGHLIGHT_POINT_SIZE_PX = 12;
 
-/** The focused What's here result. */
-export const RESULT_HIGHLIGHT_COLOR = "#013366";
-
 /** The measured line and its points. */
 export const MEASURE_COLOR = "#013366";
 export const MEASURE_WIDTH_PX = 2;

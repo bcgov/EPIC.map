@@ -5,15 +5,21 @@ import { EAO_OBJECT_NAME } from "@/utils/localLayers";
 
 const NONE: readonly string[] = [];
 
-/** EAO features to highlight: the focused Selected row, else the panel's component. */
+/** EAO features the panel's component highlight draws; none while a Selected row is focused. */
 export const useHostedLayerHighlight = (objectName: string): readonly string[] => {
   const { selectedFeatureIds } = useRevealedComponents();
   const { focusedId } = useSelectArea();
 
   return useMemo(() => {
-    if (objectName !== EAO_OBJECT_NAME) return NONE;
-    return focusedId ? [focusedId] : selectedFeatureIds;
+    if (objectName !== EAO_OBJECT_NAME || focusedId) return NONE;
+    return selectedFeatureIds;
   }, [objectName, focusedId, selectedFeatureIds]);
+};
+
+/** The EAO feature of the focused Selected row, highlighted in gold as Identify does. */
+export const useHostedLayerFocus = (objectName: string): string | null => {
+  const { focusedId } = useSelectArea();
+  return objectName === EAO_OBJECT_NAME ? focusedId : null;
 };
 
 /** EAO features in the Select area selection. */

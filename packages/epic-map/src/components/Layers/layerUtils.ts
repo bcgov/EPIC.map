@@ -519,7 +519,7 @@ const removeSelectionOutline = (map: MapLibreMap) => {
 
 /**
  * Outline features of a hosted layer as the component highlight does, without
- * its fill, so a focused row still stands out above them.
+ * its fill, beneath any component or gold highlight so those stay on top.
  */
 export const showSelectionOutline = (
   map: MapLibreMap,
@@ -531,8 +531,8 @@ export const showSelectionOutline = (
     if (!map.getSource(source)) return;
 
     const filter: unknown = ["in", ["get", keyProperty], ["literal", [...keys]]];
-    const [clickedFill] = COMPONENT_HIGHLIGHT_LAYERS;
-    const beneath = map.getLayer(clickedFill) ? clickedFill : undefined;
+    const over = new Set([COMPONENT_HIGHLIGHT_LAYERS[0], HIGHLIGHT_LOCAL_FILL]);
+    const beneath = map.getStyle()?.layers.find(({ id }) => over.has(id))?.id;
 
     map.addLayer(
       {

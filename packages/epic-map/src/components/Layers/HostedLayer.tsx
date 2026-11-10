@@ -2,17 +2,20 @@ import { useEffect } from "react";
 import { useLocalLayerStyle } from "@/api/useLocalLayerStyle";
 import {
   hideComponentHighlight,
+  hideHighlight,
   hideLocalVectorLayer,
   hideSelectionOutline,
   setLocalVectorLayerFilters,
   setLocalVectorLayerLineWidth,
   setLocalVectorLayerOpacity,
   showComponentHighlight,
+  showLocalHighlight,
   showLocalVectorLayer,
   showSelectionOutline,
 } from "@/components/Layers/layerUtils";
 import { useHostedLayerFilters } from "@/components/Layers/useHostedLayerFilters";
 import {
+  useHostedLayerFocus,
   useHostedLayerHighlight,
   useHostedLayerSelection,
 } from "@/components/Layers/useHostedLayerHighlight";
@@ -61,6 +64,7 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
   const filters = useHostedLayerFilters(objectName, style);
   const highlighted = useHostedLayerHighlight(objectName);
   const selected = useHostedLayerSelection(objectName);
+  const focused = useHostedLayerFocus(objectName);
   const sourceLayer = style?.layers[0]?.sourceLayer;
   const keyProperty = hostedLayer(objectName)?.keyProperty;
 
@@ -136,6 +140,19 @@ export default function HostedLayer({ objectName }: { objectName: string }) {
     });
     return () => hideComponentHighlight(map);
   }, [map, visible, layerId, sourceLayer, keyProperty, highlighted]);
+
+  useEffect(() => {
+    if (!map || !visible || !sourceLayer || !keyProperty || !focused) {
+      return undefined;
+    }
+    showLocalHighlight(map, {
+      layerId,
+      sourceLayer,
+      keyProperty,
+      keys: [focused],
+    });
+    return () => hideHighlight(map);
+  }, [map, visible, layerId, sourceLayer, keyProperty, focused]);
 
   return null;
 }
