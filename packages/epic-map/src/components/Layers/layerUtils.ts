@@ -18,8 +18,6 @@ import {
   highlightTileUrl,
   MIN_ZOOM,
   outlineTileUrl,
-  SELECTION_COLOR,
-  SELECTION_WIDTH_PX,
   WIDGET_ID_PREFIX,
   WMS_MAX_LAYER_ZOOM,
   WMS_MIN_ZOOM,
@@ -519,7 +517,10 @@ const removeSelectionOutline = (map: MapLibreMap) => {
   }
 };
 
-/** Outline features of a hosted layer in gold, beneath the component highlight. */
+/**
+ * Outline features of a hosted layer as the component highlight does, without
+ * its fill, so a focused row still stands out above them.
+ */
 export const showSelectionOutline = (
   map: MapLibreMap,
   { layerId, sourceLayer, keyProperty, keys }: LocalFeatureHighlight,
@@ -540,10 +541,7 @@ export const showSelectionOutline = (
         source,
         "source-layer": sourceLayer,
         filter,
-        paint: {
-          "line-color": SELECTION_COLOR,
-          "line-width": SELECTION_WIDTH_PX,
-        },
+        paint: EAO_SELECTED_PAINT.line,
       } as Parameters<MapLibreMap["addLayer"]>[0],
       beneath,
     );
@@ -557,8 +555,8 @@ export const showSelectionOutline = (
         paint: {
           "circle-radius": HIGHLIGHT_POINT_SIZE_PX / 2,
           "circle-opacity": 0,
-          "circle-stroke-color": SELECTION_COLOR,
-          "circle-stroke-width": SELECTION_WIDTH_PX,
+          "circle-stroke-color": EAO_SELECTED_PAINT.point["circle-stroke-color"],
+          "circle-stroke-width": EAO_SELECTED_PAINT.point["circle-stroke-width"],
         },
       } as Parameters<MapLibreMap["addLayer"]>[0],
       beneath,

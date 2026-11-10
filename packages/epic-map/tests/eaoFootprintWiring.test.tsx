@@ -472,7 +472,7 @@ describe("the Select area selection on the map", () => {
     ]);
   });
 
-  it("gives the gold highlight to the row clicked, over the panel's component", () => {
+  it("gives the component highlight to the row clicked, over the panel's component", () => {
     render(
       <SelectAreaProvider>
         <RevealedComponentsProvider>

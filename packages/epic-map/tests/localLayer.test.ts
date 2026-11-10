@@ -910,13 +910,15 @@ describe("the Select area colours", () => {
       "line-color"
     ];
 
-  it("outlines the selection in gold, under a clicked row's highlight", () => {
+  it("outlines the selection as a selected component, under a clicked row's highlight", () => {
     const harness = fakeMap();
     show(harness);
     showComponentHighlight(harness.map, highlight);
     showSelectionOutline(harness.map, highlight);
 
-    expect(lineColor(harness, "epic-selection-line")).toBe(HIGHLIGHT_COLOR);
+    expect(lineColor(harness, "epic-selection-line")).toEqual(
+      lineColor(harness, "epic-component-highlight-line"),
+    );
     expect(harness.before.at(-1)).toBe("epic-component-highlight-fill");
   });
 
