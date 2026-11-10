@@ -52,10 +52,8 @@ setup(
     package_dir={'': 'src'},
     py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
     include_package_data=True,
-    license=read('LICENSE'),
+    license_expression='Apache-2.0',
     long_description=read('README.md'),
     zip_safe=False,
     install_requires=REQUIREMENTS,
-    setup_requires=["pytest-runner"],
-    tests_require=["pytest"],
 )
