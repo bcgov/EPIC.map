@@ -688,6 +688,20 @@ class TestCheckReadable:
         assert 'EAOLine has no column GlobalID_1; its columns are' in reason
         assert 'GlobalID_2' in reason
 
+    def test_a_long_column_renamed_outright_is_not_blamed_on_a_shapefile(self, tmp_path):
+        """No cut name stands in for it."""
+        layers = columns_read(PIP_CONSULTATION_AREAS)
+        layers['FirstNationsOutlines'] = ['AREA_NAME' if one == 'CNSLTN_AREA_NAME' else one
+                                          for one in layers['FirstNationsOutlines']]
+        extract = geopackage(tmp_path, 'PIP.gpkg', {}, layers)
+
+        with pytest.raises(ingest.RefusedError) as refused:
+            ingest.check_readable(PIP_CONSULTATION_AREAS, [extract])
+
+        reason, = refused.value.reasons
+        assert 'FirstNationsOutlines has no column CNSLTN_AREA_NAME; its columns are' in reason
+        assert 'shapefile' not in reason
+
     def test_every_layer_the_file_holds_is_named(self, tmp_path):
         """The wrong delivery altogether."""
         extract = geopackage(tmp_path, 'EAO.gpkg', {}, columns_read(EAO_PROJECT_DATA))
@@ -710,6 +724,17 @@ class TestCheckReadable:
     def test_a_file_that_is_not_a_geopackage_is_left_to_ogr2ogr(self, tmp_path):
         """Only the two errors an export causes are judged here."""
         extract = write(tmp_path, 'PIP.gpkg', 'boundaries')
+
+        ingest.check_readable(PIP_CONSULTATION_AREAS, [extract])
+
+    def test_another_sqlite_error_is_left_to_ogr2ogr(self, tmp_path, monkeypatch):
+        """A function only GDAL's SQLite has is not the export's fault."""
+        extract = geopackage(tmp_path, 'PIP.gpkg', {}, columns_read(PIP_CONSULTATION_AREAS))
+        sql_dir = tmp_path / PIP_CONSULTATION_AREAS.sql_dir
+        sql_dir.mkdir()
+        write(sql_dir, PIP_CONSULTATION_AREAS.sources[0].select,
+              'SELECT ST_Multi(Shape) AS Shape FROM FirstNationsOutlines')
+        monkeypatch.setattr(ingest, 'SQL_ROOT', tmp_path)
 
         ingest.check_readable(PIP_CONSULTATION_AREAS, [extract])
 
