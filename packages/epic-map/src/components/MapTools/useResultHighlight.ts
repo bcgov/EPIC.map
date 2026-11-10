@@ -86,7 +86,7 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
         );
       }
       queryClient
-        .fetchQuery(localFeatureQuery(api, objectName, featureKey))
+        .query(localFeatureQuery(api, objectName, featureKey))
         .then((detail) => frame(detail.bounds), () => {});
     } else if (kind === "imported") {
       const feature = queryClient
