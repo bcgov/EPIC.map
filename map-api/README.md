@@ -119,6 +119,10 @@ Some layers live in the BC Geographic Warehouse, which this API cannot reach, so
 them: the features as a GeoPackage and the symbology as a `.lyrx` beside it, because no GIS
 interchange format carries both. `scripts/ingest_local_layer.py` loads a pair into PostGIS.
 
+PIP is exported in ArcGIS Pro straight from the BCGW Oracle connection to a GeoPackage, with the
+layer named `FirstNationsOutlines`. TSAT's export goes through a shapefile, which cuts the column
+names to 10 characters; the ingest refuses one and says why.
+
 There are two ways in, and past the download they are one code path, so what you rehearse
 locally is what runs in the cluster.
 
@@ -144,7 +148,7 @@ Nobody is watching a scheduled run, so the exit code is how it reports.
 | Code | Meaning | What to do |
 |---|---|---|
 | 0 | Loaded, or the delivery was byte-for-byte what is already loaded | nothing |
-| 1 | **Refused**: the delivery is bad (a short or malformed extract, or a `.lyrx` that cannot be translated) and the previous layer is still being served | look at the file, then re-export |
+| 1 | **Refused**: the delivery is bad (a short or malformed extract, one the selects cannot read, or a `.lyrx` that cannot be translated) and the previous layer is still being served | look at the file, then re-export; if a column was renamed on purpose, update the select instead |
 | 2 | **Could not run**: the delivery could not be fetched, GDAL could not read it, or the database would not answer | look at us |
 
 Keeping 1 and 2 apart is most of the point: a refusal is the guard working, a failure is the

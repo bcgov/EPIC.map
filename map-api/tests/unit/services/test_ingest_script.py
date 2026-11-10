@@ -26,6 +26,7 @@ same way.
 import argparse
 import importlib.util
 import json
+import re
 import sqlite3
 import sys
 from contextlib import closing
@@ -64,14 +65,41 @@ def write(directory: Path, name: str, content: str) -> Path:
 
 # Shaped like the delivered one: a unique value renderer over one string
 # field, one class, a solid stroke.
-def geopackage(directory: Path, name: str, last_changes: dict) -> Path:
-    """Write a minimal GeoPackage with one gpkg_contents row per layer."""
+def geopackage(directory: Path, name: str, last_changes: dict, layers: dict = None) -> Path:
+    """Write a minimal GeoPackage: gpkg_contents rows, plus a table per `layers` entry."""
     path = directory / name
+    rows = {**{table: None for table in layers or {}}, **last_changes}
     with closing(sqlite3.connect(path)) as gpkg:
-        gpkg.execute('CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, last_change TEXT)')
-        gpkg.executemany('INSERT INTO gpkg_contents VALUES (?, ?)', last_changes.items())
+        gpkg.execute('CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, '
+                     "data_type TEXT DEFAULT 'features', last_change TEXT)")
+        gpkg.executemany('INSERT INTO gpkg_contents (table_name, last_change) VALUES (?, ?)',
+                         rows.items())
+        for table, columns in (layers or {}).items():
+            gpkg.execute(f'CREATE TABLE "{table}" ({", ".join(columns)})')
         gpkg.commit()
     return path
+
+
+def columns_read(spec) -> dict:
+    """Each source layer's select columns, parsed one per line."""
+    columns = {}
+    for source in spec.sources:
+        sql = (API_ROOT / 'scripts' / 'sql' / spec.sql_dir / source.select).read_text(encoding='utf-8')
+        names = re.findall(r'^\s+([A-Za-z_]\w*)\s*(?:,|AS\b|$)', sql, re.MULTILINE)
+        columns[source.name] = [one for one in names if one.upper() != 'NULL']
+    return columns
+
+
+# PIP's columns in the 09/11/2026 TSAT export, cut by its shapefile route.
+TSAT_COLUMNS = [
+    'OBJECTID', 'Shape', 'CNSLTN_ARE', 'CNSLTN_A_1', 'CNSLTN_A_2', 'ORGANIZATI',
+    'ORGANIZA_1', 'CNSLTN_A_3', 'CNSLTN_A_4', 'CNSLTN_A_5', 'CNSLTN_A_6',
+    'CNSLTN_A_7', 'CNSLTN_A_8', 'CONTACT_GU', 'CONTACT_UP', 'CONTACT_TY',
+    'CONTACT_NA', 'CONTACT_TI', 'CONTACT_OR', 'CONTACT_AD', 'CONTACT_CI',
+    'CONTACT_PR', 'CONTACT_PO', 'CONTACT_FA', 'CONTACT_PH', 'CONTACT_EM',
+    'PUBLIC_CON', 'PRIVATE_CO', 'CONTACT_ME', 'CONTACT__1', 'FEATURE_CO',
+    'FEATURE_AR', 'FEATURE_LE',
+]
 
 
 def lyrx_document(colour=(0, 0, 0), field='CNSLTN_AREA_NAME') -> dict:
@@ -586,7 +614,8 @@ class TestSourceUpdated:
     def test_a_loaded_run_records_the_date(self, tmp_path, monkeypatch):
         """How a new delivery gets its date."""
         extract = geopackage(tmp_path, 'PIP.gpkg',
-                             {'FirstNationsOutlines': '2026-09-29T15:37:46Z'})
+                             {'FirstNationsOutlines': '2026-09-29T15:37:46Z'},
+                             columns_read(PIP_CONSULTATION_AREAS))
         lyrx = write(tmp_path, 'PIP.lyrx', json.dumps(lyrx_document()))
         connection = FakeConnection(previous=None)
         monkeypatch.setattr(ingest, 'stage', lambda *a, **k: 0.0)
@@ -597,6 +626,125 @@ class TestSourceUpdated:
         assert code == ingest.EXIT_OK
         assert connection.statuses == ['loaded']
         assert connection.history[0][11] == datetime(2026, 9, 29, 15, 37, 46)
+
+
+class TestCheckReadable:
+    """A wrongly exported GeoPackage is the export's fault, not ours."""
+
+    @pytest.mark.parametrize('spec', [PIP_CONSULTATION_AREAS, EAO_PROJECT_DATA],
+                             ids=lambda s: s.sql_dir)
+    def test_a_readable_delivery_passes(self, tmp_path, spec):
+        """Every select compiles against the layers it names."""
+        extract = geopackage(tmp_path, 'x.gpkg', {}, columns_read(spec))
+
+        ingest.check_readable(spec, [extract])
+
+    def test_the_tsat_export_is_refused_with_its_cause(self, tmp_path):
+        """Wrong layer name and cut columns, in one reason."""
+        extract = geopackage(tmp_path, 'CAD09112026.gpkg', {},
+                             {'WHSE_ADMIN_BOUNDARIES': TSAT_COLUMNS})
+
+        with pytest.raises(ingest.RefusedError) as refused:
+            ingest.check_readable(PIP_CONSULTATION_AREAS, [extract])
+
+        reason, = refused.value.reasons
+        assert 'has no layer FirstNationsOutlines, only WHSE_ADMIN_BOUNDARIES.' in reason
+        assert 'cut to 10 characters (CNSLTN_ARE for CNSLTN_AREA_GUID)' in reason
+        assert reason.endswith('straight to a GeoPackage, with the layer named FirstNationsOutlines.')
+
+    def test_a_shapefile_export_under_the_right_name_is_refused(self, tmp_path):
+        """Renaming the layer alone is not enough."""
+        extract = geopackage(tmp_path, 'PIP.gpkg', {}, {'FirstNationsOutlines': TSAT_COLUMNS})
+
+        with pytest.raises(ingest.RefusedError) as refused:
+            ingest.check_readable(PIP_CONSULTATION_AREAS, [extract])
+
+        reason, = refused.value.reasons
+        assert 'FirstNationsOutlines has its column names cut to 10 characters' in reason
+        assert reason.endswith('Re-export it straight to a GeoPackage.')
+
+    def test_a_layer_under_another_name_only_needs_renaming(self, tmp_path):
+        """Its columns would do, so the shapefile is not blamed."""
+        layers = {'WHSE_ADMIN_BOUNDARIES': columns_read(PIP_CONSULTATION_AREAS)['FirstNationsOutlines']}
+        extract = geopackage(tmp_path, 'PIP.gpkg', {}, layers)
+
+        with pytest.raises(ingest.RefusedError) as refused:
+            ingest.check_readable(PIP_CONSULTATION_AREAS, [extract])
+
+        reason, = refused.value.reasons
+        assert reason.endswith('Re-export it with the layer named FirstNationsOutlines.')
+        assert 'shapefile' not in reason
+
+    def test_a_renamed_column_lists_what_the_layer_has(self, tmp_path):
+        """A further GlobalID rename, which should fail."""
+        layers = columns_read(EAO_PROJECT_DATA)
+        layers['EAOLine'] = ['GlobalID_2' if one == 'GlobalID_1' else one for one in layers['EAOLine']]
+        extract = geopackage(tmp_path, 'EAO.gpkg', {}, layers)
+
+        with pytest.raises(ingest.RefusedError) as refused:
+            ingest.check_readable(EAO_PROJECT_DATA, [extract])
+
+        reason, = refused.value.reasons
+        assert 'EAOLine has no column GlobalID_1; its columns are' in reason
+        assert 'GlobalID_2' in reason
+
+    def test_every_layer_the_file_holds_is_named(self, tmp_path):
+        """The wrong delivery altogether."""
+        extract = geopackage(tmp_path, 'EAO.gpkg', {}, columns_read(EAO_PROJECT_DATA))
+
+        with pytest.raises(ingest.RefusedError) as refused:
+            ingest.check_readable(PIP_CONSULTATION_AREAS, [extract])
+
+        assert 'only EAOLine, EAOPoint, EAOPoly.' in refused.value.reasons[0]
+
+    def test_a_file_with_no_feature_layers_says_so(self, tmp_path):
+        """An empty GeoPackage, not one under the wrong name."""
+        extract = geopackage(tmp_path, 'PIP.gpkg', {})
+
+        with pytest.raises(ingest.RefusedError) as refused:
+            ingest.check_readable(PIP_CONSULTATION_AREAS, [extract])
+
+        reason, = refused.value.reasons
+        assert reason == 'PIP.gpkg has no feature layers; it should hold FirstNationsOutlines.'
+
+    def test_a_file_that_is_not_a_geopackage_is_left_to_ogr2ogr(self, tmp_path):
+        """Only the two errors an export causes are judged here."""
+        extract = write(tmp_path, 'PIP.gpkg', 'boundaries')
+
+        ingest.check_readable(PIP_CONSULTATION_AREAS, [extract])
+
+    def test_the_refusal_is_recorded_before_staging(self, tmp_path, monkeypatch):
+        """Exit 1 and a 'refused' row, where ogr2ogr would have exited 2."""
+        extract = geopackage(tmp_path, 'CAD09112026.gpkg', {},
+                             {'WHSE_ADMIN_BOUNDARIES': TSAT_COLUMNS})
+        lyrx = write(tmp_path, 'PIP.lyrx', json.dumps(lyrx_document()))
+        connection = FakeConnection(previous=None)
+        no_staging(monkeypatch)
+
+        code = ingest.load(make_args(), PIP_CONSULTATION_AREAS,
+                           [extract], lyrx, connection, TARGET)
+
+        assert code == ingest.EXIT_REFUSED
+        assert connection.statuses == ['refused']
+        assert 'WHSE_ADMIN_BOUNDARIES' in connection.notes()['refusals'][0]
+
+    def test_a_bad_lyrx_does_not_hide_a_bad_extract(self, tmp_path, monkeypatch, capsys):
+        """Both are refused in one run, after the extract's own heading."""
+        extract = geopackage(tmp_path, 'CAD09112026.gpkg', {},
+                             {'WHSE_ADMIN_BOUNDARIES': TSAT_COLUMNS})
+        lyrx = write(tmp_path, 'PIP.lyrx', json.dumps({'layerDefinitions': []}))
+        connection = FakeConnection(previous=None)
+        no_staging(monkeypatch)
+
+        code = ingest.load(make_args(), PIP_CONSULTATION_AREAS,
+                           [extract], lyrx, connection, TARGET)
+
+        assert code == ingest.EXIT_REFUSED
+        lyrx_reason, extract_reason = connection.notes()['refusals']
+        assert lyrx_reason == 'PIP.lyrx carries no layer definitions'
+        assert extract_reason.startswith('CAD09112026.gpkg has no layer FirstNationsOutlines')
+        out = capsys.readouterr().out
+        assert out.index('Checking CAD09112026.gpkg against the selects') < out.index('REFUSED')
 
 
 class TestLoadRefusesABadStyle:

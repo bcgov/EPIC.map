@@ -345,6 +345,87 @@ def source_updated(spec, sources: list):
     return max(dates, default=None)
 
 
+# The errors a wrongly exported file causes.
+NO_SUCH_TABLE = 'no such table: '
+NO_SUCH_COLUMN = 'no such column: '
+SHAPEFILE_NAME_LENGTH = 10
+
+
+def check_readable(spec, sources: list):
+    """Refuse a GeoPackage the selects cannot read, rather than let ogr2ogr exit 2 on it."""
+    reasons = []
+    for path, source_layer in zip(source_paths(spec, sources), spec.sources):
+        if path.suffix.lower() != '.gpkg':
+            continue
+        select = (SQL_ROOT / spec.sql_dir / source_layer.select).read_text(encoding='utf-8')
+        try:
+            with closing(sqlite3.connect(f'{path.resolve().as_uri()}?mode=ro',
+                                         uri=True)) as gpkg:
+                reason = _unreadable(gpkg, path.name, source_layer.name, select)
+        except sqlite3.Error:
+            continue
+        if reason:
+            reasons.append(reason)
+    if reasons:
+        raise RefusedError(reasons)
+
+
+def _compile_error(gpkg, select: str):
+    """Return the error the select meets on this file, or None."""
+    try:
+        gpkg.execute(f'SELECT * FROM (\n{select.rstrip().rstrip(";")}\n) LIMIT 0')
+    except sqlite3.OperationalError as exc:
+        return str(exc)
+    return None
+
+
+def _quoted(name: str) -> str:
+    """Quote an identifier read from the file."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _column_problem(gpkg, table: str, column: str) -> tuple:
+    """Describe a missing column, and whether a shapefile cut it."""
+    columns = [row[1] for row in gpkg.execute(f'PRAGMA table_info({_quoted(table)})')]
+    cut = column[:SHAPEFILE_NAME_LENGTH]
+    if len(column) > SHAPEFILE_NAME_LENGTH and cut.lower() in {name.lower() for name in columns}:
+        return (f'{table} has its column names cut to {SHAPEFILE_NAME_LENGTH} '
+                f'characters ({cut} for {column}), as exporting through a '
+                f'shapefile does.'), True
+    return f'{table} has no column {column}; its columns are {", ".join(columns)}.', False
+
+
+def _unreadable(gpkg, file_name: str, layer: str, select: str):
+    """Describe why the select cannot read this file, or return None."""
+    error = _compile_error(gpkg, select)
+    if error is None:
+        return None
+    if error.startswith(NO_SUCH_COLUMN):
+        problem, cut = _column_problem(gpkg, layer, error[len(NO_SUCH_COLUMN):])
+        fix = ' Re-export it straight to a GeoPackage.' if cut else ''
+        return f'{file_name}: {problem}{fix}'
+    if not error.startswith(NO_SUCH_TABLE):
+        return None
+
+    held = [row[0] for row in gpkg.execute(
+        "SELECT table_name FROM gpkg_contents WHERE data_type = 'features' "
+        'ORDER BY table_name')]
+    if not held:
+        return f'{file_name} has no feature layers; it should hold {layer}.'
+    reason = f'{file_name} has no layer {layer}, only {", ".join(held)}.'
+    fix = f' Re-export it with the layer named {layer}.'
+    if len(held) == 1:
+        # Alias its only layer to the expected name to check its columns too.
+        gpkg.execute(f'CREATE TEMP VIEW {_quoted(layer)} AS SELECT * FROM {_quoted(held[0])}')
+        error = _compile_error(gpkg, select)
+        if error and error.startswith(NO_SUCH_COLUMN):
+            problem, cut = _column_problem(gpkg, held[0], error[len(NO_SUCH_COLUMN):])
+            reason += f' {problem}'
+            if cut:
+                fix = f' Re-export it straight to a GeoPackage, with the layer named {layer}.'
+    return reason + fix
+
+
 def last_load(connection, spec, statuses: tuple) -> dict:
     """Return the most recent load in any of `statuses`, or an empty dict."""
     with connection.cursor() as cursor:
@@ -939,10 +1020,20 @@ def load(args, spec, sources: list, lyrx_path, connection, target) -> int:
     # would change what is drawn, not every morning.
     print('Building the style ...' if spec.owns_style
           else f'Translating {lyrx_path.name} ...')
+    reasons = []
     try:
         style, manifest = build_style(spec, lyrx_path)
     except RefusedError as refusal:
-        return refuse(connection, spec, refusal, source_names, source_digest)
+        reasons += refusal.reasons
+
+    # Both checked first, so one refusal names every bad file.
+    print(f'Checking {source_names} against the selects ...')
+    try:
+        check_readable(spec, sources)
+    except RefusedError as refusal:
+        reasons += refusal.reasons
+    if reasons:
+        return refuse(connection, spec, RefusedError(reasons), source_names, source_digest)
 
     staging = ', '.join(
         f'{path.name}:{source.name}'
