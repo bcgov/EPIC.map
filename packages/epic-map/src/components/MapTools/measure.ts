@@ -11,6 +11,7 @@ import {
   MEASURE_COLOR,
   MEASURE_FILL_OPACITY,
   MEASURE_POINT_RADIUS_PX,
+  MEASURE_PREVIEW_OPACITY,
   MEASURE_WIDTH_PX,
   WIDGET_ID_PREFIX,
 } from "@/utils/config";
@@ -81,14 +82,14 @@ const [FILL, CLOSING, LINE, POINT] = (["fill", "closing", "line", "point"] as co
 
 const ofPart = (part: Part): FilterSpecification => ["==", ["get", "part"], part];
 
-const feature = (part: Part, geometry: Geometry): Feature => ({
+const feature = (part: Part, geometry: Geometry, preview = false): Feature => ({
   type: "Feature",
   geometry,
-  properties: { part },
+  properties: preview ? { part, preview } : { part },
 });
 
-const line = (part: Part, points: readonly LngLatPoint[]) =>
-  feature(part, { type: "LineString", coordinates: [...points] });
+const line = (part: Part, points: readonly LngLatPoint[], preview = false) =>
+  feature(part, { type: "LineString", coordinates: [...points] }, preview);
 
 export const drawMeasure = (
   map: MapLibreMap,
@@ -105,7 +106,7 @@ export const drawMeasure = (
         : []),
       ...(shape === "closable" ? [line("closing", [points[points.length - 1], points[0]])] : []),
       ...(ring.length > 1 ? [line("line", ring)] : []),
-      ...(preview ? [line("line", preview)] : []),
+      ...(preview ? [line("line", preview, true)] : []),
       ...points.map((coordinates) => feature("point", { type: "Point", coordinates })),
     ],
   };
@@ -150,7 +151,9 @@ export const drawMeasure = (
       paint: {
         "line-color": MEASURE_COLOR,
         "line-width": MEASURE_WIDTH_PX,
-        "line-dasharray": [8, 8],
+        "line-dasharray": [2, 2],
+        // The segment out to the cursor is dimmer than the placed ones.
+        "line-opacity": ["case", ["has", "preview"], MEASURE_PREVIEW_OPACITY, 1],
       },
     });
     map.addLayer({
@@ -162,7 +165,7 @@ export const drawMeasure = (
         "circle-radius": MEASURE_POINT_RADIUS_PX,
         "circle-color": MEASURE_COLOR,
         "circle-stroke-color": "#FFFFFF",
-        "circle-stroke-width": 1,
+        "circle-stroke-width": MEASURE_WIDTH_PX,
       },
     });
   });
