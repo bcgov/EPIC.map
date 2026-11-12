@@ -4,6 +4,9 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useTheme, type Theme } from "@mui/material/styles";
 import {
   BORDER_DARK,
+  BORDER_DEFAULT,
+  BUTTON_DISABLED_FILL,
+  BUTTON_DISABLED_TEXT,
   HOVER_FILL,
   INFO_BORDER,
   INFO_FILL,
@@ -95,12 +98,28 @@ const footerButtonSx = {
   "& .MuiButton-startIcon > svg": { fontSize: "1rem" },
 } as const;
 
+const disabledLook = {
+  color: BUTTON_DISABLED_TEXT,
+  backgroundColor: BUTTON_DISABLED_FILL,
+  opacity: 1,
+};
+const disabledButtonSx = (borderColor: string) => ({
+  "&.Mui-disabled": {
+    ...disabledLook,
+    borderColor,
+    pointerEvents: "auto",
+    cursor: "not-allowed",
+    "&:hover, &:active": { ...disabledLook, borderColor },
+  },
+});
+
 export const secondaryButtonSx = (theme: Theme) => ({
   ...footerButtonSx,
   border: `1px solid ${BORDER_DARK}`,
   color: theme.palette.text.primary,
   backgroundColor: theme.palette.common.white,
   "&:hover": { backgroundColor: HOVER_FILL },
+  ...disabledButtonSx(BORDER_DEFAULT),
 });
 
 export const primaryButtonSx = (theme: Theme) => ({
@@ -109,5 +128,5 @@ export const primaryButtonSx = (theme: Theme) => ({
   color: theme.palette.primary.contrastText,
   backgroundColor: theme.palette.primary.main,
   "&:hover": { backgroundColor: theme.palette.primary.dark },
-  "&.Mui-disabled": { color: theme.palette.primary.contrastText, opacity: 0.7 },
+  ...disabledButtonSx("transparent"),
 });
