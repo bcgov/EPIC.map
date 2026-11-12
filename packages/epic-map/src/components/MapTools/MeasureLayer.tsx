@@ -9,23 +9,36 @@ import {
   eraseMeasure,
   formatDistance,
   type LngLatPoint,
+  type MeasureShape,
 } from "@/components/MapTools/measure";
 import { SMALL_TEXT } from "@/components/MapTools/ToolPanel";
 import { HIGHLIGHT_COLOR } from "@/utils/config";
 
 const OFFSET_PX = 14;
+// How near Point 1 the pointer must be to close the shape.
+const CLOSE_PX = 10;
 
-interface Pointer {
+interface ScreenPoint {
   x: number;
   y: number;
+}
+
+interface Pointer extends ScreenPoint {
   at: LngLatPoint;
 }
 
-/** The line on the map, plus the crosshair and tag while placing. */
+/** Where `first` is on screen, if `at` is over it. */
+const over = (map: MapLibreMap, at: ScreenPoint, first: LngLatPoint): ScreenPoint | null => {
+  const { x, y } = map.project(first);
+  return Math.hypot(x - at.x, y - at.y) <= CLOSE_PX ? { x, y } : null;
+};
+
+/** The line or area on the map, plus the crosshair and tag while placing. */
 export default function MeasureLayer({ map }: { map: MapLibreMap | null }) {
   const theme = useTheme();
-  const { points, placing, add } = useMeasure();
+  const { points, closed, placing, closable, add, close } = useMeasure();
   const [pointer, setPointer] = useState<Pointer | null>(null);
+  const first = points.length > 0 ? points[0] : null;
 
   useEffect(() => {
     if (!map || !placing) return undefined;
@@ -38,34 +51,47 @@ export default function MeasureLayer({ map }: { map: MapLibreMap | null }) {
     const onMove = ({ point, lngLat }: MapMouseEvent) =>
       setPointer({ x: point.x, y: point.y, at: [lngLat.lng, lngLat.lat] });
     const onOut = () => setPointer(null);
-    // A double-click's second click would stack a point on the first.
-    const onClick = ({ lngLat, originalEvent }: MapMouseEvent) => {
-      if (originalEvent.detail > 1) return;
-      add([lngLat.lng, lngLat.lat]);
-    };
 
     map.on("mousemove", onMove);
     map.on("mouseout", onOut);
-    map.on("click", onClick);
     return () => {
       container.style.cursor = "";
       if (zoomsOnDoubleClick) map.doubleClickZoom.enable();
       setPointer(null);
       map.off("mousemove", onMove);
       map.off("mouseout", onOut);
-      map.off("click", onClick);
     };
-  }, [map, placing, add]);
-
-  const last = points.length > 0 ? points[points.length - 1] : null;
-  const preview = useMemo(
-    () => (last && pointer ? [last, pointer.at] : null),
-    [last, pointer],
-  );
+  }, [map, placing]);
 
   useEffect(() => {
-    if (map) drawMeasure(map, points, preview);
-  }, [map, points, preview]);
+    if (!map || !placing) return undefined;
+
+    // A double-click's second click would stack a point on the first.
+    const onClick = ({ point, lngLat, originalEvent }: MapMouseEvent) => {
+      if (originalEvent.detail > 1) return;
+      if (closable && first && over(map, point, first)) close();
+      else add([lngLat.lng, lngLat.lat]);
+    };
+
+    map.on("click", onClick);
+    return () => {
+      map.off("click", onClick);
+    };
+  }, [map, placing, closable, first, add, close]);
+
+  const closeAt = map && pointer && closable && first ? over(map, pointer, first) : null;
+  const closing = closeAt !== null;
+  const last = points.length > 0 ? points[points.length - 1] : null;
+  const preview = useMemo(
+    () => (last && pointer ? [last, closing && first ? first : pointer.at] : null),
+    [last, first, pointer, closing],
+  );
+
+  const shape: MeasureShape = closed ? "closed" : closable ? "closable" : "open";
+
+  useEffect(() => {
+    if (map) drawMeasure(map, points, preview, shape);
+  }, [map, points, preview, shape]);
 
   useEffect(
     () => () => {
@@ -75,14 +101,15 @@ export default function MeasureLayer({ map }: { map: MapLibreMap | null }) {
   );
 
   if (!pointer) return null;
+  const tagAt = closeAt ?? pointer;
 
   return (
     <Box
       aria-hidden
       sx={{
         position: "absolute",
-        left: `${pointer.x + OFFSET_PX}px`,
-        top: `${pointer.y}px`,
+        left: `${tagAt.x + OFFSET_PX}px`,
+        top: `${tagAt.y}px`,
         transform: "translateY(-50%)",
         zIndex: 2,
         pointerEvents: "none",
@@ -94,7 +121,11 @@ export default function MeasureLayer({ map }: { map: MapLibreMap | null }) {
         borderRadius: `${theme.shape.borderRadius}px`,
       }}
     >
-      {last ? `~${formatDistance(distance(last, pointer.at))}` : "Add first point"}
+      {closing
+        ? "close shape"
+        : last
+          ? `~${formatDistance(distance(last, pointer.at))}`
+          : "Add first point"}
     </Box>
   );
 }

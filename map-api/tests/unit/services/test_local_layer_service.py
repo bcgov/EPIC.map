@@ -90,64 +90,86 @@ def test_feature_carries_bounds_in_degrees(app, session):
     )
 
 
-def record_load(status: str, loaded_date: str, object_name: str = OBJECT_NAME):
+def record_load(status: str, loaded_date: str, digest: str = 'a', updated: str = None,
+                object_name: str = OBJECT_NAME):
     """Write one row of the ingest's load history."""
     db.session.execute(
         text("""
             INSERT INTO cache.local_layer_loads
-                (object_name, status, source_name, loaded_date)
-            VALUES (:object_name, :status, 'PIP_CONSULTATION_AREAS.gpkg',
-                    CAST(:loaded_date AS timestamp))
+                (object_name, status, source_name, source_digest, loaded_date,
+                 source_updated_date)
+            VALUES (:object_name, :status, 'PIP_CONSULTATION_AREAS.gpkg', :digest,
+                    CAST(:loaded_date AS timestamp), CAST(:updated AS timestamp))
         """),
-        {'object_name': object_name, 'status': status, 'loaded_date': loaded_date},
+        {'object_name': object_name, 'status': status, 'digest': digest,
+         'loaded_date': loaded_date, 'updated': updated},
     )
     db.session.commit()
 
 
-def test_last_loaded_is_the_most_recent_load(app, session):
-    """What dates the layer is when its rows were last replaced."""
-    record_load('loaded', '2026-09-01 09:00:00')
-    record_load('loaded', '2026-10-05 09:00:00')
-
-    loaded = LocalLayerService.last_loaded(LOCAL_LAYERS[OBJECT_NAME], OBJECT_NAME)
-
-    assert loaded.date().isoformat() == '2026-10-05'
+def last_updated():
+    """Return the date the panel shows for the PIP layer."""
+    return LocalLayerService.last_updated(OBJECT_NAME)
 
 
-def test_last_loaded_ignores_a_run_that_changed_nothing(app, session):
-    """A delivery that was unchanged or refused left the data where it was."""
-    record_load('loaded', '2026-10-05 09:00:00')
-    record_load('skipped', '2026-10-12 09:00:00')
-    record_load('refused', '2026-10-13 09:00:00')
+def test_last_updated_is_the_source_date_not_the_load_date(app, session):
+    """The extract's own date, not when the ingest ran."""
+    record_load('loaded', '2026-10-05 09:00:00', updated='2026-09-29 15:37:46')
 
-    loaded = LocalLayerService.last_loaded(LOCAL_LAYERS[OBJECT_NAME], OBJECT_NAME)
-
-    assert loaded.date().isoformat() == '2026-10-05'
+    assert last_updated().isoformat() == '2026-09-29T15:37:46'
 
 
-def test_last_loaded_ignores_another_layer_s_history(app, session):
+def test_last_updated_follows_the_most_recent_load(app, session):
+    """A newer delivery replaces the older one's date."""
+    record_load('loaded', '2026-09-01 09:00:00', digest='a', updated='2026-08-30 12:00:00')
+    record_load('loaded', '2026-10-05 09:00:00', digest='b', updated='2026-09-29 15:37:46')
+
+    assert last_updated().date().isoformat() == '2026-09-29'
+
+
+def test_last_updated_ignores_a_refused_delivery(app, session):
+    """A refused extract was never served."""
+    record_load('loaded', '2026-10-05 09:00:00', digest='a', updated='2026-09-29 15:37:46')
+    record_load('refused', '2026-10-13 09:00:00', digest='b', updated='2026-10-12 08:00:00')
+
+    assert last_updated().date().isoformat() == '2026-09-29'
+
+
+def test_last_updated_is_taken_from_a_later_skip_of_the_same_bytes(app, session):
+    """An older load is dated by the next unchanged run."""
+    record_load('loaded', '2026-10-05 09:00:00', digest='a')
+    record_load('skipped', '2026-10-06 09:00:00', digest='a', updated='2026-09-29 15:37:46')
+
+    assert last_updated().date().isoformat() == '2026-09-29'
+
+
+def test_last_updated_passes_over_an_undated_run_of_the_same_bytes(app, session):
+    """A refused reload records no date, and the served file still has one."""
+    record_load('loaded', '2026-10-05 09:00:00', digest='a', updated='2026-09-29 15:37:46')
+    record_load('refused', '2026-10-06 09:00:00', digest='a')
+
+    assert last_updated().date().isoformat() == '2026-09-29'
+
+
+def test_last_updated_does_not_borrow_an_older_delivery_s_date(app, session):
+    """Nothing rather than the previous extract's date."""
+    record_load('loaded', '2026-09-01 09:00:00', digest='a', updated='2026-08-30 12:00:00')
+    record_load('loaded', '2026-10-05 09:00:00', digest='b')
+
+    assert last_updated() is None
+
+
+def test_last_updated_ignores_another_layer_s_history(app, session):
     """Each layer is dated by its own loads."""
-    record_load('loaded', '2026-10-05 09:00:00', object_name='WHSE_TEST.OTHER')
+    record_load('loaded', '2026-10-05 09:00:00', updated='2026-09-29 15:37:46',
+                object_name='WHSE_TEST.OTHER')
 
-    assert LocalLayerService.last_loaded(
-        LOCAL_LAYERS[OBJECT_NAME], OBJECT_NAME
-    ) is None
-
-
-def test_last_loaded_falls_back_to_the_rows_themselves(app, session):
-    """Rows put there by hand still have a date; the history is what is missing."""
-    insert_area()
-
-    loaded = LocalLayerService.last_loaded(LOCAL_LAYERS[OBJECT_NAME], OBJECT_NAME)
-
-    assert loaded is not None
+    assert last_updated() is None
 
 
-def test_last_loaded_is_none_for_a_layer_with_nothing_in_it(app, session):
+def test_last_updated_is_none_for_a_layer_with_nothing_in_it(app, session):
     """Nothing loaded is no date, not today's."""
-    assert LocalLayerService.last_loaded(
-        LOCAL_LAYERS[OBJECT_NAME], OBJECT_NAME
-    ) is None
+    assert last_updated() is None
 
 
 def test_an_unknown_feature_is_none(app, session):

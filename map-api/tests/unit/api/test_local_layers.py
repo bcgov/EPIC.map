@@ -184,7 +184,7 @@ def test_the_style_is_an_ordered_list_of_layers(app, client, jwt, session):
 
 
 INFO_ENDPOINT = f'/api/local/layers/{OBJECT_NAME}'
-INFO_SERVICE = 'map_api.resources.local_layer.LocalLayerService.last_loaded'
+INFO_SERVICE = 'map_api.resources.local_layer.LocalLayerService.last_updated'
 
 
 def test_layer_info_requires_a_token(app, client, session):
@@ -192,14 +192,14 @@ def test_layer_info_requires_a_token(app, client, session):
     assert client.get(INFO_ENDPOINT).status_code == HTTPStatus.UNAUTHORIZED
 
 
-def test_layer_info_reports_when_the_rows_were_loaded(app, client, jwt, session):
-    """What the panel dates the layer by: a copy is as old as the copy."""
-    with patch(INFO_SERVICE, return_value=datetime(2026, 10, 5, 9, 0)):
+def test_layer_info_reports_when_the_source_was_updated(app, client, jwt, session):
+    """What the panel dates the layer by."""
+    with patch(INFO_SERVICE, return_value=datetime(2026, 9, 29, 15, 37)):
         response = client.get(INFO_ENDPOINT, headers=factory_auth_header(jwt))
 
     assert response.status_code == HTTPStatus.OK
     assert response.json['objectName'] == OBJECT_NAME
-    assert response.json['loadedDate'].startswith('2026-10-05')
+    assert response.json['lastUpdated'].startswith('2026-09-29')
 
 
 def test_layer_info_is_null_before_anything_is_loaded(app, client, jwt, session):
@@ -208,7 +208,7 @@ def test_layer_info_is_null_before_anything_is_loaded(app, client, jwt, session)
         response = client.get(INFO_ENDPOINT, headers=factory_auth_header(jwt))
 
     assert response.status_code == HTTPStatus.OK
-    assert response.json['loadedDate'] is None
+    assert response.json['lastUpdated'] is None
 
 
 def test_layer_info_for_a_layer_we_do_not_host_is_not_found(app, client, jwt, session):

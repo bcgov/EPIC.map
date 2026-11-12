@@ -113,12 +113,39 @@ describe("the Select area state", () => {
     let state = selectAreaReducer(INITIAL_STATE, { type: "startQuery", queryId: 1 });
     state = selectAreaReducer(state, {
       type: "add",
-      feature: { featureId: "{F2}", label: "Access Route" },
+      features: [{ featureId: "{F2}", label: "Access Route" }],
     });
 
     state = selectAreaReducer(state, { type: "finishQuery", queryId: 1, groups: [group({})] });
 
     expect(state.results).toBeNull();
+  });
+
+  it("adds several features at once, skipping any already in", () => {
+    let state = selectAreaReducer(INITIAL_STATE, {
+      type: "add",
+      features: [{ featureId: "{F1}", label: "Tailings Facility" }],
+    });
+
+    state = selectAreaReducer(state, {
+      type: "add",
+      features: [
+        { featureId: "{F1}", label: "Tailings Facility" },
+        { featureId: "{F2}", label: "Tailings Facility" },
+      ],
+    });
+
+    expect(state.selected.map(({ featureId }) => featureId)).toEqual(["{F1}", "{F2}"]);
+  });
+
+  it("keeps the results when everything added is already in", () => {
+    const feature = { featureId: "{F1}", label: "Tailings Facility" };
+    const state = selectAreaReducer(
+      { ...withResults([group({})]), selected: [feature] },
+      { type: "add", features: [feature] },
+    );
+
+    expect(state.results).toHaveLength(1);
   });
 
   it("keeps a failed layer's group though it has no features to remove", () => {

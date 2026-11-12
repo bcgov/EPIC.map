@@ -1,16 +1,16 @@
-import type { Feature, FeatureCollection } from "geojson";
+import type { Feature, FeatureCollection, Geometry } from "geojson";
 import {
   LngLat,
-  type ExpressionSpecification,
   type FilterSpecification,
   type GeoJSONSource,
   type Map as MapLibreMap,
 } from "maplibre-gl";
 import { whenStyleParsed } from "@/components/Layers/layerUtils";
 import {
+  MEASURE_CLOSING_COLOR,
   MEASURE_COLOR,
+  MEASURE_FILL_OPACITY,
   MEASURE_POINT_RADIUS_PX,
-  MEASURE_PREVIEW_OPACITY,
   MEASURE_WIDTH_PX,
   WIDGET_ID_PREFIX,
 } from "@/utils/config";
@@ -27,6 +27,21 @@ export const segmentLengths = (points: readonly LngLatPoint[]) =>
 export const lineLength = (points: readonly LngLatPoint[]) =>
   segmentLengths(points).reduce((sum, metres) => sum + metres, 0);
 
+// MapLibre's distanceTo radius, so areas agree with lengths.
+const EARTH_RADIUS_M = 6371008.8;
+
+/** Square metres inside the points, joined back to the first. */
+export const polygonArea = (points: readonly LngLatPoint[]) => {
+  if (points.length < 3) return 0;
+  const rad = (degrees: number) => (degrees * Math.PI) / 180;
+  const total = points.reduce((sum, [, lat], i) => {
+    const [before] = points[(i + points.length - 1) % points.length];
+    const [after] = points[(i + 1) % points.length];
+    return sum + rad(after - before) * Math.sin(rad(lat));
+  }, 0);
+  return Math.abs((total * EARTH_RADIUS_M ** 2) / 2);
+};
+
 const twoFigures = new Intl.NumberFormat("en-CA", { maximumSignificantDigits: 2 });
 
 /** Two significant figures, to avoid false precision. */
@@ -38,41 +53,60 @@ export const formatDistance = (metres: number) => {
     : `${twoFigures.format(rounded / 1000)} km`;
 };
 
+// The ticket's 1 dp and whole km², then three figures from 100 km².
+const areaFormats = [
+  { maximumFractionDigits: 1 },
+  { maximumFractionDigits: 0 },
+  { maximumSignificantDigits: 3 },
+].map((options) => new Intl.NumberFormat("en-CA", options));
+
+/** m² to two figures under 1 km², then km² with fewer decimals as it grows. */
+export const formatArea = (squareMetres: number) => {
+  const rounded = Math.round(Number(squareMetres.toPrecision(2)));
+  if (rounded < 1_000_000) return `${twoFigures.format(rounded)} m²`;
+  const km2 = squareMetres / 1e6;
+  const format = areaFormats[km2 < 10 ? 0 : km2 < 100 ? 1 : 2];
+  return `${format.format(km2)} km²`;
+};
+
+/** A line, a line that can close back to Point 1, or a closed area. */
+export type MeasureShape = "open" | "closable" | "closed";
+
+type Part = "fill" | "closing" | "line" | "point";
+
 const SOURCE = `${WIDGET_ID_PREFIX}measure-src`;
-const [CASING, LINE, POINT] = ["casing", "line", "point"].map(
+const [FILL, CLOSING, LINE, POINT] = (["fill", "closing", "line", "point"] as const).map(
   (part) => `${WIDGET_ID_PREFIX}measure-${part}`,
 );
 
-const line = (points: readonly LngLatPoint[], preview = false): Feature => ({
+const ofPart = (part: Part): FilterSpecification => ["==", ["get", "part"], part];
+
+const feature = (part: Part, geometry: Geometry): Feature => ({
   type: "Feature",
-  geometry: { type: "LineString", coordinates: [...points] },
-  properties: { preview },
+  geometry,
+  properties: { part },
 });
 
-const isLine: FilterSpecification = ["==", ["geometry-type"], "LineString"];
-
-const lineOpacity: ExpressionSpecification = [
-  "case",
-  ["get", "preview"],
-  MEASURE_PREVIEW_OPACITY,
-  1,
-];
+const line = (part: Part, points: readonly LngLatPoint[]) =>
+  feature(part, { type: "LineString", coordinates: [...points] });
 
 export const drawMeasure = (
   map: MapLibreMap,
   points: readonly LngLatPoint[],
   preview: readonly LngLatPoint[] | null,
+  shape: MeasureShape,
 ) => {
+  const ring = shape === "closed" ? [...points, points[0]] : points;
   const data: FeatureCollection = {
     type: "FeatureCollection",
     features: [
-      ...(points.length > 1 ? [line(points)] : []),
-      ...(preview ? [line(preview, true)] : []),
-      ...points.map((coordinates): Feature => ({
-        type: "Feature",
-        geometry: { type: "Point", coordinates },
-        properties: {},
-      })),
+      ...(shape === "closed"
+        ? [feature("fill", { type: "Polygon", coordinates: [[...ring]] })]
+        : []),
+      ...(shape === "closable" ? [line("closing", [points[points.length - 1], points[0]])] : []),
+      ...(ring.length > 1 ? [line("line", ring)] : []),
+      ...(preview ? [line("line", preview)] : []),
+      ...points.map((coordinates) => feature("point", { type: "Point", coordinates })),
     ],
   };
 
@@ -90,40 +124,45 @@ export const drawMeasure = (
       return;
     }
     map.addSource(SOURCE, { type: "geojson", data });
-    // White casing so the line reads on either basemap.
     map.addLayer({
-      id: CASING,
+      id: FILL,
+      type: "fill",
+      source: SOURCE,
+      filter: ofPart("fill"),
+      paint: { "fill-color": MEASURE_COLOR, "fill-opacity": MEASURE_FILL_OPACITY },
+    });
+    map.addLayer({
+      id: CLOSING,
       type: "line",
       source: SOURCE,
-      filter: isLine,
+      filter: ofPart("closing"),
       paint: {
-        "line-color": "#FFFFFF",
-        "line-width": MEASURE_WIDTH_PX + 2,
-        "line-opacity": lineOpacity,
+        "line-color": MEASURE_CLOSING_COLOR,
+        "line-width": MEASURE_WIDTH_PX,
+        "line-dasharray": [2, 2],
       },
     });
     map.addLayer({
       id: LINE,
       type: "line",
       source: SOURCE,
-      filter: isLine,
+      filter: ofPart("line"),
       paint: {
         "line-color": MEASURE_COLOR,
         "line-width": MEASURE_WIDTH_PX,
-        "line-dasharray": [2, 2],
-        "line-opacity": lineOpacity,
+        "line-dasharray": [8, 8],
       },
     });
     map.addLayer({
       id: POINT,
       type: "circle",
       source: SOURCE,
-      filter: ["==", ["geometry-type"], "Point"],
+      filter: ofPart("point"),
       paint: {
         "circle-radius": MEASURE_POINT_RADIUS_PX,
         "circle-color": MEASURE_COLOR,
         "circle-stroke-color": "#FFFFFF",
-        "circle-stroke-width": MEASURE_WIDTH_PX,
+        "circle-stroke-width": 1,
       },
     });
   });
@@ -131,7 +170,7 @@ export const drawMeasure = (
 
 export const eraseMeasure = (map: MapLibreMap) => {
   whenStyleParsed(map, () => {
-    for (const id of [POINT, LINE, CASING]) {
+    for (const id of [POINT, LINE, CLOSING, FILL]) {
       if (map.getLayer(id)) map.removeLayer(id);
     }
     if (map.getSource(SOURCE)) map.removeSource(SOURCE);

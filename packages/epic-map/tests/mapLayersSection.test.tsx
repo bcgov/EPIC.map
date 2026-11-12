@@ -14,6 +14,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import type { ProjectComponent } from "@/api/useProjects";
+import { MeasureProvider } from "@/components/MapTools/MeasureContext";
 import {
   SelectAreaProvider,
   useSelectArea,
@@ -756,7 +757,7 @@ describe("clicking a component on the map", () => {
     expect(scrollIntoNearestView).not.toHaveBeenCalled();
   });
 
-  it("leaves clicks to Select area while it is on, and stops listening on close", () => {
+  it("leaves clicks to Measure while it places points, and stops listening on close", () => {
     const map = fakeMap();
     const area: { current: ReturnType<typeof useSelectArea> | null } = {
       current: null,
@@ -767,6 +768,44 @@ describe("clicking a component on the map", () => {
     };
     const { unmount } = render(
       <SelectAreaProvider>
+        <MeasureProvider>
+          <RevealedComponentsProvider>
+            <MapLayersSection projectId={7} map={map as never} />
+            <Probe />
+            <AreaProbe />
+          </RevealedComponentsProvider>
+        </MeasureProvider>
+      </SelectAreaProvider>,
+    );
+    showValueComponents();
+
+    act(() => area.current?.toggleTool("measure"));
+    expect(map.listening()).toBe(false);
+
+    act(() => area.current?.toggleTool("measure"));
+    clickOnMap(map, ["{V2}"]);
+    expect(revealed.selected).toEqual(["{V2}"]);
+
+    unmount();
+    expect(map.listening()).toBe(false);
+  });
+});
+
+describe("adding to Select area", () => {
+  const row = (name: string) => screen.getByRole("button", { name });
+  const area: { current: ReturnType<typeof useSelectArea> | null } = {
+    current: null,
+  };
+  const AreaProbe = () => {
+    area.current = useSelectArea();
+    return null;
+  };
+  const selectedIds = () =>
+    area.current?.selected.map(({ featureId }) => featureId);
+
+  const renderSelecting = (map: FakeMap | null = null) => {
+    render(
+      <SelectAreaProvider>
         <RevealedComponentsProvider>
           <MapLayersSection projectId={7} map={map as never} />
           <Probe />
@@ -775,16 +814,114 @@ describe("clicking a component on the map", () => {
       </SelectAreaProvider>,
     );
     showValueComponents();
-
     act(() => area.current?.toggleTool("select"));
-    expect(map.listening()).toBe(false);
+  };
 
-    act(() => area.current?.toggleTool("select"));
-    clickOnMap(map, ["{V2}"]);
+  // Picks only: MapToolsControl's add is tested there.
+  const clickOnMap = (map: FakeMap, featureIds: string[]) => {
+    state.underClick = featureIds;
+    map.click();
+  };
+
+  beforeEach(() => {
+    state.components = [
+      ...COMPONENTS,
+      component({ featureId: "{T1}", label: "Tailings Facility" }),
+      component({ featureId: "{T2}", label: "Tailings Facility" }),
+      component({ featureId: "{T3}", label: "Tailings Facility", sensitive: true }),
+    ];
+  });
+
+  it("adds every drawn feature of a row picked from the list, leaving a hidden one out", () => {
+    renderSelecting();
+
+    fireEvent.click(row("Tailings Facility"));
+
+    expect(selectedIds()).toEqual(["{T1}", "{T2}"]);
+    expect(area.current?.selected[0].label).toBe("Tailings Facility");
+    expect(row("Tailings Facility").getAttribute("aria-pressed")).toBe("true");
+    expect(revealed.selected).toEqual(["{T1}", "{T2}"]);
+  });
+
+  it("highlights a row picked again, rather than deselecting it or adding it twice", () => {
+    renderSelecting(fakeMap());
+
+    fireEvent.click(row("Tailings Facility"));
+    fireEvent.click(row("Tailings Facility"));
+
+    expect(selectedIds()).toEqual(["{T1}", "{T2}"]);
+    expect(row("Tailings Facility").getAttribute("aria-pressed")).toBe("true");
+    expect(revealed.selected).toEqual(["{T1}", "{T2}"]);
+    expect(frameBesideCard).toHaveBeenCalledTimes(2);
+  });
+
+  it("takes the highlight from the Selected list when a row already in is picked", () => {
+    renderSelecting();
+    act(() => {
+      area.current?.add({ featureId: "{V2}", label: "Wildlife Habitat Area" });
+      area.current?.focus("{V2}");
+    });
+
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(selectedIds()).toEqual(["{V2}"]);
+    expect(area.current?.focusedId).toBeNull();
     expect(revealed.selected).toEqual(["{V2}"]);
+  });
 
-    unmount();
-    expect(map.listening()).toBe(false);
+  it("adds to what the map added, in one selection", () => {
+    renderSelecting();
+    act(() => area.current?.add({ featureId: "{P1}", label: "Access Route" }));
+
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(selectedIds()).toEqual(["{P1}", "{V2}"]);
+  });
+
+  it("adds nothing from the list while Select area is off", () => {
+    renderSelecting();
+    act(() => area.current?.toggleTool("select"));
+
+    fireEvent.click(row("Pacific Water Shrew"));
+
+    expect(selectedIds()).toEqual([]);
+  });
+
+  it("picks the row of a feature added on the map, highlighting only that feature", () => {
+    const map = fakeMap();
+    renderSelecting(map);
+    act(() => area.current?.add({ featureId: "{T2}", label: "Tailings Facility" }));
+
+    clickOnMap(map, ["{T2}"]);
+
+    expect(row("Tailings Facility").getAttribute("aria-pressed")).toBe("true");
+    expect(revealed.selected).toEqual(["{T2}"]);
+    expect(scrollIntoNearestView).toHaveBeenCalledWith(row("Tailings Facility"));
+  });
+
+  it("highlights and scrolls to a feature clicked again on the map", () => {
+    const map = fakeMap();
+    renderSelecting(map);
+    act(() => area.current?.add({ featureId: "{V2}", label: "Wildlife Habitat Area" }));
+    clickOnMap(map, ["{V2}"]);
+    act(() => area.current?.focus("{V2}"));
+
+    clickOnMap(map, ["{V2}"]);
+
+    expect(row("Pacific Water Shrew").getAttribute("aria-pressed")).toBe("true");
+    expect(area.current?.focusedId).toBeNull();
+    expect(revealed.selected).toEqual(["{V2}"]);
+    expect(scrollIntoNearestView).toHaveBeenCalledTimes(2);
+  });
+
+  it("picks no row when the topmost feature, the one added, is not the panel's", () => {
+    const map = fakeMap();
+    renderSelecting(map);
+
+    clickOnMap(map, ["{ANOTHER_PROJECT}", "{V2}"]);
+
+    expect(row("Pacific Water Shrew").getAttribute("aria-pressed")).toBe("false");
+    expect(scrollIntoNearestView).not.toHaveBeenCalled();
   });
 });
 

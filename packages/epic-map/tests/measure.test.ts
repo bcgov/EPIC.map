@@ -1,14 +1,16 @@
-import { describe, expect, it } from "vitest";
 import type { FeatureCollection } from "geojson";
 import type { Map as MapLibreMap } from "maplibre-gl";
+import { describe, expect, it, vi } from "vitest";
 import {
   drawMeasure,
+  formatArea,
   formatDistance,
   lineLength,
+  polygonArea,
   segmentLengths,
-  type LngLatPoint,
+  type MeasureShape,
 } from "@/components/MapTools/measure";
-import { HIGHLIGHT_CASING_COLOR } from "@/utils/config";
+import { MEASURE_CLOSING_COLOR } from "@/utils/config";
 import { INITIAL_MEASURE, measureReducer } from "@/components/MapTools/MeasureContext";
 
 describe("formatDistance", () => {
@@ -24,6 +26,101 @@ describe("formatDistance", () => {
     [1234567, "1,200 km"],
   ])("rounds %d m to %s", (metres, shown) => {
     expect(formatDistance(metres)).toBe(shown);
+  });
+});
+
+describe("formatArea", () => {
+  it.each([
+    [0, "0 m²"],
+    [4.3, "4 m²"],
+    [4_321, "4,300 m²"],
+    [98_765, "99,000 m²"],
+    [794_682, "790,000 m²"],
+    [999_600, "1 km²"],
+    [6_190_000, "6.2 km²"],
+    [11_917_752, "12 km²"],
+    [99_400_000, "99 km²"],
+    [123_456_789, "123 km²"],
+    [999_400_000, "999 km²"],
+    [1_234_567_890, "1,230 km²"],
+    [12_345_678_901, "12,300 km²"],
+  ])("rounds %d m² to %s", (squareMetres, shown) => {
+    expect(formatArea(squareMetres)).toBe(shown);
+  });
+});
+
+describe("polygonArea", () => {
+  // 0.01 degrees on a side: about 1,112 m by 715 m.
+  const square: [number, number][] = [
+    [-123, 50],
+    [-123, 50.01],
+    [-122.99, 50.01],
+    [-122.99, 50],
+  ];
+
+  it("measures the area inside the points, either way round", () => {
+    expect(polygonArea(square)).toBeCloseTo(794_682, 0);
+    expect(polygonArea([...square].reverse())).toBeCloseTo(794_682, 0);
+  });
+
+  it("is nothing short of three points", () => {
+    expect(polygonArea(square.slice(0, 2))).toBe(0);
+  });
+});
+
+describe("drawMeasure", () => {
+  const triangle: [number, number][] = [
+    [0, 0],
+    [0, 1],
+    [1, 1],
+  ];
+  const vertices = triangle.map((coordinates) => ["point", { type: "Point", coordinates }]);
+
+  // A loaded map with nothing drawn yet, so everything goes to addSource and addLayer.
+  const draw = (shape: MeasureShape) => {
+    const addSource = vi.fn();
+    const addLayer = vi.fn();
+    const map = {
+      getStyle: () => ({}),
+      getSource: () => undefined,
+      addSource,
+      addLayer,
+    } as unknown as MapLibreMap;
+    drawMeasure(map, triangle, null, shape);
+    const { data } = addSource.mock.calls[0][1] as { data: FeatureCollection };
+    return {
+      parts: data.features.map(({ properties, geometry }) => [properties?.part, geometry]),
+      layers: addLayer.mock.calls.map(([layer]) => layer as { id: string }),
+    };
+  };
+
+  it("joins a closed shape back to Point 1 and fills it", () => {
+    const ring = [...triangle, triangle[0]];
+    expect(draw("closed").parts).toEqual([
+      ["fill", { type: "Polygon", coordinates: [ring] }],
+      ["line", { type: "LineString", coordinates: ring }],
+      ...vertices,
+    ]);
+  });
+
+  it("dashes the edge from the last point back to Point 1 in grey while it can close", () => {
+    const { parts, layers } = draw("closable");
+    expect(parts).toEqual([
+      ["closing", { type: "LineString", coordinates: [triangle[2], triangle[0]] }],
+      ["line", { type: "LineString", coordinates: triangle }],
+      ...vertices,
+    ]);
+    expect(layers.find(({ id }) => id.endsWith("measure-closing"))).toMatchObject({
+      filter: ["==", ["get", "part"], "closing"],
+      paint: { "line-color": MEASURE_CLOSING_COLOR, "line-dasharray": [2, 2] },
+    });
+  });
+
+  it("leaves an open line open and unfilled", () => {
+    expect(draw("open").parts).toEqual([
+      ["line", { type: "LineString", coordinates: triangle }],
+      ...vertices,
+    ]);
   });
 });
 
@@ -61,64 +158,21 @@ describe("measureReducer", () => {
     expect(measureReducer(done, { type: "undo" })).toBe(done);
   });
 
+  it("closes only a shape of three points or more, and ends it", () => {
+    expect(measureReducer(add(undefined, [0, 0], [0, 1]), { type: "close" }).closed).toBe(false);
+
+    const closed = measureReducer(add(undefined, [0, 0], [0, 1], [1, 1]), { type: "close" });
+    expect(closed).toMatchObject({ closed: true, finished: true });
+    expect(add(closed, [1, 0])).toBe(closed);
+  });
+
+  it("does not close a finished line", () => {
+    const done = measureReducer(add(undefined, [0, 0], [0, 1], [1, 1]), { type: "finish" });
+    expect(measureReducer(done, { type: "close" })).toBe(done);
+  });
+
   it("clears back to nothing", () => {
     const done = measureReducer(add(undefined, [0, 0], [0, 1]), { type: "finish" });
     expect(measureReducer(done, { type: "clear" })).toBe(INITIAL_MEASURE);
-  });
-});
-
-describe("the measured line on the map", () => {
-  const ORANGE = "#E8833A";
-
-  const draw = (points: LngLatPoint[], preview: LngLatPoint[] | null) => {
-    const layers: { id: string; paint: Record<string, unknown> }[] = [];
-    let data: FeatureCollection | undefined;
-    const map = {
-      getStyle: () => ({ layers: [] }),
-      getSource: () => undefined,
-      addSource: (_id: string, spec: { data: FeatureCollection }) => {
-        data = spec.data;
-      },
-      addLayer: (layer: { id: string; paint: Record<string, unknown> }) =>
-        layers.push(layer),
-    };
-    drawMeasure(map as unknown as MapLibreMap, points, preview);
-    const paint = (part: string) =>
-      layers.find(({ id }) => id.endsWith(`measure-${part}`))!.paint;
-    return { paint, data: data! };
-  };
-
-  const A: LngLatPoint = [-123, 49];
-  const B: LngLatPoint = [-122, 49];
-  const C: LngLatPoint = [-121, 49];
-
-  it("draws the line dashed in orange, not the navy of a project boundary", () => {
-    const { paint } = draw([A, B], null);
-
-    expect(paint("line")).toMatchObject({
-      "line-color": ORANGE,
-      "line-width": 2,
-      "line-dasharray": [2, 2],
-    });
-    expect(paint("line")["line-color"]).not.toBe(HIGHLIGHT_CASING_COLOR);
-  });
-
-  it("draws each point as an orange dot with a white edge", () => {
-    expect(draw([A], null).paint("point")).toEqual({
-      "circle-radius": 5,
-      "circle-color": ORANGE,
-      "circle-stroke-color": "#FFFFFF",
-      "circle-stroke-width": 2,
-    });
-  });
-
-  it("dims only the segment out to the cursor", () => {
-    const { paint, data } = draw([A, B], [B, C]);
-    const opacity = paint("line")["line-opacity"];
-    const [placed, preview] = data.features;
-
-    expect(placed.properties).toEqual({ preview: false });
-    expect(preview.properties).toEqual({ preview: true });
-    expect(opacity).toEqual(["case", ["get", "preview"], 0.6, 1]);
   });
 });

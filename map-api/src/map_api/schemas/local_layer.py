@@ -106,10 +106,10 @@ class LocalLayerInfoSchema(Schema):
         unknown = EXCLUDE
 
     object_name = fields.Str(data_key='objectName')
-    loaded_date = fields.DateTime(
-        data_key='loadedDate',
+    last_updated = fields.DateTime(
+        data_key='lastUpdated',
         allow_none=True,
-        metadata={'description': 'When the rows being served were loaded, UTC'},
+        metadata={'description': 'When the delivered extract says it last changed, UTC'},
     )
 
 

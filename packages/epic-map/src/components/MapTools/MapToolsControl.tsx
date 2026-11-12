@@ -6,7 +6,12 @@ import { useTheme } from "@mui/material/styles";
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import { BORDER_DEFAULT } from "@/components/Filters/filterTokens";
 import { eaoFeatureAt } from "@/components/Layers/eaoVisibility";
-import { formatDistance, lineLength } from "@/components/MapTools/measure";
+import {
+  formatArea,
+  formatDistance,
+  lineLength,
+  polygonArea,
+} from "@/components/MapTools/measure";
 import { useMeasure } from "@/components/MapTools/MeasureContext";
 import MeasureLayer from "@/components/MapTools/MeasureLayer";
 import MeasurePanel, { MEASURE_HINT } from "@/components/MapTools/MeasurePanel";
@@ -98,7 +103,7 @@ export default function MapToolsControl({
     results,
     queryId,
   } = useSelectArea();
-  const { points, clear: clearMeasure } = useMeasure();
+  const { points, closed, clear: clearMeasure } = useMeasure();
   const selecting = active === "select";
   const measuring = active === "measure";
 
@@ -129,7 +134,9 @@ export default function MapToolsControl({
   const announcement = measuring
     ? points.length === 0
       ? MEASURE_HINT
-      : `Line length about ${formatDistance(lineLength(points))}.`
+      : closed
+        ? `Selected area about ${formatArea(polygonArea(points))}.`
+        : `Line length about ${formatDistance(lineLength(points))}.`
     : !selecting
       ? ""
       : queryId !== null

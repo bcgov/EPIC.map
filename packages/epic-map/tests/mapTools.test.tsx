@@ -108,6 +108,8 @@ const fakeMap = () => {
       },
     },
     getCanvasContainer: vi.fn(() => canvasContainer),
+    // Only Point 1 is ever projected.
+    project: () => POINT_1_PX,
     getContainer: () => ({
       getBoundingClientRect: () => ({ left: 0, top: 0 }),
     }),
@@ -116,6 +118,7 @@ const fakeMap = () => {
 type FakeMap = ReturnType<typeof fakeMap>;
 
 let canvasContainer = document.createElement("div");
+const POINT_1_PX = { x: 500, y: 500 };
 
 const renderTools = (map: FakeMap | null = null) =>
   render(
@@ -248,6 +251,9 @@ describe("measuring", () => {
   const P1 = { lng: -123, lat: 50 };
   const P2 = { lng: -123, lat: 50.01 };
   const P3 = { lng: -123, lat: 50.02 };
+  // P1, P2 and CORNER enclose about 400,000 m².
+  const CORNER = { lng: -122.99, lat: 50.01 };
+  const ON_P1 = { x: POINT_1_PX.x + 3, y: POINT_1_PX.y - 4 };
 
   const text = (value: string) => screen.queryByText(value);
   // The status region repeats the hint.
@@ -321,6 +327,7 @@ describe("measuring", () => {
         [-123, 50],
         [-123, 50.003],
       ],
+      "open",
     ]);
     expect(card()).toBeNull();
     expect(screen.getByRole("heading", { name: "Line length" })).toBeDefined();
@@ -392,6 +399,7 @@ describe("measuring", () => {
         [-123, 50.01],
       ],
       null,
+      "open",
     ]);
     expect(text("~330 m")).toBeNull();
     expect(canvasContainer.style.cursor).toBe("");
@@ -414,11 +422,134 @@ describe("measuring", () => {
 
     expect(measure().getAttribute("aria-pressed")).toBe("true");
     expect(card()).not.toBeNull();
-    expect(lastDrawn()).toEqual([map, [], null]);
+    expect(lastDrawn()).toEqual([map, [], null, "open"]);
     expect(canvasContainer.style.cursor).toBe("crosshair");
 
     fire(map, "click", undefined, P1);
     expect(text("~0 km")).not.toBeNull();
+  });
+
+  it("only offers to close the shape from three points", async () => {
+    const map = await placing(P1, P2);
+    expect(text("Close shape to measure area")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close shape" })).toBeNull();
+    expect(lastDrawn()[3]).toBe("open");
+
+    fire(map, "mousemove", ON_P1, P1);
+    expect(text("close shape")).toBeNull();
+
+    fire(map, "click", ON_P1, P1);
+    expect(screen.getByRole("heading", { name: "Line length" })).toBeDefined();
+    expect(segmentRows()).toHaveLength(2);
+  });
+
+  it("offers both endings from three points, with the closing edge drawn", async () => {
+    await placing(P1, P2, CORNER);
+
+    const done = text("Click Done to measure the line")!;
+    expect(done.nextSibling?.textContent).toBe("Close shape to measure area");
+    expect(button("Undo")).toBeDefined();
+    expect(button("Done")).toBeDefined();
+    expect(button("Close shape")).toBeDefined();
+    expect(lastDrawn()[3]).toBe("closable");
+  });
+
+  it("closes the shape along the closing edge from the Close shape button", async () => {
+    const map = await placing(P1, P2, CORNER);
+
+    await userEvent.click(button("Close shape"));
+
+    expect(screen.getByRole("heading", { name: "Selected Area" })).toBeDefined();
+    expect(text("~400,000 m²")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Close shape" })).toBeNull();
+    expect(lastDrawn()).toEqual([
+      map,
+      [
+        [-123, 50],
+        [-123, 50.01],
+        [-122.99, 50.01],
+      ],
+      null,
+      "closed",
+    ]);
+  });
+
+  it("drops the closing edge when Done ends the line instead", async () => {
+    await placing(P1, P2, CORNER);
+
+    await userEvent.click(button("Done"));
+
+    expect(screen.getByRole("heading", { name: "Line length" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Close shape" })).toBeNull();
+    expect(lastDrawn()[3]).toBe("open");
+  });
+
+  it("tags Point 1 and previews the closing edge while hovering it", async () => {
+    const map = await placing(P1, P2, CORNER);
+
+    fire(map, "mousemove", ON_P1, { lng: -123.0001, lat: 50.0001 });
+
+    const tag = text("close shape")!;
+    expect(getComputedStyle(tag).left).toBe("514px");
+    expect(getComputedStyle(tag).top).toBe("500px");
+    expect(lastDrawn()).toEqual([
+      map,
+      [
+        [-123, 50],
+        [-123, 50.01],
+        [-122.99, 50.01],
+      ],
+      [
+        [-122.99, 50.01],
+        [-123, 50],
+      ],
+      "closable",
+    ]);
+
+    fire(map, "mousemove", { x: 120, y: 80 }, P3);
+    expect(text("close shape")).toBeNull();
+  });
+
+  it("closes the shape on Point 1 and shows its area, with only Clear", async () => {
+    const map = await placing(P1, P2, CORNER);
+
+    fire(map, "click", ON_P1, P1);
+
+    expect(screen.getByRole("heading", { name: "Selected Area" })).toBeDefined();
+    expect(text("~400,000 m²")).not.toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("Selected area about 400,000 m².");
+    expect(segmentRows()).toEqual([]);
+    expect(text("Click Done to measure the line")).toBeNull();
+    expect(text("Close shape to measure area")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    expect(button("Clear")).toBeDefined();
+    expect(lastDrawn()).toEqual([
+      map,
+      [
+        [-123, 50],
+        [-123, 50.01],
+        [-122.99, 50.01],
+      ],
+      null,
+      "closed",
+    ]);
+    expect(canvasContainer.style.cursor).toBe("");
+
+    fire(map, "click", undefined, P3);
+    expect(text("~400,000 m²")).not.toBeNull();
+  });
+
+  it("clears a closed shape and starts again with Measure still on", async () => {
+    const map = await placing(P1, P2, CORNER);
+    fire(map, "click", ON_P1, P1);
+
+    await userEvent.click(button("Clear"));
+
+    expect(measure().getAttribute("aria-pressed")).toBe("true");
+    expect(card()).not.toBeNull();
+    expect(lastDrawn()).toEqual([map, [], null, "open"]);
+    expect(canvasContainer.style.cursor).toBe("crosshair");
   });
 
   it("takes the line away when Measure is turned off", async () => {
