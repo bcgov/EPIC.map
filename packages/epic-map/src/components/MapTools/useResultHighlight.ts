@@ -70,20 +70,19 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
     };
 
     if (kind === "catalogue" && objectName && featureId) {
-      showHighlight(
-        map,
-        { objectName, featureId, geometry: null },
-      );
+      showHighlight(map, { objectName, featureId, geometry: null });
       warehouseBounds(objectName, featureId).then(frame, () => {});
     } else if (kind === "hosted" && objectName) {
       const spec = hostedLayer(objectName);
       const [drawn] = localDrawnIds(map, layerId);
       const sourceLayer = drawn ? map.getLayer(drawn)?.sourceLayer : undefined;
       if (spec && sourceLayer) {
-        showLocalHighlight(
-          map,
-          { layerId, sourceLayer, keyProperty: spec.keyProperty, keys: [featureKey] },
-        );
+        showLocalHighlight(map, {
+          layerId,
+          sourceLayer,
+          keyProperty: spec.keyProperty,
+          keys: [featureKey],
+        });
       }
       queryClient
         .query(localFeatureQuery(api, objectName, featureKey))
@@ -93,10 +92,7 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
         .getQueryData<FeatureCollection>(importedFeaturesKey(layerId))
         ?.features.find(({ id }) => String(id) === featureKey);
       if (feature?.geometry) {
-        showHighlight(
-          map,
-          { objectName: null, featureId: null, geometry: feature.geometry },
-        );
+        showHighlight(map, { objectName: null, featureId: null, geometry: feature.geometry });
         frame(geoBounds([feature]));
       }
     }

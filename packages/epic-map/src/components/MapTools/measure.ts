@@ -51,7 +51,12 @@ const line = (points: readonly LngLatPoint[], preview = false): Feature => ({
 
 const isLine: FilterSpecification = ["==", ["geometry-type"], "LineString"];
 
-const lineOpacity: ExpressionSpecification = ["case", ["get", "preview"], MEASURE_PREVIEW_OPACITY, 1];
+const lineOpacity: ExpressionSpecification = [
+  "case",
+  ["get", "preview"],
+  MEASURE_PREVIEW_OPACITY,
+  1,
+];
 
 export const drawMeasure = (
   map: MapLibreMap,
