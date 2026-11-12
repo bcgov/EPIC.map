@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { formatDistance, lineLength, segmentLengths } from "@/components/MapTools/measure";
+import type { FeatureCollection } from "geojson";
+import type { Map as MapLibreMap } from "maplibre-gl";
+import {
+  drawMeasure,
+  formatDistance,
+  lineLength,
+  segmentLengths,
+  type LngLatPoint,
+} from "@/components/MapTools/measure";
+import { HIGHLIGHT_CASING_COLOR } from "@/utils/config";
 import { INITIAL_MEASURE, measureReducer } from "@/components/MapTools/MeasureContext";
 
 describe("formatDistance", () => {
@@ -55,5 +64,61 @@ describe("measureReducer", () => {
   it("clears back to nothing", () => {
     const done = measureReducer(add(undefined, [0, 0], [0, 1]), { type: "finish" });
     expect(measureReducer(done, { type: "clear" })).toBe(INITIAL_MEASURE);
+  });
+});
+
+describe("the measured line on the map", () => {
+  const ORANGE = "#E8833A";
+
+  const draw = (points: LngLatPoint[], preview: LngLatPoint[] | null) => {
+    const layers: { id: string; paint: Record<string, unknown> }[] = [];
+    let data: FeatureCollection | undefined;
+    const map = {
+      getStyle: () => ({ layers: [] }),
+      getSource: () => undefined,
+      addSource: (_id: string, spec: { data: FeatureCollection }) => {
+        data = spec.data;
+      },
+      addLayer: (layer: { id: string; paint: Record<string, unknown> }) =>
+        layers.push(layer),
+    };
+    drawMeasure(map as unknown as MapLibreMap, points, preview);
+    const paint = (part: string) =>
+      layers.find(({ id }) => id.endsWith(`measure-${part}`))!.paint;
+    return { paint, data: data! };
+  };
+
+  const A: LngLatPoint = [-123, 49];
+  const B: LngLatPoint = [-122, 49];
+  const C: LngLatPoint = [-121, 49];
+
+  it("draws the line dashed in orange, not the navy of a project boundary", () => {
+    const { paint } = draw([A, B], null);
+
+    expect(paint("line")).toMatchObject({
+      "line-color": ORANGE,
+      "line-width": 2,
+      "line-dasharray": [2, 2],
+    });
+    expect(paint("line")["line-color"]).not.toBe(HIGHLIGHT_CASING_COLOR);
+  });
+
+  it("draws each point as an orange dot with a white edge", () => {
+    expect(draw([A], null).paint("point")).toEqual({
+      "circle-radius": 5,
+      "circle-color": ORANGE,
+      "circle-stroke-color": "#FFFFFF",
+      "circle-stroke-width": 2,
+    });
+  });
+
+  it("dims only the segment out to the cursor", () => {
+    const { paint, data } = draw([A, B], [B, C]);
+    const opacity = paint("line")["line-opacity"];
+    const [placed, preview] = data.features;
+
+    expect(placed.properties).toEqual({ preview: false });
+    expect(preview.properties).toEqual({ preview: true });
+    expect(opacity).toEqual(["case", ["get", "preview"], 0.6, 1]);
   });
 });

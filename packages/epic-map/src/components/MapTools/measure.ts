@@ -1,6 +1,7 @@
 import type { Feature, FeatureCollection } from "geojson";
 import {
   LngLat,
+  type ExpressionSpecification,
   type FilterSpecification,
   type GeoJSONSource,
   type Map as MapLibreMap,
@@ -9,6 +10,7 @@ import { whenStyleParsed } from "@/components/Layers/layerUtils";
 import {
   MEASURE_COLOR,
   MEASURE_POINT_RADIUS_PX,
+  MEASURE_PREVIEW_OPACITY,
   MEASURE_WIDTH_PX,
   WIDGET_ID_PREFIX,
 } from "@/utils/config";
@@ -41,13 +43,15 @@ const [CASING, LINE, POINT] = ["casing", "line", "point"].map(
   (part) => `${WIDGET_ID_PREFIX}measure-${part}`,
 );
 
-const line = (points: readonly LngLatPoint[]): Feature => ({
+const line = (points: readonly LngLatPoint[], preview = false): Feature => ({
   type: "Feature",
   geometry: { type: "LineString", coordinates: [...points] },
-  properties: {},
+  properties: { preview },
 });
 
 const isLine: FilterSpecification = ["==", ["geometry-type"], "LineString"];
+
+const lineOpacity: ExpressionSpecification = ["case", ["get", "preview"], MEASURE_PREVIEW_OPACITY, 1];
 
 export const drawMeasure = (
   map: MapLibreMap,
@@ -58,7 +62,7 @@ export const drawMeasure = (
     type: "FeatureCollection",
     features: [
       ...(points.length > 1 ? [line(points)] : []),
-      ...(preview ? [line(preview)] : []),
+      ...(preview ? [line(preview, true)] : []),
       ...points.map((coordinates): Feature => ({
         type: "Feature",
         geometry: { type: "Point", coordinates },
@@ -87,7 +91,11 @@ export const drawMeasure = (
       type: "line",
       source: SOURCE,
       filter: isLine,
-      paint: { "line-color": "#FFFFFF", "line-width": MEASURE_WIDTH_PX + 2 },
+      paint: {
+        "line-color": "#FFFFFF",
+        "line-width": MEASURE_WIDTH_PX + 2,
+        "line-opacity": lineOpacity,
+      },
     });
     map.addLayer({
       id: LINE,
@@ -98,6 +106,7 @@ export const drawMeasure = (
         "line-color": MEASURE_COLOR,
         "line-width": MEASURE_WIDTH_PX,
         "line-dasharray": [2, 2],
+        "line-opacity": lineOpacity,
       },
     });
     map.addLayer({
@@ -107,8 +116,8 @@ export const drawMeasure = (
       filter: ["==", ["geometry-type"], "Point"],
       paint: {
         "circle-radius": MEASURE_POINT_RADIUS_PX,
-        "circle-color": "#FFFFFF",
-        "circle-stroke-color": MEASURE_COLOR,
+        "circle-color": MEASURE_COLOR,
+        "circle-stroke-color": "#FFFFFF",
         "circle-stroke-width": MEASURE_WIDTH_PX,
       },
     });
