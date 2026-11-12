@@ -163,6 +163,7 @@ PIP_CONSULTATION_AREAS = IngestSpec(
     # no key carries spaces. This is the convention EAO publishes to, not one
     # read off the bucket: confirm it with the GIS team before enabling the
     # CronJob anywhere the map is relied on.
+    # Exported from BCGW Oracle, not TSAT, whose shapefile route cuts column names.
     s3=S3Source(
         sources=('gis_db/PIP_CONSULTATION_AREAS.gpkg',),
         lyrx='gis_db/PIP_CONSULTATION_AREAS.lyrx',
