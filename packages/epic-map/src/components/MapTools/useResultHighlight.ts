@@ -16,7 +16,6 @@ import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
 import { boundsOutOfView } from "@/components/MetaData/metaDataUtils";
 import type { MapExtent } from "@/types";
 import {
-  RESULT_HIGHLIGHT_COLOR,
   FOCUS_FLY_MS,
   FOCUS_MAX_ZOOM,
   FOCUS_PADDING_PX,
@@ -25,7 +24,7 @@ import { geoBounds } from "@/utils/geo";
 import { hostedLayer } from "@/utils/localLayers";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 
-/** Highlights the focused result in navy, and frames it when out of view. */
+/** Highlights the focused result in gold, as Identify does, and frames it when out of view. */
 export const useResultHighlight = (map: MapLibreMap | null) => {
   const { focused, results } = useSelectArea();
   const { layerFloors } = useLayers();
@@ -71,36 +70,29 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
     };
 
     if (kind === "catalogue" && objectName && featureId) {
-      showHighlight(
-        map,
-        { objectName, featureId, geometry: null },
-        RESULT_HIGHLIGHT_COLOR,
-      );
+      showHighlight(map, { objectName, featureId, geometry: null });
       warehouseBounds(objectName, featureId).then(frame, () => {});
     } else if (kind === "hosted" && objectName) {
       const spec = hostedLayer(objectName);
       const [drawn] = localDrawnIds(map, layerId);
       const sourceLayer = drawn ? map.getLayer(drawn)?.sourceLayer : undefined;
       if (spec && sourceLayer) {
-        showLocalHighlight(
-          map,
-          { layerId, sourceLayer, keyProperty: spec.keyProperty, keys: [featureKey] },
-          RESULT_HIGHLIGHT_COLOR,
-        );
+        showLocalHighlight(map, {
+          layerId,
+          sourceLayer,
+          keyProperty: spec.keyProperty,
+          keys: [featureKey],
+        });
       }
       queryClient
-        .fetchQuery(localFeatureQuery(api, objectName, featureKey))
+        .query(localFeatureQuery(api, objectName, featureKey))
         .then((detail) => frame(detail.bounds), () => {});
     } else if (kind === "imported") {
       const feature = queryClient
         .getQueryData<FeatureCollection>(importedFeaturesKey(layerId))
         ?.features.find(({ id }) => String(id) === featureKey);
       if (feature?.geometry) {
-        showHighlight(
-          map,
-          { objectName: null, featureId: null, geometry: feature.geometry },
-          RESULT_HIGHLIGHT_COLOR,
-        );
+        showHighlight(map, { objectName: null, featureId: null, geometry: feature.geometry });
         frame(geoBounds([feature]));
       }
     }

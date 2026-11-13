@@ -77,7 +77,7 @@ describe("drawMeasure", () => {
   const vertices = triangle.map((coordinates) => ["point", { type: "Point", coordinates }]);
 
   // A loaded map with nothing drawn yet, so everything goes to addSource and addLayer.
-  const draw = (shape: MeasureShape) => {
+  const draw = (shape: MeasureShape, preview: [number, number][] | null = null) => {
     const addSource = vi.fn();
     const addLayer = vi.fn();
     const map = {
@@ -86,13 +86,53 @@ describe("drawMeasure", () => {
       addSource,
       addLayer,
     } as unknown as MapLibreMap;
-    drawMeasure(map, triangle, null, shape);
+    drawMeasure(map, triangle, preview, shape);
     const { data } = addSource.mock.calls[0][1] as { data: FeatureCollection };
+    const layers = addLayer.mock.calls.map(
+      ([layer]) => layer as { id: string; paint: Record<string, unknown> },
+    );
     return {
+      data,
       parts: data.features.map(({ properties, geometry }) => [properties?.part, geometry]),
-      layers: addLayer.mock.calls.map(([layer]) => layer as { id: string }),
+      layers,
+      paint: (part: string) => layers.find(({ id }) => id.endsWith(`measure-${part}`))!.paint,
     };
   };
+
+  // MAP-105's specs, in the gold selection colour rather than its orange.
+  const GOLD = "#FCBA19";
+
+  it("draws the line dashed in gold at 2px", () => {
+    expect(draw("open").paint("line")).toMatchObject({
+      "line-color": GOLD,
+      "line-width": 2,
+      "line-dasharray": [2, 2],
+    });
+  });
+
+  it("draws each vertex as a gold dot with a white edge", () => {
+    expect(draw("open").paint("point")).toEqual({
+      "circle-radius": 5,
+      "circle-color": GOLD,
+      "circle-stroke-color": "#FFFFFF",
+      "circle-stroke-width": 2,
+    });
+  });
+
+  it("dims only the segment out to the cursor", () => {
+    const { data, paint } = draw("open", [triangle[2], [2, 2]]);
+    const lines = data.features.filter(({ properties }) => properties?.part === "line");
+
+    expect(lines.map(({ properties }) => properties)).toEqual([
+      { part: "line" },
+      { part: "line", preview: true },
+    ]);
+    expect(paint("line")["line-opacity"]).toEqual(["case", ["has", "preview"], 0.6, 1]);
+  });
+
+  it("fills a closed area in gold at 0.3", () => {
+    expect(draw("closed").paint("fill")).toEqual({ "fill-color": GOLD, "fill-opacity": 0.3 });
+  });
 
   it("joins a closed shape back to Point 1 and fills it", () => {
     const ring = [...triangle, triangle[0]];

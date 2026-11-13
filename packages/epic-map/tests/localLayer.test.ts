@@ -18,7 +18,6 @@ import {
   HIGHLIGHT_COLOR,
   localTileUrl,
   LOCAL_TILE_MAX_ZOOM,
-  RESULT_HIGHLIGHT_COLOR,
 } from "@/utils/config";
 
 const LAYER_ID = "pip-consultation-areas";
@@ -910,25 +909,27 @@ describe("the Select area colours", () => {
       "line-color"
     ];
 
-  it("outlines the selection in gold, under a clicked row's highlight", () => {
+  it("outlines the selection as a selected component, under a clicked row's highlight", () => {
     const harness = fakeMap();
     show(harness);
     showComponentHighlight(harness.map, highlight);
     showSelectionOutline(harness.map, highlight);
 
-    expect(lineColor(harness, "epic-selection-line")).toBe(HIGHLIGHT_COLOR);
+    expect(lineColor(harness, "epic-selection-line")).toEqual(
+      lineColor(harness, "epic-component-highlight-line"),
+    );
     expect(harness.before.at(-1)).toBe("epic-component-highlight-fill");
   });
 
-  it("draws a focused result in the colour it is given", () => {
+  it("keeps the selection outline under a focused row's gold highlight", () => {
     const harness = fakeMap();
     show(harness);
-    showLocalHighlight(harness.map, highlight, RESULT_HIGHLIGHT_COLOR);
+    showLocalHighlight(harness.map, highlight);
     harness.fire("styledata");
+    showSelectionOutline(harness.map, highlight);
 
-    expect(lineColor(harness, "epic-highlight-local-line")).toBe(
-      RESULT_HIGHLIGHT_COLOR,
-    );
+    expect(lineColor(harness, "epic-highlight-local-line")).toBe(HIGHLIGHT_COLOR);
+    expect(harness.before.at(-1)).toBe("epic-highlight-local-fill");
   });
 });
 

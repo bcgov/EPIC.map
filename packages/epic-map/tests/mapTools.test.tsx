@@ -337,6 +337,17 @@ describe("measuring", () => {
     expect(button("Done").hasAttribute("disabled")).toBe(true);
   });
 
+  it("draws a disabled Done in the BC Gov disabled style", async () => {
+    await placing(P1);
+    const { backgroundColor, color, cursor } = getComputedStyle(button("Done"));
+
+    expect({ backgroundColor, color, cursor }).toEqual({
+      backgroundColor: "rgb(237, 235, 233)",
+      color: "rgb(159, 157, 156)",
+      cursor: "not-allowed",
+    });
+  });
+
   it("lists each segment and the total, with the hint, from two points", async () => {
     await placing(P1, P2, P3);
 

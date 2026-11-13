@@ -212,7 +212,7 @@ interface SelectArea extends SelectAreaState {
   focusedId: string | null;
   /** Toggles the highlight on a selected feature. */
   focus: (featureId: string) => void;
-  /** Toggles the navy highlight on a result. */
+  /** Toggles the gold highlight on a result. */
   focusResult: (groupKey: string, featureKey: string) => void;
   unfocus: () => void;
   /** Returns the id its answer must carry. */

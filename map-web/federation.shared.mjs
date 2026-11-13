@@ -65,7 +65,7 @@ export const sharedModules = {
   // QueryClientProvider, so no context crosses the seam. A host on v4 keeps its
   // v4 and the widget gets its own v5, instead of silently running on an API it
   // was not written for.
-  "@tanstack/react-query": { singleton: false, requiredVersion: "^5.45.1" },
+  "@tanstack/react-query": { singleton: false, requiredVersion: "^5.102.0" },
 };
 
 export default sharedModules;

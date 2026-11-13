@@ -16,7 +16,6 @@ import {
   type SelectAreaState,
 } from "@/components/MapTools/SelectAreaContext";
 import { searchedLayers, toGroups } from "@/components/MapTools/whatsHere";
-import { RESULT_HIGHLIGHT_COLOR } from "@/utils/config";
 
 const CARIBOU = "WHSE_WILDLIFE_INVENTORY.GCPB_CARIBOU_POPULATION_SP";
 const PIP = "WHSE_ADMIN_BOUNDARIES.PIP_CONSULTATION_AREAS_SP";
@@ -276,7 +275,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("a focused result on the map", () => {
-  it("draws a warehouse feature by id in navy, and frames it out of view above its layer's floor", async () => {
+  it("draws a warehouse feature by id in Identify's gold, and frames it out of view above its layer's floor", async () => {
     warehouseBounds.mockResolvedValue([-120.5, 51.5, -119.5, 52.5]);
     const map = fakeMap();
 
@@ -285,7 +284,6 @@ describe("a focused result on the map", () => {
     expect(showHighlight).toHaveBeenCalledWith(
       map,
       { objectName: CARIBOU, featureId: `${CARIBOU}.2`, geometry: null },
-      RESULT_HIGHLIGHT_COLOR,
     );
     await waitFor(() => expect(map.easeTo).toHaveBeenCalled());
     expect(map.easeTo.mock.calls[0][0].zoom).toBe(9);
@@ -315,7 +313,6 @@ describe("a focused result on the map", () => {
         keyProperty: "cnsltn_area_guid",
         keys: ["{P1}"],
       },
-      RESULT_HIGHLIGHT_COLOR,
     );
     await waitFor(() => expect(map.easeTo).toHaveBeenCalled());
   });
@@ -333,7 +330,6 @@ describe("a focused result on the map", () => {
     expect(showHighlight).toHaveBeenCalledWith(
       map,
       { objectName: null, featureId: null, geometry },
-      RESULT_HIGHLIGHT_COLOR,
     );
   });
 

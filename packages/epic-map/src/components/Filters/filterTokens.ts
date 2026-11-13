@@ -58,6 +58,12 @@ export const BORDER_DARK = "#353433";
 /** A checkbox's border, and the search field's border on hover. */
 export const CHECKBOX_BORDER = BORDER_DARK;
 
+/** surfaceColorPrimaryButtonDisabled / surfaceColorSecondaryButtonDisabled - fill of a disabled button. */
+export const BUTTON_DISABLED_FILL = "#EDEBE9";
+
+/** typographyColorDisabled / iconsColorDisabled - text and icon of a disabled button. */
+export const BUTTON_DISABLED_TEXT = "#9F9D9C";
+
 /** iconsColorInfo - the info icon on the over-map message. */
 export const INFO_ICON = "#053662";
 

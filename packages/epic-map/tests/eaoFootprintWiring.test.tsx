@@ -59,6 +59,8 @@ const showComponentHighlight = vi.fn();
 const hideComponentHighlight = vi.fn();
 const showSelectionOutline = vi.fn();
 const hideSelectionOutline = vi.fn();
+const showLocalHighlight = vi.fn();
+const hideHighlight = vi.fn();
 
 vi.mock("@/components/Layers/layerUtils", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -68,6 +70,8 @@ vi.mock("@/components/Layers/layerUtils", async (importOriginal) => ({
   hideComponentHighlight,
   showSelectionOutline,
   hideSelectionOutline,
+  showLocalHighlight,
+  hideHighlight,
   setLocalVectorLayerOpacity: vi.fn(),
   hideLocalVectorLayer: vi.fn(),
 }));
@@ -219,6 +223,8 @@ beforeEach(() => {
   hideComponentHighlight.mockClear();
   showSelectionOutline.mockClear();
   hideSelectionOutline.mockClear();
+  showLocalHighlight.mockClear();
+  hideHighlight.mockClear();
   state.visible = [project(205), project(368)];
   state.hit = null;
 });
@@ -472,7 +478,7 @@ describe("the Select area selection on the map", () => {
     ]);
   });
 
-  it("gives the gold highlight to the row clicked, over the panel's component", () => {
+  it("highlights the row clicked in Identify's gold, in place of the panel's component", () => {
     render(
       <SelectAreaProvider>
         <RevealedComponentsProvider>
@@ -483,10 +489,21 @@ describe("the Select area selection on the map", () => {
       </SelectAreaProvider>,
     );
 
-    expect(showComponentHighlight).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({ keys: ["{A1}"] }),
-    );
+    expect(showLocalHighlight).toHaveBeenLastCalledWith(expect.anything(), {
+      layerId: localLayerId(EAO_OBJECT_NAME),
+      sourceLayer: "eao",
+      keyProperty: "feature_id",
+      keys: ["{A1}"],
+    });
+    expect(showComponentHighlight).not.toHaveBeenCalled();
+  });
+
+  it("takes the gold off when Select area closes", () => {
+    const view = render(selecting(["{A1}"], "{A1}"));
+
+    view.unmount();
+
+    expect(hideHighlight).toHaveBeenCalled();
   });
 
   it("takes the outline off when the selection empties", () => {
