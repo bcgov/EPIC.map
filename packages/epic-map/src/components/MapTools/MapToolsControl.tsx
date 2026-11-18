@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Box, Button } from "@mui/material";
 import HighlightAltOutlinedIcon from "@mui/icons-material/HighlightAltOutlined";
 import StraightenOutlinedIcon from "@mui/icons-material/StraightenOutlined";
@@ -112,7 +112,8 @@ export default function MapToolsControl({
     toggle(tool);
   };
 
-  useResultHighlight(map);
+  const toolsRef = useRef<HTMLDivElement>(null);
+  useResultHighlight(map, toolsRef);
 
   // A dot still opens its project card.
   useEffect(() => {
@@ -155,6 +156,7 @@ export default function MapToolsControl({
       <ResultInfoPopup map={map} />
       {measuring && <MeasureLayer map={map} />}
       <Box
+        ref={toolsRef}
         sx={{
           position: "absolute",
           top: "1rem",

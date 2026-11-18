@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect, useRef, type ReactNode } from "react";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { importedFeaturesKey } from "@/api/useImportedLayers";
 import {
@@ -243,18 +243,28 @@ const Drive = ({
   return null;
 };
 
+/** The Select area column, its left edge 300px in from the map's right. */
+const panel = { current: { getBoundingClientRect: () => ({ left: 700 }) } as HTMLElement };
+
 const Highlight = ({ map }: { map: unknown }) => {
-  useResultHighlight(map as never);
+  useResultHighlight(map as never, panel);
   return null;
 };
 
-/** A map with the feature out of view unless `inView`. */
-const fakeMap = (inView = false) => ({
-  project: ([lng, lat]: [number, number]) =>
-    inView ? { x: (lng + 121) * 400, y: (53 - lat) * 400 } : { x: -5000, y: -5000 },
-  getContainer: () => ({ clientWidth: 1000, clientHeight: 800 }),
+/** Hands the test the Select area state, to act on after the first render. */
+let selectArea: ReturnType<typeof useSelectArea>;
+const Grab = () => {
+  selectArea = useSelectArea();
+  return null;
+};
+
+const fakeMap = () => ({
+  getContainer: () => ({ getBoundingClientRect: () => ({ right: 1000 }) }),
   getLayer: () => ({ sourceLayer: "pip_consultation_areas" }),
-  cameraForBounds: () => ({ center: [-120, 52], zoom: 7 }),
+  cameraForBounds: vi.fn<(bounds: unknown, options: unknown) => unknown>(() => ({
+    center: [-120, 52],
+    zoom: 7,
+  })),
   easeTo: vi.fn(),
 });
 
@@ -275,7 +285,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("a focused result on the map", () => {
-  it("draws a warehouse feature by id in Identify's gold, and frames it out of view above its layer's floor", async () => {
+  it("draws a warehouse feature by id in Identify's gold, and frames it above its layer's floor", async () => {
     warehouseBounds.mockResolvedValue([-120.5, 51.5, -119.5, 52.5]);
     const map = fakeMap();
 
@@ -289,14 +299,48 @@ describe("a focused result on the map", () => {
     expect(map.easeTo.mock.calls[0][0].zoom).toBe(9);
   });
 
-  it("leaves the camera alone for a feature already in view", async () => {
-    warehouseBounds.mockResolvedValue([-120.5, 51.5, -119.5, 52.5]);
-    const map = fakeMap(true);
+  it("fits the whole feature beside the panel, capped short of street level", async () => {
+    const bounds = [-120.5, 51.5, -119.5, 52.5];
+    warehouseBounds.mockResolvedValue(bounds);
+    const map = fakeMap();
 
     render(wrap(<><Drive groups={[group({})]} focus={`catalogue:${CARIBOU}`} /><Highlight map={map} /></>));
 
-    await waitFor(() => expect(warehouseBounds).toHaveBeenCalled());
-    expect(map.easeTo).not.toHaveBeenCalled();
+    await waitFor(() => expect(map.easeTo).toHaveBeenCalled());
+    expect(map.cameraForBounds).toHaveBeenCalledWith(bounds, {
+      padding: { top: 48, bottom: 48, left: 48, right: 48 + 300 },
+      maxZoom: 14,
+    });
+  });
+
+  it("centres the feature when the map is too narrow to fit it beside the panel", async () => {
+    warehouseBounds.mockResolvedValue([-120.5, 51.5, -119.5, 52.5]);
+    const map = fakeMap();
+    map.cameraForBounds
+      .mockReturnValueOnce(undefined)
+      .mockReturnValue({ center: [-120, 52], zoom: 7 });
+
+    render(wrap(<><Drive groups={[group({})]} focus={`catalogue:${CARIBOU}`} /><Highlight map={map} /></>));
+
+    await waitFor(() => expect(map.easeTo).toHaveBeenCalled());
+    expect(map.cameraForBounds.mock.calls[1][1]).toEqual({ padding: 48, maxZoom: 14 });
+  });
+
+  it("leaves the camera where it is when the result is removed or cleared", async () => {
+    warehouseBounds.mockResolvedValue([-120.5, 51.5, -119.5, 52.5]);
+    const map = fakeMap();
+    const caribou = group({});
+    render(
+      wrap(<><Drive groups={[caribou, WELLS_GROUP]} focus={caribou.key} /><Grab /><Highlight map={map} /></>),
+    );
+    await waitFor(() => expect(map.easeTo).toHaveBeenCalledTimes(1));
+
+    act(() => selectArea.removeResult(caribou.key, caribou.features[0].key));
+    act(() => selectArea.clearGroup(WELLS_GROUP.key));
+    act(() => selectArea.clear());
+
+    expect(hideHighlight).toHaveBeenCalledWith(map);
+    expect(map.easeTo).toHaveBeenCalledTimes(1);
   });
 
   it("draws a hosted feature from its own tiles, and frames it from its record", async () => {
