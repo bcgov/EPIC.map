@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { LngLat } from "maplibre-gl";
-import { constrainToBC } from "@/utils/camera";
+import { constrainToBC, paddingClearOf } from "@/utils/camera";
 import {
   CENTER_BOUNDS,
   DEFAULT_EXTENT,
+  FOCUS_PADDING_PX,
   MAX_ZOOM,
   MIN_ZOOM,
 } from "@/utils/config";
@@ -64,5 +65,28 @@ describe("constrainToBC", () => {
   it("holds the zoom inside the map's range", () => {
     expect(constrainToBC(BC_CENTER, 1).zoom).toBe(MIN_ZOOM);
     expect(constrainToBC(BC_CENTER, 22).zoom).toBe(MAX_ZOOM);
+  });
+});
+
+describe("paddingClearOf", () => {
+  it("pads evenly with no panel", () => {
+    expect(paddingClearOf({ right: 1000 }, null)).toEqual({
+      top: FOCUS_PADDING_PX,
+      bottom: FOCUS_PADDING_PX,
+      left: FOCUS_PADDING_PX,
+      right: FOCUS_PADDING_PX,
+    });
+  });
+
+  it("widens the right by what the panel covers", () => {
+    expect(paddingClearOf({ right: 1000 }, { left: 700 }).right).toBe(
+      FOCUS_PADDING_PX + 300,
+    );
+  });
+
+  it("ignores a panel beyond the map's right edge", () => {
+    expect(paddingClearOf({ right: 1000 }, { left: 1200 }).right).toBe(
+      FOCUS_PADDING_PX,
+    );
   });
 });

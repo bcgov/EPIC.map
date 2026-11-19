@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
 import type { FeatureCollection } from "geojson";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,19 +13,22 @@ import {
   showLocalHighlight,
 } from "@/components/Layers/layerUtils";
 import { useSelectArea } from "@/components/MapTools/SelectAreaContext";
-import { boundsOutOfView } from "@/components/MetaData/metaDataUtils";
 import type { MapExtent } from "@/types";
 import {
   FOCUS_FLY_MS,
   FOCUS_MAX_ZOOM,
   FOCUS_PADDING_PX,
 } from "@/utils/config";
+import { paddingClearOf } from "@/utils/camera";
 import { geoBounds } from "@/utils/geo";
 import { hostedLayer } from "@/utils/localLayers";
 import { useMapWidget } from "@/widget/MapWidgetContext";
 
-/** Highlights the focused result in gold, as Identify does, and frames it when out of view. */
-export const useResultHighlight = (map: MapLibreMap | null) => {
+/** Highlights the focused result in gold, as Identify does, and frames it beside `panel`. */
+export const useResultHighlight = (
+  map: MapLibreMap | null,
+  panel: RefObject<HTMLElement | null>,
+) => {
   const { focused, results } = useSelectArea();
   const { layerFloors } = useLayers();
   const { api } = useMapWidget();
@@ -55,11 +58,15 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
 
     // At least the layer's floor, so its raster draws.
     const frame = (bounds: MapExtent | null | undefined) => {
-      if (cancelled || !bounds || !boundsOutOfView(map, bounds)) return;
-      const camera = map.cameraForBounds(bounds, {
-        padding: FOCUS_PADDING_PX,
-        maxZoom: FOCUS_MAX_ZOOM,
-      });
+      if (cancelled || !bounds) return;
+      const beside = paddingClearOf(
+        map.getContainer().getBoundingClientRect(),
+        panel.current?.getBoundingClientRect() ?? null,
+      );
+      // Too narrow to sit beside the panel: centre it instead.
+      const camera =
+        map.cameraForBounds(bounds, { padding: beside, maxZoom: FOCUS_MAX_ZOOM }) ??
+        map.cameraForBounds(bounds, { padding: FOCUS_PADDING_PX, maxZoom: FOCUS_MAX_ZOOM });
       if (!camera) return;
       const floor = floors.current[layerId] ?? 0;
       map.easeTo({
@@ -101,5 +108,5 @@ export const useResultHighlight = (map: MapLibreMap | null) => {
       cancelled = true;
       hideHighlight(map);
     };
-  }, [map, kind, layerId, objectName, featureKey, featureId, api, queryClient, warehouseBounds]);
+  }, [map, panel, kind, layerId, objectName, featureKey, featureId, api, queryClient, warehouseBounds]);
 };
