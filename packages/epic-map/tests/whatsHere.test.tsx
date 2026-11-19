@@ -329,16 +329,22 @@ describe("a focused result on the map", () => {
   it("leaves the camera where it is when the result is removed or cleared", async () => {
     warehouseBounds.mockResolvedValue([-120.5, 51.5, -119.5, 52.5]);
     const map = fakeMap();
-    const caribou = group({});
+    const [focused] = group({}).features;
+    const sibling = { ...focused, key: `${CARIBOU}.3`, id: `${CARIBOU}.3`, name: "Groundhog" };
+    const caribou = group({ features: [focused, sibling] });
     render(
       wrap(<><Drive groups={[caribou, WELLS_GROUP]} focus={caribou.key} /><Grab /><Highlight map={map} /></>),
     );
     await waitFor(() => expect(map.easeTo).toHaveBeenCalledTimes(1));
 
-    act(() => selectArea.removeResult(caribou.key, caribou.features[0].key));
-    act(() => selectArea.clearGroup(WELLS_GROUP.key));
-    act(() => selectArea.clear());
+    // Async, so a rerun's warehouseBounds would land before the checks.
+    await act(async () => selectArea.clearGroup(WELLS_GROUP.key));
+    await act(async () => selectArea.removeResult(caribou.key, sibling.key));
+    expect(hideHighlight).not.toHaveBeenCalled();
+    expect(map.easeTo).toHaveBeenCalledTimes(1);
 
+    await act(async () => selectArea.removeResult(caribou.key, focused.key));
+    await act(async () => selectArea.clear());
     expect(hideHighlight).toHaveBeenCalledWith(map);
     expect(map.easeTo).toHaveBeenCalledTimes(1);
   });
