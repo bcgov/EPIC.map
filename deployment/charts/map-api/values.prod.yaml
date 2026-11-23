@@ -22,6 +22,9 @@ allowedClientIds: "epic-centre,epic-map"
 # Temporary gate while testers come in: a role under these groups, e.g. /TRACK/VIEWER. NO_ROLE grants nothing.
 allowedAppGroups: "TRACK"
 
+# Serves the hosted PIP layer: favourite, tiles, records and What's here.
+showPipLayer: false
+
 # EPIC.Track's API base URL for this environment, without /api/v1.
 epicTrack:
   apiUrl: ""

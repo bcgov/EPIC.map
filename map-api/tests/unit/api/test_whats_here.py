@@ -23,7 +23,7 @@ from sqlalchemy import text
 from map_api.models.db import db
 from map_api.services.bcgw_service import BcgwService
 from map_api.services.local_layer_service import LocalLayerService
-from map_api.services.whats_here_service import SEARCH_FAILED_MESSAGE, TOO_DETAILED_MESSAGE
+from map_api.services.whats_here_service import NOT_FOUND_MESSAGE, SEARCH_FAILED_MESSAGE, TOO_DETAILED_MESSAGE
 from tests.utilities.factory_utils import factory_auth_header, factory_user, factory_user_layer
 
 
@@ -158,6 +158,19 @@ def test_a_layer_with_nothing_under_the_selection_is_empty(app, client, jwt, ses
     assert result['status'] == 'empty'
     assert result['features'] == []
     assert result['matched'] == 0
+
+
+def test_a_hidden_hosted_layer_is_not_searched(app, client, jwt, session, monkeypatch):
+    """Not found, even with areas under the selection."""
+    monkeypatch.setitem(app.config, 'SHOW_PIP_LAYER', False)
+    insert_eao('{F1}')
+    insert_pip('{P1}', 'Adams Lake Indian Band', FOOTPRINT)
+
+    with patch.object(LocalLayerService, 'intersecting') as search:
+        [result] = ask(client, jwt, hosted=[PIP]).json['results']
+
+    assert (result['status'], result['features'], result['error']) == ('error', [], NOT_FOUND_MESSAGE)
+    search.assert_not_called()
 
 
 def test_lists_the_user_s_imported_features_under_the_selection(app, client, jwt, session):

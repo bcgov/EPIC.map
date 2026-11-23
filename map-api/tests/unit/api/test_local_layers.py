@@ -349,3 +349,23 @@ def test_a_layer_with_no_record_schema_serves_no_feature(app, client, jwt, sessi
     assert response.status_code == HTTPStatus.NOT_FOUND
     # Refused before the table is read: there is nothing to describe.
     service.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    'endpoint, service',
+    [
+        (TILE_ENDPOINT, TILE_SERVICE),
+        (STYLE_ENDPOINT, STYLE_SERVICE),
+        (INFO_ENDPOINT, INFO_SERVICE),
+        (FEATURE_ENDPOINT, FEATURE_SERVICE),
+    ],
+)
+def test_a_hidden_layer_is_not_found(app, client, jwt, session, monkeypatch, endpoint, service):
+    """Nothing is read for a hidden layer."""
+    monkeypatch.setitem(app.config, 'SHOW_PIP_LAYER', False)
+
+    with patch(service) as read:
+        response = client.get(endpoint, headers=factory_auth_header(jwt))
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    read.assert_not_called()

@@ -20,7 +20,7 @@ from flask import current_app
 
 from map_api.models.db import db
 from map_api.services.bcgw_service import BcgwService
-from map_api.services.local_layer_service import LOCAL_LAYERS, LocalLayerService
+from map_api.services.local_layer_service import LocalLayerService
 from map_api.services.user_layer_service import UserLayerService
 from map_api.utils.constant import WHATS_HERE_MAX_FEATURES, WHATS_HERE_MAX_OUTLINE_CHARS, WHATS_HERE_SIMPLIFY_METRES
 
@@ -65,9 +65,10 @@ class WhatsHereService:
 
     @classmethod
     def _hosted(cls, object_name: str, selection: list) -> dict:
-        features, matched = LocalLayerService.intersecting(
-            LOCAL_LAYERS[object_name], selection, WHATS_HERE_MAX_FEATURES
-        )
+        layer = LocalLayerService.layer_for(object_name)
+        if layer is None:
+            return cls._failed('hosted', object_name, NOT_FOUND_MESSAGE)
+        features, matched = LocalLayerService.intersecting(layer, selection, WHATS_HERE_MAX_FEATURES)
         return cls._found('hosted', object_name, features, matched)
 
     @classmethod

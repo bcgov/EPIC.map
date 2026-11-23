@@ -22,5 +22,6 @@ data:
   EPIC_TRACK_API_URL: {{ .Values.epicTrack.apiUrl | quote }}
   EPIC_TRACK_CLIENT_ID: {{ .Values.epicTrack.clientId | quote }}
   EPIC_PUBLIC_URL: {{ .Values.epicPublic.url | quote }}
+  SHOW_PIP_LAYER: {{ .Values.showPipLayer | quote }}
   PYTHONBUFFERED: "{{ .Values.python.pythonBuffered }}"
   CONNECT_TIMEOUT: "{{ .Values.python.connectTimeout }}"

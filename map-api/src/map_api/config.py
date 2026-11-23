@@ -270,6 +270,9 @@ class _Config():  # pylint: disable=too-few-public-methods
     # The EPIC public site, which a project card's "View on EPIC" opens.
     EPIC_PUBLIC_URL = (os.getenv('EPIC_PUBLIC_URL') or 'https://projects.eao.gov.bc.ca').rstrip('/')
 
+    # Serves the hosted PIP layer: favourite, tiles, records and What's here.
+    SHOW_PIP_LAYER = (os.getenv('SHOW_PIP_LAYER') or '').strip().lower() == 'true'
+
 
 class DevConfig(_Config):  # pylint: disable=too-few-public-methods
     """Dev Config."""
@@ -312,6 +315,7 @@ class TestConfig(_Config):  # pylint: disable=too-few-public-methods
     # machine. A developer's .env cannot widen or narrow what the tests accept.
     ALLOWED_CLIENT_IDS = list(TEST_ALLOWED_CLIENT_IDS)
     ALLOWED_APP_GROUPS = ['TRACK']
+    SHOW_PIP_LAYER = True
 
     JWT_OIDC_TEST_MODE = True
     # JWT_OIDC_ISSUER = _get_config('JWT_OIDC_TEST_ISSUER')
