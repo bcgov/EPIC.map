@@ -42,7 +42,10 @@ COPY map-web ./map-web
 RUN npm run build --workspace map-web
 
 # Stage 1, based on Nginx, to have only the compiled app, ready for production with Nginx
-FROM nginx:1.17 AS production-stage
+#
+# Pinned to the patch release: 1.30.7 is the first stable one with nginx's major
+# HTTP/2, TLS 1.3 and mail proxy advisories fixed. Don't go below it.
+FROM nginx:1.30.7 AS production-stage
 RUN mkdir /app
 
 COPY --from=build-stage /app/map-web/dist /usr/share/nginx/html

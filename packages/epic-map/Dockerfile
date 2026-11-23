@@ -34,7 +34,9 @@ COPY packages/epic-map ./packages/epic-map
 
 RUN npm run build --workspace @bcgov/epic-map
 
-FROM mirror.gcr.io/library/nginx:1.27-alpine AS production-stage
+# Pinned to the patch release: 1.30.7 is the first stable one with nginx's major
+# HTTP/2, TLS 1.3 and mail proxy advisories fixed. Don't go below it.
+FROM mirror.gcr.io/library/nginx:1.30.7-alpine AS production-stage
 
 COPY --from=build-stage /app/packages/epic-map/dist /usr/share/nginx/html
 COPY packages/epic-map/nginx/nginx.conf /etc/nginx/nginx.conf
