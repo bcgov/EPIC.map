@@ -23,6 +23,7 @@ construction, where a vector tile is drawn by the client - which is why the
 
 from typing import NamedTuple, Optional
 
+from flask import current_app
 from sqlalchemy import text
 
 from map_api.models.db import db
@@ -52,10 +53,12 @@ class LocalLayer(NamedTuple):
     name_column: Optional[str] = None
 
 
+PIP_OBJECT_NAME = 'WHSE_ADMIN_BOUNDARIES.PIP_CONSULTATION_AREAS_SP'
+
 # A registry rather than a pattern: the table name reaches SQL, so it must be
 # one of ours by construction and not merely one that looks safe.
 LOCAL_LAYERS = {
-    'WHSE_ADMIN_BOUNDARIES.PIP_CONSULTATION_AREAS_SP': LocalLayer(
+    PIP_OBJECT_NAME: LocalLayer(
         table='cache.pip_consultation_areas',
         mvt_layer='pip_consultation_areas',
         # No organization_type: 21 of 298 areas have contacts of more than
@@ -122,6 +125,16 @@ LOCAL_LAYERS = {
 
 EAO_OBJECT_NAME = 'EAO.PROJECT_DATA'
 
+# Hosted layers behind a config flag; any other is always served.
+LAYER_FLAGS = {PIP_OBJECT_NAME: 'SHOW_PIP_LAYER'}
+
+
+def is_hidden(object_name: str) -> bool:
+    """Whether this hosted layer is switched off in this environment."""
+    flag = LAYER_FLAGS.get(object_name)
+    return flag is not None and not current_app.config.get(flag)
+
+
 # Integer units per tile side. 4096 is what every renderer assumes.
 MVT_EXTENT = 4096
 
@@ -145,7 +158,9 @@ class LocalLayerService:
 
     @staticmethod
     def layer_for(object_name: str) -> Optional[LocalLayer]:
-        """Return the layer registered under `object_name`, or None."""
+        """Return the layer registered under `object_name`, or None if unknown or hidden."""
+        if is_hidden(object_name):
+            return None
         return LOCAL_LAYERS.get(object_name)
 
     @classmethod

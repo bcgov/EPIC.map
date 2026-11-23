@@ -4,8 +4,8 @@ from typing import Optional
 from map_api.exceptions import BadRequestError, UnprocessableEntityError
 from map_api.models.user_favourite_folder import UserFavouriteFolder as UserFavouriteFolderModel
 from map_api.models.user_favourite_layer import UserFavouriteLayer as UserFavouriteLayerModel
-from map_api.services.local_layer_service import LOCAL_LAYERS
-from map_api.utils.constant import MAX_FAVOURITE_LAYERS
+from map_api.services.local_layer_service import LOCAL_LAYERS, PIP_OBJECT_NAME, is_hidden
+from map_api.utils.constant import LAYER_SOURCE_LOCAL, MAX_FAVOURITE_LAYERS
 
 # Hosted layers every user gets a favourite of, and the name it is listed under.
 #
@@ -18,7 +18,7 @@ from map_api.utils.constant import MAX_FAVOURITE_LAYERS
 # from the filter bar rather than switched on from the panel, so they have no
 # row to star, unstar, file or toggle.
 SEEDED_LOCAL_FAVOURITES = {
-    'WHSE_ADMIN_BOUNDARIES.PIP_CONSULTATION_AREAS_SP':
+    PIP_OBJECT_NAME:
         'Profiles of Indigenous People (PIP) - First Nation Consultation Areas',
 }
 
@@ -42,8 +42,9 @@ class UserFavouriteLayerService:
         panel, so a layer added to the set later reaches users who already exist.
         """
         for object_name, display_name in SEEDED_LOCAL_FAVOURITES.items():
-            UserFavouriteLayerModel.ensure_local(user_id, object_name, display_name)
-        return UserFavouriteLayerModel.find_by_user(user_id)
+            if not is_hidden(object_name):
+                UserFavouriteLayerModel.ensure_local(user_id, object_name, display_name)
+        return cls._shown(UserFavouriteLayerModel.find_by_user(user_id))
 
     @classmethod
     def add_favourite(cls, user_id: int, data: dict) -> tuple:
@@ -51,7 +52,7 @@ class UserFavouriteLayerService:
 
         The cap lives here so a later caller cannot bypass it.
         """
-        if UserFavouriteLayerModel.count_for_user(user_id) >= MAX_FAVOURITE_LAYERS:
+        if len(cls._shown(UserFavouriteLayerModel.find_by_user(user_id))) >= MAX_FAVOURITE_LAYERS:
             raise UnprocessableEntityError(
                 f'A user may have at most {MAX_FAVOURITE_LAYERS} favourite layers.'
             )
@@ -64,7 +65,7 @@ class UserFavouriteLayerService:
         A seeded favourite is refused: the next GET would put it straight back,
         so deleting it is not something that can be made to hold.
         """
-        favourite = UserFavouriteLayerModel.find_one_for_user(favourite_id, user_id)
+        favourite = cls._find_shown(favourite_id, user_id)
         if favourite is None:
             return None
         if favourite.restricted:
@@ -83,7 +84,7 @@ class UserFavouriteLayerService:
         """
         cls._own_folder(user_id, folder_id)
 
-        favourite = UserFavouriteLayerModel.find_one_for_user(favourite_id, user_id)
+        favourite = cls._find_shown(favourite_id, user_id)
         if favourite is None:
             return None
         return UserFavouriteLayerModel.move_to_folder(favourite, folder_id)
@@ -100,12 +101,30 @@ class UserFavouriteLayerService:
         """
         cls._own_folder(user_id, folder_id)
 
-        current_ids = UserFavouriteLayerModel.find_ids_in_folder(user_id, folder_id)
-        if sorted(favourite_ids) != sorted(current_ids):
+        current = cls._shown(UserFavouriteLayerModel.find_in_folder(user_id, folder_id))
+        if sorted(favourite_ids) != sorted(row.id for row in current):
             raise BadRequestError(
                 'favourite_ids must list every favourite in this folder, exactly once.'
             )
-        return UserFavouriteLayerModel.reorder_in_folder(user_id, favourite_ids, folder_id)
+        return cls._shown(
+            UserFavouriteLayerModel.reorder_in_folder(user_id, favourite_ids, folder_id)
+        )
+
+    @staticmethod
+    def _is_hidden(favourite) -> bool:
+        return favourite.source == LAYER_SOURCE_LOCAL and is_hidden(favourite.object_name)
+
+    @classmethod
+    def _shown(cls, favourites: list) -> list:
+        """Filter, not delete, so folder placement survives a flag flip."""
+        return [favourite for favourite in favourites if not cls._is_hidden(favourite)]
+
+    @classmethod
+    def _find_shown(cls, favourite_id: int, user_id: int) -> Optional[object]:
+        favourite = UserFavouriteLayerModel.find_one_for_user(favourite_id, user_id)
+        if favourite is None or cls._is_hidden(favourite):
+            return None
+        return favourite
 
     @staticmethod
     def _own_folder(user_id: int, folder_id: Optional[int]) -> None:

@@ -21,6 +21,9 @@ allowedClientIds: "epic-centre,epic-map"
 # Temporary gate while testers come in: a role under these groups, e.g. /TRACK/VIEWER. NO_ROLE grants nothing.
 allowedAppGroups: "TRACK"
 
+# Serves the hosted PIP layer: favourite, tiles, records and What's here.
+showPipLayer: true
+
 # EPIC.Track's API base URL for this environment, without /api/v1. The project
 # dots come from it, and the EAO footprints are filtered to the projects those
 # dots are drawn for - so an empty value here draws no footprints either.

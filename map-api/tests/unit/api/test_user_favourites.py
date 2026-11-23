@@ -732,3 +732,70 @@ def test_a_starred_layer_is_not_restricted(app, client, jwt, session):
     headers = factory_auth_header(jwt)
 
     assert star(client, headers)['restricted'] is False
+
+
+def hide_pip(app, monkeypatch):
+    """Turn SHOW_PIP_LAYER off for this test."""
+    monkeypatch.setitem(app.config, 'SHOW_PIP_LAYER', False)
+
+
+def test_a_hidden_hosted_layer_is_not_seeded(app, client, jwt, session, monkeypatch):
+    """Not even a hidden row is created."""
+    hide_pip(app, monkeypatch)
+    headers = factory_auth_header(jwt)
+
+    assert listed(client, headers) == []
+    assert UserFavouriteLayer.query.filter_by(source='local').count() == 0
+
+
+def test_a_hidden_hosted_layer_already_seeded_is_not_listed(app, client, jwt, session, monkeypatch):
+    """Kept, not deleted: it comes back in its folder."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers)
+    move(client, headers, seeded(client, headers)[0], folder['id'])
+    hide_pip(app, monkeypatch)
+
+    assert seeded(client, headers) == []
+
+    monkeypatch.setitem(app.config, 'SHOW_PIP_LAYER', True)
+    assert [row['folder_id'] for row in seeded(client, headers)] == [folder['id']]
+
+
+def test_put_order_does_not_need_a_hidden_hosted_layer(app, client, jwt, session, monkeypatch):
+    """The client cannot send an id it never sees."""
+    headers = factory_auth_header(jwt)
+    first = star(client, headers)
+    second = star(client, headers, object_name=OTHER_OBJECT)
+    assert seeded(client, headers)
+    hide_pip(app, monkeypatch)
+
+    response = client.put(
+        ORDER_ENDPOINT, json={'favourite_ids': [second['id'], first['id']]}, headers=headers
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert [row['id'] for row in response.json] == [second['id'], first['id']]
+
+
+def test_a_hidden_hosted_layer_cannot_be_moved(app, client, jwt, session, monkeypatch):
+    """Hidden reads as missing."""
+    headers = factory_auth_header(jwt)
+    folder = new_folder(client, headers)
+    given = seeded(client, headers)[0]
+    hide_pip(app, monkeypatch)
+
+    assert move(client, headers, given, folder['id']).status_code == HTTPStatus.NOT_FOUND
+
+
+def test_a_hidden_hosted_layer_does_not_count_toward_the_cap(app, client, jwt, session, monkeypatch):
+    """The cap is on what the user can see."""
+    headers = factory_auth_header(jwt)
+    listed(client, headers)
+    hide_pip(app, monkeypatch)
+    monkeypatch.setattr(
+        'map_api.services.user_favourite_layer_service.MAX_FAVOURITE_LAYERS', 1
+    )
+
+    response = client.post(ENDPOINT, json=bcdc_layer_payload(), headers=headers)
+
+    assert response.status_code == HTTPStatus.CREATED
