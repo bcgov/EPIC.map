@@ -73,6 +73,10 @@ export default function LayersSection({
       <Typography
         component="span"
         sx={{
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
           fontSize: theme.typography.body2.fontSize,
           fontWeight: theme.typography.fontWeightBold,
           color: theme.palette.text.primary,
@@ -85,6 +89,7 @@ export default function LayersSection({
           component="span"
           sx={{
             display: "inline-flex",
+            flexShrink: 0,
             alignItems: "center",
             justifyContent: "center",
             minWidth: "1.25rem",
@@ -102,7 +107,9 @@ export default function LayersSection({
         </Box>
       )}
       <Box sx={{ flexGrow: 1 }} />
-      {action}
+      {action && (
+        <Box sx={{ display: "flex", flexShrink: 0 }}>{action}</Box>
+      )}
     </Box>
   );
 

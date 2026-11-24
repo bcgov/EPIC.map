@@ -80,6 +80,10 @@ export default function LayersControl() {
             // Bounded by the map, so it never grows past the widget's container.
             maxHeight: "calc(100% - 4.75rem)",
             overflowY: "auto",
+            overflowX: "hidden",
+            // The host may have no border-box reset, and without one a padded
+            // `width: 100%` row is wider than the panel.
+            "&, & *, & *::before, & *::after": { boxSizing: "border-box" },
             backgroundColor: theme.palette.background.default,
             borderRadius: "0.5rem",
             boxShadow: theme.shadows[6],
