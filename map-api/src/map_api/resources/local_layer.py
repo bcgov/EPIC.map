@@ -131,13 +131,14 @@ class LocalLayerTile(Resource):
         tile = LocalLayerService.tile(
             layer, address['z'], address['x'], address['y']
         )
-        if not tile:
-            return Response(status=HTTPStatus.NO_CONTENT)
-
-        response = Response(tile, mimetype=MVT_CONTENT_TYPE)
+        if tile:
+            response = Response(tile, mimetype=MVT_CONTENT_TYPE)
+        else:
+            response = Response(status=HTTPStatus.NO_CONTENT)
         # The rows change when someone reloads the extract, so rarely. Set
         # here because the app default is no-store, which would refetch every
-        # tile on every pan. Private because the response is authenticated.
+        # tile on every pan; empty ones too, as they are most of the grid.
+        # Private because the response is authenticated.
         response.headers['Cache-Control'] = (
             f'private, max-age={LOCAL_TILE_CACHE_SECONDS}'
         )
