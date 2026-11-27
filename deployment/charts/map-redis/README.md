@@ -10,9 +10,9 @@ its own Deployment and Service in the namespace - a separate pod, not a sidecar 
   disagree about what the catalogue currently says.
 - It restarts on its own schedule. A cache eviction shouldn't take the API down with it, and an
   API rollout shouldn't cold-start the cache.
-- Redis is not optional in a deployed environment. `map-api`'s liveness probe hits `/ops/healthz`,
-  which returns **503** when Redis fails to answer `PING` - with no Redis, kubelet restarts the
-  API pod on a loop.
+- Redis is not optional in a deployed environment. `map-api`'s `/ops/healthz` returns **503**
+  when Redis fails to answer `PING`. Liveness uses `/ops/readyz`, so the API pod is not restarted
+  over it.
 
 ## Why a plain Deployment
 

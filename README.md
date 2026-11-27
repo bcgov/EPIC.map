@@ -285,8 +285,9 @@ removed; don't reintroduce it without solving the PostGIS image problem first.
 
 ## Redis
 
-`map-api` caches the DataBC catalogue index in Redis, and `/ops/healthz` - the api's liveness
-probe - returns 503 when Redis doesn't answer, so a deployed environment needs it running. It
+`map-api` caches the DataBC catalogue index in Redis, and `/ops/healthz` returns 503 when Redis
+doesn't answer, so a deployed environment needs it running. The liveness probe uses `/ops/readyz`,
+so a Redis outage doesn't restart the API. It
 is its own Deployment and Service, not a sidecar, so the cache is shared across `map-api`
 replicas. See [`deployment/charts/map-redis`](deployment/charts/map-redis/README.md).
 
