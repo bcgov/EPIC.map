@@ -80,17 +80,19 @@ spec:
             successThreshold: 1
             failureThreshold: 3
           livenessProbe:
+            # readyz, not healthz: a restart cannot fix the database or Redis.
+            # The probe queues behind requests, so under overload readiness
+            # (3 failures) pulls the pod first and the queue drains before
+            # liveness (6) restarts it. Otherwise it restarted on a loop.
             httpGet:
-              path: /ops/healthz
+              path: /ops/readyz
               port: 8080
               scheme: HTTP
-            # healthz reports the database and Redis too, so give it room to
-            # answer before kubelet calls the pod dead.
             timeoutSeconds: 10
             initialDelaySeconds: 30
             periodSeconds: 10
             successThreshold: 1
-            failureThreshold: 3
+            failureThreshold: 6
           env:
             - name: DATABASE_USERNAME
               valueFrom:

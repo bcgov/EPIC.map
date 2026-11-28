@@ -105,6 +105,16 @@ def test_a_tile_is_cacheable(app, client, jwt, session):
     assert 'private' in response.headers['Cache-Control']
 
 
+def test_an_empty_tile_is_cacheable(app, client, jwt, session):
+    """Empty is most of the grid, so a no-store 204 is refetched on every pan."""
+    with patch(TILE_SERVICE, return_value=b''):
+        response = client.get(TILE_ENDPOINT, headers=factory_auth_header(jwt))
+
+    assert response.status_code == HTTPStatus.NO_CONTENT
+    assert 'no-store' not in response.headers['Cache-Control']
+    assert 'private' in response.headers['Cache-Control']
+
+
 def test_an_unknown_layer_is_not_found(app, client, jwt, session):
     """Proves the registry lookup, rather than a table name reaching SQL."""
     endpoint = '/api/local/layers/WHSE_FAKE.NOT_HOSTED_HERE/tiles/9/74/165'

@@ -24,6 +24,7 @@ That are used to expose operational health information about the service, and me
 import os
 
 from flask import Blueprint
+from flask_jwt_oidc.exceptions import AuthError
 
 from map_api.config import PRODUCTION_LIKE_ENVIRONMENTS
 
@@ -90,6 +91,18 @@ API = Api(
 # resets add_specs to its True default - so passing add_specs to the constructor
 # is silently discarded.
 API.init_app(API_BLUEPRINT, add_specs=DOCS_ENABLED)
+
+
+@API.errorhandler(AuthError)
+def handle_auth_error(error):
+    """Return a rejected token as its 401.
+
+    restx answers before Flask's handlers, so flask-jwt-oidc's own handler only
+    runs when exceptions propagate, which they do in tests but not when deployed.
+    """
+    body = {'message': error.error.get('description'), 'code': error.error.get('code')}
+    return body, error.status_code
+
 
 API.add_namespace(USER_API)
 # Mounted under /users/me so the path says whose layers these are.

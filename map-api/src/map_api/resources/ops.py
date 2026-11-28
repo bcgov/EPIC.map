@@ -105,5 +105,5 @@ class Readyz(Resource):
     @staticmethod
     def get():
         """Return a JSON object that identifies if the service is setupAnd ready to work."""
-        # TODO: add a poll to the DB when called
+        # Liveness uses this too, so no dependency checks: a restart cannot fix the database.
         return {'message': 'api is ready'}, 200

@@ -101,6 +101,30 @@ def test_expired_token_is_rejected(client, jwt):
 
 
 @pytest.mark.parametrize(
+    'overrides, code',
+    [
+        ({'exp': 1}, 'token_expired'),
+        ({'azp': 'epic-submit'}, 'invalid_claims'),
+        (None, 'invalid_header'),
+    ],
+)
+def test_a_rejected_token_is_a_401_when_exceptions_do_not_propagate(
+    app, client, jwt, monkeypatch, overrides, code
+):  # pylint: disable=too-many-arguments
+    """Deployed pods do not propagate exceptions; restx must still answer 401, not 500."""
+    monkeypatch.setitem(app.config, 'PROPAGATE_EXCEPTIONS', False)
+    if overrides is None:
+        header = {'Authorization': 'Bearer not-a-jwt'}
+    else:
+        header = factory_auth_header(jwt, **overrides)
+
+    response = client.get(ENDPOINT, headers=header)
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.json['code'] == code
+
+
+@pytest.mark.parametrize(
     'groups',
     [[], ['/TRACK'], ['/TRACK/NO_ROLE'], ['/COMPLIANCE/USER'], ['/SUBMIT/EAO_STAFF']],
 )
